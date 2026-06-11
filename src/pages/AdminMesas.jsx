@@ -78,6 +78,10 @@ export default function AdminMesas() {
 
   async function addTable() {
     if (!newNumero) return
+    // Validar que no existe ya esa mesa en esa zona
+    const duplicate = tables.find(t => t.numero === parseInt(newNumero) && t.zona === newZona)
+    if (duplicate) { setError(`Ya existe la Mesa ${newNumero} en ${newZona}.`); return }
+    setError(null)
     setAdding(true)
     const { data, error: err } = await supabase
       .from('tables')
