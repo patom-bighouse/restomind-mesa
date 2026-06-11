@@ -103,6 +103,24 @@ export default function AdminMesas() {
     setTables(prev => prev.map(t => t.id === table.id ? { ...t, activa: !t.activa } : t))
   }
 
+  async function deleteTable(table) {
+    // Check no active orders
+    const { data: activeOrders } = await supabase
+      .from('orders')
+      .select('id')
+      .eq('table_id', table.id)
+      .in('estado', ['pendiente', 'preparando', 'listo'])
+    if (activeOrders && activeOrders.length > 0) {
+      setError(`La Mesa ${table.numero} tiene pedidos activos. Espera a que se completen antes de eliminarla.`)
+      return
+    }
+    if (!window.confirm(`¿Eliminar Mesa ${table.numero} · ${table.zona}? Esta acción no se puede deshacer.`)) return
+    const { error: err } = await supabase.from('tables').delete().eq('id', table.id)
+    if (err) { setError(err.message); return }
+    setTables(prev => prev.filter(t => t.id !== table.id))
+    setQrUrls(prev => { const next = { ...prev }; delete next[table.id]; return next })
+  }
+
   function downloadQR(table) {
     const url = qrUrls[table.id]
     if (!url) return
@@ -181,6 +199,9 @@ export default function AdminMesas() {
                   {table.activa ? 'Desactivar' : 'Activar'}
                 </button>
               </div>
+              <button onClick={() => deleteTable(table)} style={{ width: '100%', background: 'transparent', border: '0.5px solid #3a2020', borderRadius: 8, padding: '7px 0', fontSize: 12, color: '#8a5050', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+                Eliminar mesa
+              </button>
             </div>
           ))}
         </div>
