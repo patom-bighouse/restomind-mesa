@@ -153,6 +153,11 @@ export default function Mesa() {
 
   async function callWaiter() {
     setOverlay('waiter')
+    await supabase.from('waiter_calls').insert({
+      restaurant_id: table.restaurant_id,
+      table_id: table.id,
+      estado: 'pendiente'
+    })
     setTimeout(() => setOverlay(null), 2500)
   }
 

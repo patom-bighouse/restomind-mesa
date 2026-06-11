@@ -65,6 +65,7 @@ export default function Cocina() {
   const [activeTab, setActiveTab] = useState('pendiente')
   const [isLive, setIsLive] = useState(false)
   const [notif, setNotif] = useState(null)
+  const [waiterCalls, setWaiterCalls] = useState([])
 
   function showNotif(msg) {
     setNotif(msg)
@@ -103,6 +104,16 @@ export default function Cocina() {
     }
   }
 
+  async function loadWaiterCalls() {
+    const { data } = await supabase
+      .from('waiter_calls')
+      .select('id, table_id, estado, created_at')
+      .eq('restaurant_id', restaurantId)
+      .eq('estado', 'pendiente')
+      .order('created_at', { ascending: true })
+    setWaiterCalls(data || [])
+  }
+
   async function loadOrders() {
     const { data, error: err } = await supabase
       .from('orders')
@@ -120,6 +131,7 @@ export default function Cocina() {
       try {
         await loadTables()
         await loadOrders()
+        await loadWaiterCalls()
       } catch (e) {
         setError(e.message)
       } finally {
@@ -152,6 +164,28 @@ export default function Cocina() {
         setOrders(prev => prev.map(o => o.id === payload.new.id ? { ...o, ...payload.new } : o)
           .filter(o => ['pendiente', 'preparando', 'listo'].includes(o.estado)))
       })
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'waiter_calls',
+        filter: `restaurant_id=eq.${restaurantId}`
+      }, (payload) => {
+        setWaiterCalls(prev => [...prev, payload.new])
+        showNotif('🛎 Mesa llama al camarero')
+        // Play beep sound
+        try {
+          const ctx = new (window.AudioContext || window.webkitAudioContext)()
+          const osc = ctx.createOscillator()
+          const gain = ctx.createGain()
+          osc.connect(gain)
+          gain.connect(ctx.destination)
+          osc.frequency.value = 880
+          gain.gain.setValueAtTime(0.3, ctx.currentTime)
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4)
+          osc.start(ctx.currentTime)
+          osc.stop(ctx.currentTime + 0.4)
+        } catch(e) {}
+      })
       .subscribe((status) => {
         setIsLive(status === 'SUBSCRIBED')
       })
@@ -167,6 +201,11 @@ export default function Cocina() {
       .update({ estado: cfg.next })
       .eq('id', order.id)
     if (err) console.error(err)
+  }
+
+  async function dismissWaiterCall(id) {
+    await supabase.from('waiter_calls').update({ estado: 'atendido' }).eq('id', id)
+    setWaiterCalls(prev => prev.filter(c => c.id !== id))
   }
 
   const byTab = orders.filter(o => o.estado === activeTab)
@@ -196,6 +235,30 @@ export default function Cocina() {
           </button>
         ))}
       </div>
+
+      {waiterCalls.length > 0 && (
+        <div style={{ padding: '10px 16px 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {waiterCalls.map(call => {
+            const t = tables[call.table_id]
+            return (
+              <div key={call.id} style={{ background: '#2a1a00', border: '1px solid #d4a017', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 18 }}>🛎</span>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: '#f0e8d8' }}>
+                      {t ? `Mesa ${t.numero} · ${t.zona.charAt(0).toUpperCase() + t.zona.slice(1)}` : 'Mesa'} llama al camarero
+                    </div>
+                    <div style={{ fontSize: 12, color: '#8a7560' }}>{timeAgo(call.created_at)} ago</div>
+                  </div>
+                </div>
+                <button onClick={() => dismissWaiterCall(call.id)} style={{ background: '#d4a017', border: 'none', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 500, color: '#111', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+                  Atendido
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       <div style={S.grid}>
         {byTab.length === 0 ? (
