@@ -176,6 +176,22 @@ export default function Mesa() {
     </div>
   )
 
+  if (table && !table.activa) return (
+    <div style={S.app}>
+      <div style={S.header}>
+        <div>
+          <div style={S.logo}>{restaurant?.nombre || 'Restomind'}</div>
+        </div>
+        <div style={S.badge}>Mesa {table?.numero}</div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, padding: 40, textAlign: 'center', gap: 16 }}>
+        <div style={{ fontSize: 40 }}>🚫</div>
+        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: '#e8c97a' }}>Mesa no disponible</div>
+        <div style={{ fontSize: 14, color: '#7a6a50', lineHeight: 1.6 }}>Esta mesa está temporalmente desactivada.<br />Por favor, consulta con el personal del restaurante.</div>
+      </div>
+    </div>
+  )
+
   return (
     <div style={S.app}>
       <div style={S.header}>
