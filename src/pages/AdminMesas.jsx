@@ -32,6 +32,10 @@ const S = {
   toggleBtn: (activa) => ({ flex: 1, background: 'transparent', border: `0.5px solid ${activa ? '#c0392b' : '#27ae60'}`, borderRadius: 8, padding: '8px 0', fontSize: 12, fontWeight: 500, cursor: 'pointer', color: activa ? '#e74c3c' : '#2ecc71', fontFamily: "'Inter', sans-serif" }),
   deleteBtn: { width: '100%', background: 'transparent', border: '0.5px solid #2a1a1a', borderRadius: 8, padding: '7px 0', fontSize: 12, color: '#6a4040', cursor: 'pointer', fontFamily: "'Inter', sans-serif' " },
   error: { background: '#2a1410', border: '0.5px solid #6a2e20', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#e87a7a', marginBottom: 16 },
+  statsBar: { display: 'flex', gap: 12, marginBottom: 28, flexWrap: 'wrap' },
+  statCard: (color) => ({ background: '#1a1a1a', border: `1px solid ${color}`, borderRadius: 12, padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 4, minWidth: 120 }),
+  statNum: (color) => ({ fontSize: 28, fontWeight: 600, color: color, fontFamily: "'Playfair Display', serif", lineHeight: 1 }),
+  statLabel: { fontSize: 12, color: '#7a6a50' },
   loading: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: '#555', fontSize: 14 },
 }
 
@@ -63,7 +67,6 @@ export default function AdminMesas() {
       .from('tables').select('id, numero, zona, capacidad, qr_token, activa')
       .eq('restaurant_id', restaurantId).order('numero')
     if (err) { setError(err.message); setLoading(false); return }
-    console.log('Mesas cargadas:', tabs)
     setTables(tabs || [])
     generateQRs(tabs || [])
     setLoading(false)
@@ -162,6 +165,28 @@ export default function AdminMesas() {
           <button style={S.addBtn} onClick={addTable} disabled={adding}>
             {adding ? 'Añadiendo...' : '+ Añadir mesa'}
           </button>
+        </div>
+
+        {/* Stats bar */}
+        <div style={S.statsBar}>
+          <div style={S.statCard('#e8c97a')}>
+            <div style={S.statNum('#e8c97a')}>{tables.length}</div>
+            <div style={S.statLabel}>Total mesas</div>
+          </div>
+          <div style={S.statCard('#2ecc71')}>
+            <div style={S.statNum('#2ecc71')}>{tables.filter(t => t.activa).length}</div>
+            <div style={S.statLabel}>Activas</div>
+          </div>
+          <div style={S.statCard('#e74c3c')}>
+            <div style={S.statNum('#e74c3c')}>{tables.filter(t => !t.activa).length}</div>
+            <div style={S.statLabel}>Desactivadas</div>
+          </div>
+          {ZONAS.filter(z => tables.some(t => t.zona === z)).map(zona => (
+            <div key={zona} style={S.statCard('#3a2e20')}>
+              <div style={S.statNum('#c4a85a')}>{tables.filter(t => t.zona === zona).length}</div>
+              <div style={S.statLabel}>{zona.charAt(0).toUpperCase() + zona.slice(1)}</div>
+            </div>
+          ))}
         </div>
 
         {/* Mesas agrupadas por zona */}
