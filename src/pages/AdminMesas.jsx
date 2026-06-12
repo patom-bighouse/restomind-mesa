@@ -63,6 +63,7 @@ export default function AdminMesas() {
       .from('tables').select('id, numero, zona, capacidad, qr_token, activa')
       .eq('restaurant_id', restaurantId).order('numero')
     if (err) { setError(err.message); setLoading(false); return }
+    console.log('Mesas cargadas:', tabs)
     setTables(tabs || [])
     generateQRs(tabs || [])
     setLoading(false)
@@ -103,15 +104,7 @@ export default function AdminMesas() {
       .update({ activa: newActiva })
       .eq('id', table.id)
     if (err) { setError(err.message); return }
-    // Re-fetch para confirmar el valor real en BD
-    const { data: updated } = await supabase
-      .from('tables')
-      .select('activa')
-      .eq('id', table.id)
-      .single()
-    if (updated) {
-      setTables(prev => prev.map(t => t.id === table.id ? { ...t, activa: updated.activa } : t))
-    }
+    setTables(prev => prev.map(t => t.id === table.id ? { ...t, activa: newActiva } : t))
   }
 
   async function deleteTable(table) {
