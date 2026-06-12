@@ -66,7 +66,7 @@ export default function Mesa() {
       try {
         const { data: tableData, error: tErr } = await supabase
           .from('tables')
-          .select('id, numero, zona, restaurant_id')
+          .select('id, numero, zona, restaurant_id, activa')
           .eq('qr_token', token)
           .single()
         if (tErr || !tableData) throw new Error('Mesa no encontrada')
