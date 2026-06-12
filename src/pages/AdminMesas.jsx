@@ -98,14 +98,20 @@ export default function AdminMesas() {
 
   async function toggleTable(table) {
     const newActiva = !table.activa
-    const { data, error: err } = await supabase
+    const { error: err } = await supabase
       .from('tables')
       .update({ activa: newActiva })
       .eq('id', table.id)
-      .select()
-      .single()
     if (err) { setError(err.message); return }
-    setTables(prev => prev.map(t => t.id === table.id ? { ...t, activa: newActiva } : t))
+    // Re-fetch para confirmar el valor real en BD
+    const { data: updated } = await supabase
+      .from('tables')
+      .select('activa')
+      .eq('id', table.id)
+      .single()
+    if (updated) {
+      setTables(prev => prev.map(t => t.id === table.id ? { ...t, activa: updated.activa } : t))
+    }
   }
 
   async function deleteTable(table) {
