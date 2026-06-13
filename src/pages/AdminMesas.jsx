@@ -12,6 +12,8 @@ const S = {
   logo: { fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 600, color: '#e8c97a' },
   restName: { fontSize: 13, color: '#8a7560', marginTop: 2 },
   logoutBtn: { background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '6px 14px', fontSize: 13, color: '#8a7560', cursor: 'pointer', fontFamily: "'Inter', sans-serif" },
+  navTabs: { display: 'flex', gap: 8 },
+  navTab: (active) => ({ background: active ? '#e8c97a' : 'transparent', color: active ? '#111' : '#8a7560', border: `0.5px solid ${active ? '#e8c97a' : '#3a2e20'}`, borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif", textDecoration: 'none' }),
   content: { padding: 24, maxWidth: 960, margin: '0 auto' },
   sectionTitle: { fontFamily: "'Playfair Display', serif", fontSize: 18, color: '#e8c97a', marginBottom: 20 },
   addBar: { display: 'flex', gap: 12, marginBottom: 36, flexWrap: 'wrap', background: '#1a1a1a', border: '0.5px solid #2a2a2a', borderRadius: 12, padding: 16 },
@@ -148,7 +150,11 @@ export default function AdminMesas() {
           <div style={S.logo}>Restomind Admin</div>
           <div style={S.restName}>{restaurant?.nombre}</div>
         </div>
-        <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
+        <div style={S.navTabs}>
+          <a href={`/admin/mesas/${restaurantId}`} style={S.navTab(true)}>Mesas</a>
+          <a href={`/admin/carta/${restaurantId}`} style={S.navTab(false)}>Carta</a>
+          <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
+        </div>
       </div>
 
       <div style={S.content}>

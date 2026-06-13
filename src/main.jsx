@@ -5,6 +5,7 @@ import Mesa from './pages/Mesa'
 import Cocina from './pages/Cocina'
 import AdminLogin from './pages/AdminLogin'
 import AdminMesas from './pages/AdminMesas'
+import AdminCarta from './pages/AdminCarta'
 import NotFound from './pages/NotFound'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -15,6 +16,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/cocina/:restaurantId" element={<Cocina />} />
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/admin/mesas/:restaurantId" element={<AdminMesas />} />
+        <Route path="/admin/carta/:restaurantId" element={<AdminCarta />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
