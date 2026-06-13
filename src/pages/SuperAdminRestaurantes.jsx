@@ -1,0 +1,265 @@
+import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { createClient } from '@supabase/supabase-js'
+import { supabase } from '../lib/supabase'
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+const S = {
+  app: { minHeight: '100vh', background: '#0a0a0a', color: '#f0f0f0', fontFamily: "'Inter', sans-serif" },
+  header: { background: '#111', padding: '14px 24px', borderBottom: '0.5px solid #2a2a2a', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 10 },
+  logo: { fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 600, color: '#e8c97a' },
+  sub: { fontSize: 11, color: '#666', textTransform: 'uppercase', letterSpacing: '0.1em', marginTop: 2 },
+  logoutBtn: { background: 'transparent', border: '0.5px solid #2a2a2a', borderRadius: 8, padding: '6px 14px', fontSize: 13, color: '#8a8a8a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" },
+  content: { padding: 24, maxWidth: 900, margin: '0 auto' },
+  sectionTitle: { fontFamily: "'Playfair Display', serif", fontSize: 18, color: '#e8c97a', marginBottom: 20 },
+  error: { background: '#2a1414', border: '0.5px solid #5a2a2a', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#e87a7a', marginBottom: 16 },
+  success: { background: '#142a1a', border: '0.5px solid #2a5a3a', borderRadius: 10, padding: '14px 16px', fontSize: 13, color: '#7ae8a0', marginBottom: 16, lineHeight: 1.6 },
+  loading: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: '#555', fontSize: 14 },
+
+  addBtn: { background: '#e8c97a', color: '#111', border: 'none', borderRadius: 10, padding: '10px 20px', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif", marginBottom: 24 },
+
+  table: { width: '100%', borderCollapse: 'collapse' },
+  th: { textAlign: 'left', fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: '0.06em', padding: '10px 14px', borderBottom: '0.5px solid #2a2a2a' },
+  td: { padding: '14px', fontSize: 14, borderBottom: '0.5px solid #1a1a1a', verticalAlign: 'middle' },
+  restName: { fontWeight: 500, color: '#f0f0f0' },
+  restSlug: { fontSize: 12, color: '#666', marginTop: 2 },
+  linkBtn: { background: 'transparent', border: '0.5px solid #2a2a2a', borderRadius: 8, padding: '6px 12px', fontSize: 12, color: '#e8c97a', cursor: 'pointer', fontFamily: "'Inter', sans-serif", textDecoration: 'none', marginRight: 6, display: 'inline-block' },
+  badge: (active) => ({ fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 20, background: active ? '#142a1a' : '#2a1414', color: active ? '#2ecc71' : '#e74c3c' }),
+
+  modal: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 20 },
+  modalBox: { background: '#161616', border: '0.5px solid #2a2a2a', borderRadius: 16, padding: 24, width: '100%', maxWidth: 420 },
+  modalTitle: { fontFamily: "'Playfair Display', serif", fontSize: 18, color: '#e8c97a', marginBottom: 18 },
+  label: { fontSize: 12, color: '#8a8a8a', marginBottom: 6, display: 'block', marginTop: 14 },
+  input: { width: '100%', background: '#0a0a0a', border: '0.5px solid #2a2a2a', borderRadius: 10, padding: '10px 14px', fontSize: 14, color: '#f0f0f0', fontFamily: "'Inter', sans-serif", outline: 'none', boxSizing: 'border-box' },
+  hint: { fontSize: 11, color: '#555', marginTop: 4 },
+  modalBtns: { display: 'flex', gap: 10, marginTop: 22 },
+  saveBtn: (disabled) => ({ flex: 1, background: disabled ? '#3a3a2a' : '#e8c97a', color: disabled ? '#888' : '#111', border: 'none', borderRadius: 10, padding: 12, fontSize: 14, fontWeight: 500, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: "'Inter', sans-serif" }),
+  cancelBtn: { flex: 1, background: 'transparent', border: '0.5px solid #2a2a2a', borderRadius: 10, padding: 12, fontSize: 14, color: '#8a8a8a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" },
+}
+
+function slugify(text) {
+  return text.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+}
+
+export default function SuperAdminRestaurantes() {
+  const navigate = useNavigate()
+  const [restaurants, setRestaurants] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [success, setSuccess] = useState(null)
+
+  const [showModal, setShowModal] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [form, setForm] = useState({ nombre: '', email: '', password: '', whatsapp: '' })
+
+  useEffect(() => { checkAuth() }, [])
+
+  async function checkAuth() {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) { navigate('/superadmin/login'); return }
+    const { data: sa } = await supabase.from('superadmins').select('id').eq('user_id', session.user.id).single()
+    if (!sa) { navigate('/superadmin/login'); return }
+    loadRestaurants()
+  }
+
+  async function loadRestaurants() {
+    const { data, error: err } = await supabase
+      .from('restaurants')
+      .select('id, nombre, slug, whatsapp, activo, created_at, user_id')
+      .order('created_at', { ascending: false })
+    if (err) { setError(err.message); setLoading(false); return }
+    setRestaurants(data || [])
+    setLoading(false)
+  }
+
+  function openModal() {
+    setForm({ nombre: '', email: '', password: '', whatsapp: '' })
+    setError(null)
+    setSuccess(null)
+    setShowModal(true)
+  }
+
+  async function createRestaurant() {
+    if (!form.nombre.trim() || !form.email.trim() || !form.password.trim()) {
+      setError('Nombre, email y contraseña son obligatorios.')
+      return
+    }
+    if (form.password.length < 6) {
+      setError('La contraseña debe tener al menos 6 caracteres.')
+      return
+    }
+    setCreating(true)
+    setError(null)
+
+    try {
+      // Cliente Supabase separado para no afectar la sesión del superadmin
+      const tempClient = createClient(supabaseUrl, supabaseAnonKey)
+
+      const { data: signUpData, error: signUpErr } = await tempClient.auth.signUp({
+        email: form.email.trim(),
+        password: form.password,
+      })
+      if (signUpErr) throw signUpErr
+      if (!signUpData.user) throw new Error('No se pudo crear el usuario.')
+
+      const newUserId = signUpData.user.id
+      const slug = slugify(form.nombre)
+
+      // Crear restaurante vinculado
+      const { data: restData, error: restErr } = await supabase
+        .from('restaurants')
+        .insert({
+          nombre: form.nombre.trim(),
+          slug,
+          whatsapp: form.whatsapp.trim() || null,
+          user_id: newUserId,
+          activo: true,
+        })
+        .select().single()
+      if (restErr) throw restErr
+
+      // Categoría demo
+      const { data: catData, error: catErr } = await supabase
+        .from('categories')
+        .insert({ restaurant_id: restData.id, nombre: 'Entrantes', orden: 1, activa: true })
+        .select().single()
+      if (catErr) throw catErr
+
+      // Plato demo
+      await supabase.from('menu_items').insert({
+        restaurant_id: restData.id,
+        category_id: catData.id,
+        nombre: 'Plato de bienvenida',
+        descripcion: 'Edita o elimina este plato desde Gestión de carta',
+        precio: 0,
+        emoji: '🍽',
+        disponible: true,
+        orden: 1,
+      })
+
+      // Mesa demo
+      await supabase.from('tables').insert({
+        restaurant_id: restData.id,
+        numero: 1,
+        zona: 'interior',
+        capacidad: 4,
+        activa: true,
+      })
+
+      setSuccess(`Restaurante "${form.nombre}" creado correctamente.\n\nAcceso del cliente: ${form.email} / (la contraseña que definiste)\nPanel: /admin/login`)
+      setShowModal(false)
+      loadRestaurants()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  async function toggleActivo(rest) {
+    const nuevo = !rest.activo
+    const { error: err } = await supabase.from('restaurants').update({ activo: nuevo }).eq('id', rest.id)
+    if (err) { setError(err.message); return }
+    setRestaurants(prev => prev.map(r => r.id === rest.id ? { ...r, activo: nuevo } : r))
+  }
+
+  async function handleLogout() {
+    await supabase.auth.signOut()
+    navigate('/superadmin/login')
+  }
+
+  if (loading) return <div style={S.app}><div style={S.loading}>Cargando...</div></div>
+
+  return (
+    <div style={S.app}>
+      <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
+      <div style={S.header}>
+        <div>
+          <div style={S.logo}>Restomind</div>
+          <div style={S.sub}>Super Admin</div>
+        </div>
+        <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
+      </div>
+
+      <div style={S.content}>
+        <div style={S.sectionTitle}>Restaurantes ({restaurants.length})</div>
+        {error && <div style={S.error}>{error}</div>}
+        {success && <div style={S.success}>{success}</div>}
+
+        <button style={S.addBtn} onClick={openModal}>+ Nuevo restaurante</button>
+
+        <table style={S.table}>
+          <thead>
+            <tr>
+              <th style={S.th}>Restaurante</th>
+              <th style={S.th}>WhatsApp</th>
+              <th style={S.th}>Estado</th>
+              <th style={S.th}>Accesos</th>
+            </tr>
+          </thead>
+          <tbody>
+            {restaurants.map(rest => (
+              <tr key={rest.id}>
+                <td style={S.td}>
+                  <div style={S.restName}>{rest.nombre}</div>
+                  <div style={S.restSlug}>{rest.slug} · {rest.id.slice(0, 8)}...</div>
+                </td>
+                <td style={S.td}>{rest.whatsapp || '—'}</td>
+                <td style={S.td}>
+                  <span style={S.badge(rest.activo)} onClick={() => toggleActivo(rest)} role="button" title="Click para cambiar">
+                    {rest.activo ? 'Activo' : 'Inactivo'}
+                  </span>
+                </td>
+                <td style={S.td}>
+                  <a href={`/admin/mesas/${rest.id}`} style={S.linkBtn} target="_blank" rel="noreferrer">Mesas</a>
+                  <a href={`/admin/carta/${rest.id}`} style={S.linkBtn} target="_blank" rel="noreferrer">Carta</a>
+                  <a href={`/cocina/${rest.id}`} style={S.linkBtn} target="_blank" rel="noreferrer">Cocina</a>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {restaurants.length === 0 && (
+          <div style={{ fontSize: 14, color: '#555', textAlign: 'center', padding: '60px 0' }}>
+            Aún no hay restaurantes. Crea el primero arriba.
+          </div>
+        )}
+      </div>
+
+      {showModal && (
+        <div style={S.modal} onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}>
+          <div style={S.modalBox}>
+            <div style={S.modalTitle}>Nuevo restaurante</div>
+
+            <label style={S.label}>Nombre del restaurante *</label>
+            <input style={S.input} value={form.nombre} onChange={e => setForm(prev => ({ ...prev, nombre: e.target.value }))} placeholder="Ej. La Taberna del Puerto" />
+            {form.nombre && <div style={S.hint}>slug: {slugify(form.nombre)}</div>}
+
+            <label style={S.label}>Email del dueño (acceso al panel) *</label>
+            <input style={S.input} type="email" value={form.email} onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))} placeholder="dueno@restaurante.com" />
+
+            <label style={S.label}>Contraseña inicial *</label>
+            <input style={S.input} type="text" value={form.password} onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))} placeholder="mínimo 6 caracteres" />
+            <div style={S.hint}>Compártesela al cliente; podrá usarla en /admin/login</div>
+
+            <label style={S.label}>WhatsApp (opcional)</label>
+            <input style={S.input} value={form.whatsapp} onChange={e => setForm(prev => ({ ...prev, whatsapp: e.target.value }))} placeholder="+34600000000" />
+
+            <div style={S.modalBtns}>
+              <button style={S.cancelBtn} onClick={() => setShowModal(false)}>Cancelar</button>
+              <button style={S.saveBtn(creating)} onClick={createRestaurant} disabled={creating}>
+                {creating ? 'Creando...' : 'Crear restaurante'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

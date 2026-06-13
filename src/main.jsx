@@ -6,6 +6,8 @@ import Cocina from './pages/Cocina'
 import AdminLogin from './pages/AdminLogin'
 import AdminMesas from './pages/AdminMesas'
 import AdminCarta from './pages/AdminCarta'
+import SuperAdminLogin from './pages/SuperAdminLogin'
+import SuperAdminRestaurantes from './pages/SuperAdminRestaurantes'
 import NotFound from './pages/NotFound'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -17,6 +19,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/admin/mesas/:restaurantId" element={<AdminMesas />} />
         <Route path="/admin/carta/:restaurantId" element={<AdminCarta />} />
+        <Route path="/superadmin/login" element={<SuperAdminLogin />} />
+        <Route path="/superadmin/restaurantes" element={<SuperAdminRestaurantes />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
