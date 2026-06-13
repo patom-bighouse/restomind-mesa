@@ -61,6 +61,24 @@ export default function Mesa() {
   const [orderId, setOrderId] = useState(null)
   const [sendError, setSendError] = useState(null)
 
+  async function loadMenu(restaurantId) {
+    const { data: cats } = await supabase
+      .from('categories')
+      .select('id, nombre, orden')
+      .eq('restaurant_id', restaurantId)
+      .eq('activa', true)
+      .order('orden')
+    setCategories(cats || [])
+
+    const { data: menuItems } = await supabase
+      .from('menu_items')
+      .select('id, nombre, descripcion, precio, emoji, foto_url, category_id, orden')
+      .eq('restaurant_id', restaurantId)
+      .eq('disponible', true)
+      .order('orden')
+    setItems(menuItems || [])
+  }
+
   useEffect(() => {
     async function load() {
       try {
@@ -79,21 +97,7 @@ export default function Mesa() {
           .single()
         setRestaurant(rest)
 
-        const { data: cats } = await supabase
-          .from('categories')
-          .select('id, nombre, orden')
-          .eq('restaurant_id', tableData.restaurant_id)
-          .eq('activa', true)
-          .order('orden')
-        setCategories(cats || [])
-
-        const { data: menuItems } = await supabase
-          .from('menu_items')
-          .select('id, nombre, descripcion, precio, emoji, category_id, orden')
-          .eq('restaurant_id', tableData.restaurant_id)
-          .eq('disponible', true)
-          .order('orden')
-        setItems(menuItems || [])
+        await loadMenu(tableData.restaurant_id)
       } catch (e) {
         setError(e.message)
       } finally {
@@ -102,6 +106,28 @@ export default function Mesa() {
     }
     load()
   }, [token])
+
+  // Realtime: refresca la carta cuando cambian categorías o platos
+  useEffect(() => {
+    if (!table?.restaurant_id) return
+    const channel = supabase
+      .channel('mesa-menu-' + table.id)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'menu_items',
+        filter: `restaurant_id=eq.${table.restaurant_id}`
+      }, () => loadMenu(table.restaurant_id))
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'categories',
+        filter: `restaurant_id=eq.${table.restaurant_id}`
+      }, () => loadMenu(table.restaurant_id))
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'tables',
+        filter: `id=eq.${table.id}`
+      }, (payload) => setTable(prev => ({ ...prev, ...payload.new })))
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [table?.restaurant_id, table?.id])
 
   const change = useCallback((item, delta) => {
     setCart(prev => {
@@ -219,7 +245,11 @@ export default function Mesa() {
               <div style={S.itemsWrap}>
                 {catItems.map(item => (
                   <div key={item.id} style={S.item}>
-                    <div style={S.emoji}>{item.emoji || '🍽'}</div>
+                    <div style={S.emoji}>
+                      {item.foto_url
+                        ? <img src={item.foto_url} alt={item.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }} />
+                        : (item.emoji || '🍽')}
+                    </div>
                     <div style={S.info}>
                       <div style={S.name}>{item.nombre}</div>
                       {item.descripcion && <div style={S.desc}>{item.descripcion}</div>}

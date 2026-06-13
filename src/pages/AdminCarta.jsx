@@ -200,6 +200,7 @@ export default function AdminCarta() {
     }
     setSaving(true)
     setError(null)
+    const targetCatId = formData.category_id || editingCatId
     const payload = {
       nombre: formData.nombre.trim(),
       descripcion: formData.descripcion?.trim() || null,
@@ -207,14 +208,15 @@ export default function AdminCarta() {
       emoji: formData.emoji || '🍽',
       foto_url: formData.foto_url || null,
       disponible: formData.disponible !== false,
+      category_id: targetCatId,
     }
 
     if (editingItem === 'new') {
-      const itemsInCat = items.filter(i => i.category_id === editingCatId)
+      const itemsInCat = items.filter(i => i.category_id === targetCatId)
       const orden = itemsInCat.length ? Math.max(...itemsInCat.map(i => i.orden)) + 1 : 1
       const { data, error: err } = await supabase
         .from('menu_items')
-        .insert({ ...payload, restaurant_id: restaurantId, category_id: editingCatId, orden })
+        .insert({ ...payload, restaurant_id: restaurantId, orden })
         .select().single()
       if (err) { setError(err.message); setSaving(false); return }
       setItems(prev => [...prev, data])
@@ -356,6 +358,17 @@ export default function AdminCarta() {
 
             <label style={S.label}>Precio (€) *</label>
             <input style={S.input} type="number" step="0.01" min="0" value={formData.precio ?? ''} onChange={e => setFormData(prev => ({ ...prev, precio: e.target.value }))} placeholder="9.50" />
+
+            <label style={S.label}>Categoría</label>
+            <select
+              style={S.input}
+              value={formData.category_id || editingCatId || ''}
+              onChange={e => setFormData(prev => ({ ...prev, category_id: e.target.value }))}
+            >
+              {sortedCats.map(c => (
+                <option key={c.id} value={c.id}>{c.nombre}</option>
+              ))}
+            </select>
 
             <label style={S.label}>Foto</label>
             <div style={S.imgPreviewWrap}>
