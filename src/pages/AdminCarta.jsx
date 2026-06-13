@@ -263,6 +263,7 @@ export default function AdminCarta() {
           <div style={S.restName}>{restaurant?.nombre}</div>
         </div>
         <div style={S.navTabs}>
+          <a href={`/admin/dashboard/${restaurantId}`} style={S.navTab(false)}>Dashboard</a>
           <a href={`/admin/mesas/${restaurantId}`} style={S.navTab(false)}>Mesas</a>
           <a href={`/admin/carta/${restaurantId}`} style={S.navTab(true)}>Carta</a>
           <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>

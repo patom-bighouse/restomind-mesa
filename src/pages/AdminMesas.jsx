@@ -151,6 +151,7 @@ export default function AdminMesas() {
           <div style={S.restName}>{restaurant?.nombre}</div>
         </div>
         <div style={S.navTabs}>
+          <a href={`/admin/dashboard/${restaurantId}`} style={S.navTab(false)}>Dashboard</a>
           <a href={`/admin/mesas/${restaurantId}`} style={S.navTab(true)}>Mesas</a>
           <a href={`/admin/carta/${restaurantId}`} style={S.navTab(false)}>Carta</a>
           <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
