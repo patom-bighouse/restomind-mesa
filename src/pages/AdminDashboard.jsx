@@ -118,6 +118,23 @@ export default function AdminDashboard() {
     loadOrders()
   }, [restaurant, range, customFrom, customTo])
 
+  // Realtime: refresca cuando cambian pedidos del restaurante
+  useEffect(() => {
+    if (!restaurant) return
+    const channel = supabase
+      .channel('dashboard-orders-' + restaurant.id)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'orders',
+        filter: `restaurant_id=eq.${restaurant.id}`
+      }, () => loadOrders())
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'order_items',
+      }, () => loadOrders())
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [restaurant])
+
   async function loadOrders() {
     const { from, to } = getRangeDates(range, customFrom, customTo)
     const { data, error: err } = await supabase
