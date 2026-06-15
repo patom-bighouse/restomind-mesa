@@ -76,7 +76,7 @@ export default function Cocina() {
     if (!orderIds.length) return
     const { data } = await supabase
       .from('order_items')
-      .select('order_id, nombre_snapshot, cantidad')
+      .select('order_id, nombre_snapshot, cantidad, notas')
       .in('order_id', orderIds)
     if (data) {
       setOrderItems(prev => {
@@ -117,7 +117,7 @@ export default function Cocina() {
   async function loadOrders() {
     const { data, error: err } = await supabase
       .from('orders')
-      .select('id, table_id, estado, total, created_at, tipo')
+      .select('id, table_id, estado, total, created_at, tipo, notas')
       .eq('restaurant_id', restaurantId)
       .in('estado', ['pendiente', 'preparando', 'listo'])
       .order('created_at', { ascending: true })
@@ -294,14 +294,27 @@ export default function Cocina() {
 
               <div style={S.itemsList}>
                 {items.length > 0 ? items.map((item, i) => (
-                  <div key={i} style={S.itemRow}>
-                    <span style={S.itemName}>{item.nombre_snapshot}</span>
-                    <span style={S.itemQty}>× {item.cantidad}</span>
+                  <div key={i}>
+                    <div style={S.itemRow}>
+                      <span style={S.itemName}>{item.nombre_snapshot}</span>
+                      <span style={S.itemQty}>× {item.cantidad}</span>
+                    </div>
+                    {item.notas && (
+                      <div style={{ fontSize: 12, color: '#f1c40f', background: '#2a2010', borderRadius: 6, padding: '4px 8px', marginTop: 4, marginBottom: 2 }}>
+                        📝 {item.notas}
+                      </div>
+                    )}
                   </div>
                 )) : (
                   <div style={{ fontSize: 12, color: '#555' }}>Cargando items...</div>
                 )}
               </div>
+
+              {order.notas && (
+                <div style={{ fontSize: 12, color: '#f1c40f', background: '#2a2010', border: '0.5px solid #4a3a10', borderRadius: 8, padding: '6px 10px' }}>
+                  📋 {order.notas}
+                </div>
+              )}
 
               {order.tipo === 'mesa' && (
                 <div style={{ fontSize: 12, color: '#8a7560', display: 'flex', justifyContent: 'space-between' }}>

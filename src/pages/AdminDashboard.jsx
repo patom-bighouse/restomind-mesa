@@ -139,7 +139,7 @@ export default function AdminDashboard() {
     const { from, to } = getRangeDates(range, customFrom, customTo)
     const { data, error: err } = await supabase
       .from('orders')
-      .select('id, table_id, estado, total, tipo, created_at')
+      .select('id, table_id, estado, total, tipo, created_at, notas')
       .eq('restaurant_id', restaurantId)
       .gte('created_at', from.toISOString())
       .lt('created_at', to.toISOString())
@@ -151,7 +151,7 @@ export default function AdminDashboard() {
     if (ids.length) {
       const { data: items } = await supabase
         .from('order_items')
-        .select('order_id, nombre_snapshot, cantidad, precio_snapshot')
+        .select('order_id, nombre_snapshot, cantidad, precio_snapshot, notas')
         .in('order_id', ids)
       const map = {}
       ;(items || []).forEach(i => {

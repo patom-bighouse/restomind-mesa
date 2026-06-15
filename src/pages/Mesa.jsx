@@ -45,6 +45,9 @@ const S = {
   loadingText: { fontSize: 14, color: '#7a6a50' },
   error: { margin: 20, background: '#2a1410', border: '0.5px solid #6a2e20', borderRadius: 12, padding: 16, fontSize: 13, color: '#e87a7a' },
   ref: { color: '#e8c97a', fontSize: 12, marginTop: 8 },
+  noteInput: { width: '100%', background: '#221c14', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '6px 10px', fontSize: 12, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', marginTop: 4, boxSizing: 'border-box' },
+  noteLabel: { fontSize: 11, color: '#7a6a50', marginTop: 2, cursor: 'pointer' },
+  notesTextarea: { width: '100%', background: '#221c14', border: '0.5px solid #3a2e20', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', resize: 'vertical', minHeight: 50, boxSizing: 'border-box', marginTop: 6 },
 }
 
 export default function Mesa() {
@@ -60,6 +63,8 @@ export default function Mesa() {
   const [overlay, setOverlay] = useState(null) // 'cart' | 'success' | 'waiter' | 'sending'
   const [orderId, setOrderId] = useState(null)
   const [sendError, setSendError] = useState(null)
+  const [orderNote, setOrderNote] = useState('')
+  const [editingNoteFor, setEditingNoteFor] = useState(null)
 
   async function loadMenu(restaurantId) {
     const { data: cats } = await supabase
@@ -137,8 +142,12 @@ export default function Mesa() {
         const { [item.id]: _, ...rest } = prev
         return rest
       }
-      return { ...prev, [item.id]: { qty: next, nombre: item.nombre, precio: parseFloat(item.precio) } }
+      return { ...prev, [item.id]: { qty: next, nombre: item.nombre, precio: parseFloat(item.precio), nota: prev[item.id]?.nota || '' } }
     })
+  }, [])
+
+  const updateNote = useCallback((itemId, nota) => {
+    setCart(prev => prev[itemId] ? { ...prev, [itemId]: { ...prev[itemId], nota } } : prev)
   }, [])
 
   const cartCount = Object.values(cart).reduce((a, b) => a + b.qty, 0)
@@ -153,7 +162,7 @@ export default function Mesa() {
       const cartItems = Object.entries(cart).map(([id, v]) => ({ id, ...v }))
       const { data: order, error: oErr } = await supabase
         .from('orders')
-        .insert({ restaurant_id: table.restaurant_id, table_id: table.id, tipo: 'mesa', estado: 'pendiente', total: parseFloat(cartTotal.toFixed(2)) })
+        .insert({ restaurant_id: table.restaurant_id, table_id: table.id, tipo: 'mesa', estado: 'pendiente', total: parseFloat(cartTotal.toFixed(2)), notas: orderNote.trim() || null })
         .select('id')
         .single()
       if (oErr) throw oErr
@@ -164,12 +173,15 @@ export default function Mesa() {
         nombre_snapshot: i.nombre,
         precio_snapshot: i.precio,
         cantidad: i.qty,
+        notas: i.nota?.trim() || null,
       }))
       const { error: lErr } = await supabase.from('order_items').insert(lines)
       if (lErr) throw lErr
 
       setOrderId(order.id)
       setCart({})
+      setOrderNote('')
+      setEditingNoteFor(null)
       setOverlay('success')
     } catch (e) {
       setSendError(e.message)
@@ -291,14 +303,42 @@ export default function Mesa() {
               <button style={S.closeBtn} onClick={() => setOverlay(null)}>×</button>
               <div style={S.sheetTitle}>Tu pedido</div>
               {Object.entries(cart).map(([id, v]) => (
-                <div key={id} style={S.oItem}>
-                  <div>
-                    <div style={S.oName}>{v.nombre}</div>
-                    <div style={S.oQty}>× {v.qty}</div>
+                <div key={id} style={{ ...S.oItem, flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={S.oName}>{v.nombre}</div>
+                      <div style={S.oQty}>× {v.qty}</div>
+                    </div>
+                    <div style={S.oPrice}>{(v.precio * v.qty).toFixed(2).replace('.', ',')} €</div>
                   </div>
-                  <div style={S.oPrice}>{(v.precio * v.qty).toFixed(2).replace('.', ',')} €</div>
+                  {editingNoteFor === id ? (
+                    <input
+                      style={S.noteInput}
+                      autoFocus
+                      placeholder="Ej. sin cebolla, poco hecho..."
+                      value={v.nota || ''}
+                      onChange={e => updateNote(id, e.target.value)}
+                      onBlur={() => setEditingNoteFor(null)}
+                      onKeyDown={e => e.key === 'Enter' && setEditingNoteFor(null)}
+                    />
+                  ) : (
+                    <div style={S.noteLabel} onClick={() => setEditingNoteFor(id)}>
+                      {v.nota ? `📝 ${v.nota}` : '+ Añadir nota a este plato'}
+                    </div>
+                  )}
                 </div>
               ))}
+
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 12, color: '#8a7560' }}>Nota general del pedido</div>
+                <textarea
+                  style={S.notesTextarea}
+                  placeholder="Ej. para compartir, es un cumpleaños..."
+                  value={orderNote}
+                  onChange={e => setOrderNote(e.target.value)}
+                />
+              </div>
+
               <div style={S.totalRow}>
                 <span style={{ fontSize: 15, color: '#8a7560' }}>Total</span>
                 <span style={{ fontSize: 17, fontWeight: 500, color: '#e8c97a' }}>{cartTotal.toFixed(2).replace('.', ',')} €</span>
