@@ -33,6 +33,8 @@ const S = {
   dlBtn: { flex: 1, background: '#e8c97a', color: '#111', border: 'none', borderRadius: 8, padding: '8px 0', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif" },
   toggleBtn: (activa) => ({ flex: 1, background: 'transparent', border: `0.5px solid ${activa ? '#c0392b' : '#27ae60'}`, borderRadius: 8, padding: '8px 0', fontSize: 12, fontWeight: 500, cursor: 'pointer', color: activa ? '#e74c3c' : '#2ecc71', fontFamily: "'Inter', sans-serif" }),
   deleteBtn: { width: '100%', background: 'transparent', border: '0.5px solid #2a1a1a', borderRadius: 8, padding: '7px 0', fontSize: 12, color: '#6a4040', cursor: 'pointer', fontFamily: "'Inter', sans-serif' " },
+  sessionBadge: (abierta) => ({ width: '100%', textAlign: 'center', fontSize: 11, fontWeight: 500, padding: '5px 0', borderRadius: 8, background: abierta ? '#0f2a15' : '#1a1a1a', color: abierta ? '#2ecc71' : '#666', border: `0.5px solid ${abierta ? '#27ae60' : '#2a2a2a'}` }),
+  sessionBtn: (abierta, disabled) => ({ width: '100%', background: disabled ? '#2a2a2a' : (abierta ? '#c0392b' : '#e8c97a'), color: disabled ? '#666' : (abierta ? '#fff' : '#111'), border: 'none', borderRadius: 8, padding: '9px 0', fontSize: 13, fontWeight: 500, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: "'Inter', sans-serif" }),
   error: { background: '#2a1410', border: '0.5px solid #6a2e20', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#e87a7a', marginBottom: 16 },
   statsBar: { display: 'flex', gap: 12, marginBottom: 28, flexWrap: 'wrap' },
   statCard: (color) => ({ background: '#1a1a1a', border: `1px solid ${color}`, borderRadius: 12, padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 4, minWidth: 120 }),
@@ -47,6 +49,8 @@ export default function AdminMesas() {
   const [restaurant, setRestaurant] = useState(null)
   const [tables, setTables] = useState([])
   const [qrUrls, setQrUrls] = useState({})
+  const [sessions, setSessions] = useState({}) // table_id -> sesión activa
+  const [sessionBusy, setSessionBusy] = useState(null) // table_id en proceso de abrir/cerrar
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [newNumero, setNewNumero] = useState('')
@@ -71,7 +75,63 @@ export default function AdminMesas() {
     if (err) { setError(err.message); setLoading(false); return }
     setTables(tabs || [])
     generateQRs(tabs || [])
+    await loadSessions()
     setLoading(false)
+  }
+
+  async function loadSessions() {
+    const { data: sess, error: err } = await supabase
+      .from('table_sessions')
+      .select('id, table_id, abierta_at')
+      .eq('restaurant_id', restaurantId)
+      .eq('estado', 'abierta')
+    if (err) { setError(err.message); return }
+    const map = {}
+    ;(sess || []).forEach(s => { map[s.table_id] = s })
+    setSessions(map)
+  }
+
+  async function openTable(table) {
+    setError(null)
+    setSessionBusy(table.id)
+    const { data, error: err } = await supabase
+      .from('table_sessions')
+      .insert({ table_id: table.id, restaurant_id: restaurantId })
+      .select('id, table_id, abierta_at')
+      .single()
+    setSessionBusy(null)
+    if (err) { setError(err.message); return }
+    setSessions(prev => ({ ...prev, [table.id]: data }))
+  }
+
+  async function closeTable(table) {
+    const session = sessions[table.id]
+    if (!session) return
+
+    // Resumen de consumo de la sesión antes de cerrar
+    const { data: pedidos } = await supabase
+      .from('orders')
+      .select('id, total')
+      .eq('table_session_id', session.id)
+      .neq('estado', 'cancelado')
+    const total = (pedidos || []).reduce((s, o) => s + parseFloat(o.total || 0), 0)
+    const cantidad = (pedidos || []).length
+
+    const resumen = cantidad > 0
+      ? `Pedidos en esta sesión: ${cantidad}\nTotal consumido: ${total.toFixed(2).replace('.', ',')}€\n\n`
+      : 'Esta sesión no tiene pedidos registrados.\n\n'
+
+    if (!window.confirm(`¿Cerrar Mesa ${table.numero}?\n\n${resumen}La mesa quedará libre para el siguiente cliente.`)) return
+
+    setError(null)
+    setSessionBusy(table.id)
+    const { error: err } = await supabase
+      .from('table_sessions')
+      .update({ estado: 'cerrada', cerrada_at: new Date().toISOString(), total })
+      .eq('id', session.id)
+    setSessionBusy(null)
+    if (err) { setError(err.message); return }
+    setSessions(prev => { const next = { ...prev }; delete next[table.id]; return next })
   }
 
   async function generateQRs(tabs) {
@@ -113,6 +173,10 @@ export default function AdminMesas() {
   }
 
   async function deleteTable(table) {
+    if (sessions[table.id]) {
+      setError(`La Mesa ${table.numero} tiene una sesión abierta. Cerrala primero antes de eliminarla.`)
+      return
+    }
     const { data: activeOrders } = await supabase
       .from('orders').select('id').eq('table_id', table.id).in('estado', ['pendiente', 'preparando', 'listo'])
     if (activeOrders && activeOrders.length > 0) {
@@ -218,6 +282,19 @@ export default function AdminMesas() {
                       </div>
                     )}
                     <div style={S.tokenText}>{`/mesa/${table.qr_token.slice(0, 16)}...`}</div>
+                    <div style={S.sessionBadge(!!sessions[table.id])}>
+                      {sessions[table.id]
+                        ? `🟢 Abierta desde ${new Date(sessions[table.id].abierta_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`
+                        : '⚪ Sin sesión activa'}
+                    </div>
+                    <button
+                      style={S.sessionBtn(!!sessions[table.id], sessionBusy === table.id || !table.activa)}
+                      onClick={() => sessions[table.id] ? closeTable(table) : openTable(table)}
+                      disabled={sessionBusy === table.id || !table.activa}
+                      title={!table.activa ? 'Activa la mesa primero para poder abrirla' : ''}
+                    >
+                      {sessionBusy === table.id ? 'Procesando...' : (sessions[table.id] ? 'Cerrar mesa' : 'Abrir mesa')}
+                    </button>
                     <div style={S.btnRow}>
                       <button style={S.dlBtn} onClick={() => downloadQR(table)}>⬇ QR</button>
                       <button style={S.toggleBtn(table.activa)} onClick={() => toggleTable(table)}>

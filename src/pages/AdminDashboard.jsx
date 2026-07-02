@@ -50,6 +50,8 @@ const S = {
     const c = colors[estado] || '#888'
     return { fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 20, background: `${c}22`, color: c }
   },
+  sesionEstadoBadge: (abierta) => ({ fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 20, background: abierta ? '#0f2a1522' : '#1a1a1a', color: abierta ? '#2ecc71' : '#888', border: `0.5px solid ${abierta ? '#27ae60' : '#333'}` }),
+  pagoBadge: (pagado) => ({ fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 20, background: pagado ? '#0f2a1522' : '#2a201022', color: pagado ? '#2ecc71' : '#e8b84a' }),
 }
 
 const RANGES = {
@@ -93,6 +95,7 @@ export default function AdminDashboard() {
   const [orders, setOrders] = useState([])
   const [orderItemsMap, setOrderItemsMap] = useState({})
   const [tables, setTables] = useState({})
+  const [sessions, setSessions] = useState([])
 
   useEffect(() => { checkAuth() }, [])
 
@@ -116,7 +119,21 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (!restaurant) return
     loadOrders()
+    loadSessions()
   }, [restaurant, range, customFrom, customTo])
+
+  async function loadSessions() {
+    const { from, to } = getRangeDates(range, customFrom, customTo)
+    const { data, error: err } = await supabase
+      .from('table_sessions')
+      .select('id, table_id, estado, abierta_at, cerrada_at, total, estado_pago')
+      .eq('restaurant_id', restaurantId)
+      .gte('abierta_at', from.toISOString())
+      .lt('abierta_at', to.toISOString())
+      .order('abierta_at', { ascending: false })
+    if (err) { setError(err.message); return }
+    setSessions(data || [])
+  }
 
   // Realtime: refresca cuando cambian pedidos del restaurante
   useEffect(() => {
@@ -130,6 +147,10 @@ export default function AdminDashboard() {
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'order_items',
       }, () => loadOrders())
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'table_sessions',
+        filter: `restaurant_id=eq.${restaurant.id}`
+      }, () => loadSessions())
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
@@ -139,7 +160,7 @@ export default function AdminDashboard() {
     const { from, to } = getRangeDates(range, customFrom, customTo)
     const { data, error: err } = await supabase
       .from('orders')
-      .select('id, table_id, estado, total, tipo, created_at, notas')
+      .select('id, table_id, table_session_id, estado, total, tipo, created_at, notas')
       .eq('restaurant_id', restaurantId)
       .gte('created_at', from.toISOString())
       .lt('created_at', to.toISOString())
@@ -203,6 +224,20 @@ export default function AdminDashboard() {
     horaCounts[h]++
   })
   const horaData = Object.entries(horaCounts).map(([h, count]) => ({ hora: `${h}h`, pedidos: count }))
+
+  // Sesiones de mesa (agrupa los pedidos por visita de cliente, no solo por mesa física)
+  const pedidosPorSesion = {}
+  validOrders.forEach(o => {
+    if (!o.table_session_id) return
+    if (!pedidosPorSesion[o.table_session_id]) pedidosPorSesion[o.table_session_id] = { count: 0, total: 0 }
+    pedidosPorSesion[o.table_session_id].count += 1
+    pedidosPorSesion[o.table_session_id].total += parseFloat(o.total || 0)
+  })
+  const sesionesConDatos = sessions.map(s => ({
+    ...s,
+    pedidos: pedidosPorSesion[s.id]?.count || 0,
+    totalCalculado: pedidosPorSesion[s.id]?.total ?? parseFloat(s.total || 0),
+  })).sort((a, b) => new Date(b.abierta_at) - new Date(a.abierta_at))
 
   return (
     <div style={S.app}>
@@ -306,6 +341,48 @@ export default function AdminDashboard() {
                     <div style={S.mesaCount}>{count} {count === 1 ? 'pedido' : 'pedidos'}</div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Sesiones de mesa (visitas de clientes) */}
+        <div style={S.section}>
+          <div style={S.chartCard}>
+            <div style={S.cardTitle}>Sesiones de mesa ({sesionesConDatos.length})</div>
+            <div style={{ fontSize: 12, color: '#666', marginBottom: 14, marginTop: -6 }}>
+              Cada fila es una visita: agrupa todos los pedidos hechos por el mismo cliente/grupo mientras la mesa estuvo abierta.
+            </div>
+            {sesionesConDatos.length === 0 ? (
+              <div style={{ fontSize: 13, color: '#555' }}>Sin sesiones de mesa en este rango.</div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={S.table}>
+                  <thead>
+                    <tr>
+                      <th style={S.th}>Mesa</th>
+                      <th style={S.th}>Abierta</th>
+                      <th style={S.th}>Cerrada</th>
+                      <th style={S.th}>Pedidos</th>
+                      <th style={S.th}>Total</th>
+                      <th style={S.th}>Estado</th>
+                      <th style={S.th}>Pago</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sesionesConDatos.map(s => (
+                      <tr key={s.id}>
+                        <td style={S.td}>Mesa {tables[s.table_id]?.numero ?? '?'}</td>
+                        <td style={S.td}>{new Date(s.abierta_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+                        <td style={S.td}>{s.cerrada_at ? new Date(s.cerrada_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                        <td style={S.td}>{s.pedidos}</td>
+                        <td style={S.td}>{s.totalCalculado.toFixed(2).replace('.', ',')} €</td>
+                        <td style={S.td}><span style={S.sesionEstadoBadge(s.estado === 'abierta')}>{s.estado === 'abierta' ? 'En curso' : 'Cerrada'}</span></td>
+                        <td style={S.td}><span style={S.pagoBadge(s.estado_pago === 'pagado')}>{s.estado_pago === 'pagado' ? 'Pagado' : 'Pendiente'}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
