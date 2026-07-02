@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { playNewOrderChime, playWaiterBell } from '../lib/sound'
+import { playNewOrderChime, playWaiterBell, unlockAudio } from '../lib/sound'
 
 const ESTADOS = ['pendiente', 'preparando', 'listo', 'entregado']
 
@@ -141,6 +141,14 @@ export default function Cocina() {
     setOrders(data || [])
     await loadOrderItems((data || []).map(o => o.id))
   }
+
+  useEffect(() => {
+    // Desbloquea el audio con la primera interacción real del usuario,
+    // así los avisos que lleguen después por Realtime sí pueden sonar.
+    const unlock = () => { unlockAudio(); window.removeEventListener('pointerdown', unlock) }
+    window.addEventListener('pointerdown', unlock)
+    return () => window.removeEventListener('pointerdown', unlock)
+  }, [])
 
   useEffect(() => {
     async function init() {

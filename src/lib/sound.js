@@ -7,27 +7,31 @@
 let audioCtx = null
 
 function getCtx() {
-  const Ctx = window.AudioContext || window.webkitAudioContext
-  if (!Ctx) return null
-  if (!audioCtx) {
-    audioCtx = new Ctx()
-    // Compresor de rango dinámico: permite subir el volumen general
-    // sin que los armónicos se saturen o distorsionen al sumarse.
-    const compressor = audioCtx.createDynamicsCompressor()
-    compressor.threshold.value = -12
-    compressor.knee.value = 20
-    compressor.ratio.value = 4
-    compressor.attack.value = 0.003
-    compressor.release.value = 0.25
-    compressor.connect(audioCtx.destination)
-    audioCtx._master = compressor
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext
+    if (!Ctx) return null
+    if (!audioCtx) {
+      audioCtx = new Ctx()
+      // Compresor de rango dinámico: permite subir el volumen general
+      // sin que los armónicos se saturen o distorsionen al sumarse.
+      const compressor = audioCtx.createDynamicsCompressor()
+      compressor.threshold.value = -12
+      compressor.knee.value = 20
+      compressor.ratio.value = 4
+      compressor.attack.value = 0.003
+      compressor.release.value = 0.25
+      compressor.connect(audioCtx.destination)
+      audioCtx._master = compressor
+    }
+    // Los navegadores suspenden el audio hasta la primera interacción
+    // del usuario con la página; esto lo reactiva si hace falta.
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(() => {})
+    }
+    return audioCtx
+  } catch (e) {
+    return null
   }
-  // Los navegadores suspenden el audio hasta la primera interacción
-  // del usuario con la página; esto lo reactiva si hace falta.
-  if (audioCtx.state === 'suspended') {
-    audioCtx.resume().catch(() => {})
-  }
-  return audioCtx
 }
 
 // Una campana real no es un tono puro: es un fundamental + varios
@@ -41,23 +45,37 @@ const BELL_PARTIALS = [
   { ratio: 4.2,  gain: 0.16, decay: 0.32 },
 ]
 
+/**
+ * Debe llamarse una vez, desde un handler de interacción real del
+ * usuario (click/tap), apenas se monta la pantalla. Los navegadores
+ * bloquean el audio hasta que hay una interacción genuina; si el
+ * primer sonido que se intenta reproducir llega por un evento async
+ * (como un aviso de Realtime), el navegador lo silencia sin avisar.
+ * Llamar esto temprano "desbloquea" el audio para esos casos.
+ */
+export function unlockAudio() {
+  getCtx()
+}
+
 function strikeBell(freq, volume, startTime = 0) {
-  const ctx = getCtx()
-  if (!ctx) return
-  const now = ctx.currentTime + startTime
-  BELL_PARTIALS.forEach(p => {
-    const osc = ctx.createOscillator()
-    osc.type = 'sine'
-    osc.frequency.value = freq * p.ratio
-    const gain = ctx.createGain()
-    gain.gain.setValueAtTime(0, now)
-    gain.gain.linearRampToValueAtTime(volume * p.gain, now + 0.006)
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + p.decay)
-    osc.connect(gain)
-    gain.connect(ctx._master)
-    osc.start(now)
-    osc.stop(now + p.decay + 0.05)
-  })
+  try {
+    const ctx = getCtx()
+    if (!ctx) return
+    const now = ctx.currentTime + startTime
+    BELL_PARTIALS.forEach(p => {
+      const osc = ctx.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.value = freq * p.ratio
+      const gain = ctx.createGain()
+      gain.gain.setValueAtTime(0, now)
+      gain.gain.linearRampToValueAtTime(volume * p.gain, now + 0.006)
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + p.decay)
+      osc.connect(gain)
+      gain.connect(ctx._master)
+      osc.start(now)
+      osc.stop(now + p.decay + 0.05)
+    })
+  } catch (e) {}
 }
 
 /** Campanita de dos notas ascendente — aviso de pedido nuevo. */

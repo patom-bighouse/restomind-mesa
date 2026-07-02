@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { playWaiterBell } from '../lib/sound'
+import { playWaiterBell, unlockAudio } from '../lib/sound'
 import QRCode from 'qrcode'
 
 const BASE_URL = 'https://restomind-mesa.vercel.app'
@@ -61,6 +61,12 @@ export default function AdminMesas() {
   const [adding, setAdding] = useState(false)
 
   useEffect(() => { checkAuth() }, [])
+
+  useEffect(() => {
+    const unlock = () => { unlockAudio(); window.removeEventListener('pointerdown', unlock) }
+    window.addEventListener('pointerdown', unlock)
+    return () => window.removeEventListener('pointerdown', unlock)
+  }, [])
 
   useEffect(() => {
     if (!restaurantId) return
