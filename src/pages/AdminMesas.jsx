@@ -208,11 +208,65 @@ export default function AdminMesas() {
       .neq('estado', 'cancelado')
     const total = (pedidos || []).reduce((s, o) => s + parseFloat(o.total || 0), 0)
 
+    // Chequeo de seguridad (el botón ya viene deshabilitado desde
+    // CuentaMesa si falta cobrar, esto es una segunda verificación
+    // antes de escribir en la base).
+    const { data: pagos } = await supabase
+      .from('table_session_payments')
+      .select('monto, metodo_pago')
+      .eq('table_session_id', session.id)
+      .eq('estado', 'registrado')
+    const totalPagado = (pagos || []).reduce((s, p) => s + parseFloat(p.monto || 0), 0)
+    if (total - totalPagado > 0.01) {
+      setError(`Faltan ${(total - totalPagado).toFixed(2).replace('.', ',')}€ por cobrar antes de cerrar la mesa.`)
+      return
+    }
+    const metodosUsados = [...new Set((pagos || []).map(p => p.metodo_pago))]
+    const metodoPago = metodosUsados.length === 1 ? metodosUsados[0] : 'mixto'
+
     setError(null)
     setClosingSession(true)
     const { error: err } = await supabase
       .from('table_sessions')
-      .update({ estado: 'cerrada', cerrada_at: new Date().toISOString(), total })
+      .update({
+        estado: 'cerrada',
+        cerrada_at: new Date().toISOString(),
+        total,
+        estado_pago: 'pagado',
+        metodo_pago: metodoPago,
+        pagada_at: new Date().toISOString(),
+      })
+      .eq('id', session.id)
+    setClosingSession(false)
+    if (err) { setError(err.message); return }
+    setSessions(prev => { const next = { ...prev }; delete next[table.id]; return next })
+    setCuentaModal(null)
+  }
+
+  async function confirmCerrarExencion(motivo) {
+    const { table, session } = cuentaModal
+    if (!session || !motivo?.trim()) return
+
+    const { data: pedidos } = await supabase
+      .from('orders')
+      .select('total')
+      .eq('table_session_id', session.id)
+      .neq('estado', 'cancelado')
+    const total = (pedidos || []).reduce((s, o) => s + parseFloat(o.total || 0), 0)
+
+    setError(null)
+    setClosingSession(true)
+    const { error: err } = await supabase
+      .from('table_sessions')
+      .update({
+        estado: 'cerrada',
+        cerrada_at: new Date().toISOString(),
+        total,
+        estado_pago: 'exento',
+        motivo_exencion: motivo.trim(),
+        pagada_at: null,
+        metodo_pago: null,
+      })
       .eq('id', session.id)
     setClosingSession(false)
     if (err) { setError(err.message); return }
@@ -438,8 +492,10 @@ export default function AdminMesas() {
           session={cuentaModal.session}
           table={cuentaModal.table}
           restaurantName={restaurant?.nombre}
+          restaurantId={restaurantId}
           onClose={() => setCuentaModal(null)}
           onConfirmCerrar={cuentaModal.mode === 'cerrar' ? confirmCloseTable : null}
+          onConfirmExencion={cuentaModal.mode === 'cerrar' ? confirmCerrarExencion : null}
           closing={closingSession}
         />
       )}

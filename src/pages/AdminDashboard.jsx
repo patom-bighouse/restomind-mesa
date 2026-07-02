@@ -51,7 +51,10 @@ const S = {
     return { fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 20, background: `${c}22`, color: c }
   },
   sesionEstadoBadge: (abierta) => ({ fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 20, background: abierta ? '#0f2a1522' : '#1a1a1a', color: abierta ? '#2ecc71' : '#888', border: `0.5px solid ${abierta ? '#27ae60' : '#333'}` }),
-  pagoBadge: (pagado) => ({ fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 20, background: pagado ? '#0f2a1522' : '#2a201022', color: pagado ? '#2ecc71' : '#e8b84a' }),
+  pagoBadge: (estado) => {
+    const c = estado === 'pagado' ? '#2ecc71' : estado === 'exento' ? '#7aa8e8' : '#e8b84a'
+    return { fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 20, background: `${c}22`, color: c }
+  },
 }
 
 const RANGES = {
@@ -126,7 +129,7 @@ export default function AdminDashboard() {
     const { from, to } = getRangeDates(range, customFrom, customTo)
     const { data, error: err } = await supabase
       .from('table_sessions')
-      .select('id, table_id, estado, abierta_at, cerrada_at, total, estado_pago')
+      .select('id, table_id, estado, abierta_at, cerrada_at, total, estado_pago, motivo_exencion')
       .eq('restaurant_id', restaurantId)
       .gte('abierta_at', from.toISOString())
       .lt('abierta_at', to.toISOString())
@@ -378,7 +381,14 @@ export default function AdminDashboard() {
                         <td style={S.td}>{s.pedidos}</td>
                         <td style={S.td}>{s.totalCalculado.toFixed(2).replace('.', ',')} €</td>
                         <td style={S.td}><span style={S.sesionEstadoBadge(s.estado === 'abierta')}>{s.estado === 'abierta' ? 'En curso' : 'Cerrada'}</span></td>
-                        <td style={S.td}><span style={S.pagoBadge(s.estado_pago === 'pagado')}>{s.estado_pago === 'pagado' ? 'Pagado' : 'Pendiente'}</span></td>
+                        <td style={S.td}>
+                          <span
+                            style={S.pagoBadge(s.estado_pago)}
+                            title={s.estado_pago === 'exento' ? (s.motivo_exencion || 'Invitación de la casa') : ''}
+                          >
+                            {s.estado_pago === 'pagado' ? 'Pagado' : s.estado_pago === 'exento' ? '🏠 Invitación' : 'Pendiente'}
+                          </span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

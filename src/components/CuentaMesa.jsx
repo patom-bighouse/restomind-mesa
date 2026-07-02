@@ -25,7 +25,31 @@ const S = {
   btnDanger: { flex: 1, background: 'transparent', border: '0.5px solid #6a2e20', borderRadius: 10, padding: 12, fontSize: 14, fontWeight: 500, color: '#e87a7a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" },
   loading: { padding: 40, textAlign: 'center', color: '#555', fontSize: 13 },
   empty: { padding: '20px 0', textAlign: 'center', color: '#555', fontSize: 13 },
+  cobroSection: { padding: '16px 24px', borderTop: '0.5px solid #2a2a2a' },
+  cobroTitle: { fontSize: 13, fontWeight: 500, color: '#c4a85a', marginBottom: 10 },
+  cobroProgress: (cubierto) => ({ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', background: cubierto ? '#0f2a15' : '#2a1f10', border: `0.5px solid ${cubierto ? '#27ae60' : '#8a6a20'}`, borderRadius: 10, padding: '10px 14px', marginBottom: 12 }),
+  cobroProgressLabel: { fontSize: 12, color: '#8a7560' },
+  cobroProgressValue: (cubierto) => ({ fontSize: 15, fontWeight: 600, color: cubierto ? '#2ecc71' : '#e8b84a' }),
+  pagoRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, color: '#f0e8d8', padding: '6px 0', borderBottom: '0.5px solid #222' },
+  pagoMeta: { fontSize: 11, color: '#7a6a50' },
+  pagoAnularBtn: { background: 'transparent', border: 'none', color: '#8a5050', fontSize: 11, cursor: 'pointer', fontFamily: "'Inter', sans-serif", textDecoration: 'underline' },
+  addPagoRow: { display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' },
+  addPagoInput: { background: '#111', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '9px 10px', fontSize: 13, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', width: 90 },
+  addPagoSelect: { background: '#111', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '9px 10px', fontSize: 13, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', flex: 1, minWidth: 100 },
+  addPagoBtn: { background: '#c4a85a', border: 'none', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 500, color: '#111', cursor: 'pointer', fontFamily: "'Inter', sans-serif" },
+  cierreBloqueado: { fontSize: 11, color: '#e8b84a', textAlign: 'center', width: '100%', marginTop: -4, marginBottom: 4 },
+  exencionToggle: { fontSize: 11, color: '#6a5a45', textDecoration: 'underline', cursor: 'pointer', textAlign: 'center', width: '100%', marginTop: 2, background: 'none', border: 'none', fontFamily: "'Inter', sans-serif" },
+  exencionBox: { padding: '0 24px 16px' },
+  exencionInput: { width: '100%', background: '#111', border: '0.5px solid #5a4020', borderRadius: 8, padding: '9px 12px', fontSize: 13, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', boxSizing: 'border-box', marginBottom: 8 },
+  exencionBtn: (disabled) => ({ width: '100%', background: 'transparent', border: '0.5px solid #6a5020', borderRadius: 8, padding: 10, fontSize: 12, fontWeight: 500, color: disabled ? '#555' : '#c99a4a', cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: "'Inter', sans-serif" }),
 }
+
+const METODOS = [
+  { value: 'tarjeta', label: '💳 Tarjeta' },
+  { value: 'efectivo', label: '💶 Efectivo' },
+  { value: 'bizum', label: '📱 Bizum' },
+  { value: 'otro', label: '🔹 Otro' },
+]
 
 /**
  * Modal con el detalle de consumo de una sesión de mesa (todos los
@@ -37,17 +61,51 @@ const S = {
  * - session: { id, abierta_at }
  * - table: { numero, zona }
  * - restaurantName: string
+ * - restaurantId: string (necesario para registrar cobros)
  * - onClose: () => void   (cerrar el modal sin hacer nada más)
  * - onConfirmCerrar: () => void | null   (si se pasa, muestra el
  *   botón "Confirmar cierre de mesa"; si no, es solo lectura)
+ * - onConfirmExencion: (motivo: string) => void | null   (si se pasa,
+ *   habilita la opción "Invitación de la casa" para cerrar sin
+ *   cobro completo, dejando un motivo registrado)
  * - closing: boolean (estado de carga mientras se confirma el cierre)
  */
-export default function CuentaMesa({ session, table, restaurantName, onClose, onConfirmCerrar, closing }) {
+export default function CuentaMesa({ session, table, restaurantName, restaurantId, onClose, onConfirmCerrar, onConfirmExencion, closing }) {
   const [loading, setLoading] = useState(true)
   const [pedidos, setPedidos] = useState([]) // [{ id, created_at, items: [...] }]
+  const [pagos, setPagos] = useState([])
   const [error, setError] = useState(null)
+  const [montoInput, setMontoInput] = useState('')
+  const [metodoInput, setMetodoInput] = useState('tarjeta')
+  const [addingPago, setAddingPago] = useState(false)
+  const [showExencion, setShowExencion] = useState(false)
+  const [motivoExencion, setMotivoExencion] = useState('')
 
   useEffect(() => { loadCuenta() }, [session?.id])
+
+  useEffect(() => {
+    if (!session?.id) return
+    const channel = supabase
+      .channel(`cuenta-mesa-pagos-${session.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'table_session_payments',
+        filter: `table_session_id=eq.${session.id}`
+      }, () => loadPagos())
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [session?.id])
+
+  async function loadPagos() {
+    const { data } = await supabase
+      .from('table_session_payments')
+      .select('id, monto, metodo_pago, estado, created_at')
+      .eq('table_session_id', session.id)
+      .eq('estado', 'registrado')
+      .order('created_at', { ascending: true })
+    setPagos(data || [])
+  }
 
   async function loadCuenta() {
     if (!session?.id) return
@@ -78,6 +136,7 @@ export default function CuentaMesa({ session, table, restaurantName, onClose, on
         items: items.filter(i => i.order_id === o.id),
       }))
       setPedidos(armados)
+      await loadPagos()
     } catch (e) {
       setError(e.message)
     } finally {
@@ -86,6 +145,33 @@ export default function CuentaMesa({ session, table, restaurantName, onClose, on
   }
 
   const total = pedidos.reduce((sum, p) => sum + parseFloat(p.total || 0), 0)
+  const totalPagado = pagos.reduce((sum, p) => sum + parseFloat(p.monto || 0), 0)
+  const falta = Math.max(0, total - totalPagado)
+  const cubierto = falta <= 0.01
+
+  async function addPago() {
+    const monto = parseFloat(montoInput.replace(',', '.'))
+    if (!monto || monto <= 0) return
+    setAddingPago(true)
+    setError(null)
+    const { error: err } = await supabase
+      .from('table_session_payments')
+      .insert({ table_session_id: session.id, restaurant_id: restaurantId, monto, metodo_pago: metodoInput })
+    setAddingPago(false)
+    if (err) { setError(err.message); return }
+    setMontoInput('')
+    await loadPagos()
+  }
+
+  async function voidPago(id) {
+    if (!window.confirm('¿Anular este cobro? Volverá a contar como pendiente.')) return
+    const { error: err } = await supabase
+      .from('table_session_payments')
+      .update({ estado: 'anulado' })
+      .eq('id', id)
+    if (err) { setError(err.message); return }
+    await loadPagos()
+  }
 
   function handlePrint() {
     window.print()
@@ -119,6 +205,18 @@ export default function CuentaMesa({ session, table, restaurantName, onClose, on
           <span>TOTAL</span>
           <span>{total.toFixed(2).replace('.', ',')}€</span>
         </div>
+        {pagos.length > 0 && (
+          <>
+            <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
+            <div style={{ fontSize: 11, marginBottom: 4 }}>— Cobros registrados —</div>
+            {pagos.map(p => (
+              <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>{METODOS.find(m => m.value === p.metodo_pago)?.label || p.metodo_pago}</span>
+                <span>{parseFloat(p.monto).toFixed(2).replace('.', ',')}€</span>
+              </div>
+            ))}
+          </>
+        )}
       </div>
     </div>
   )
@@ -177,15 +275,86 @@ export default function CuentaMesa({ session, table, restaurantName, onClose, on
             <span style={S.totalValue}>{total.toFixed(2).replace('.', ',')}€</span>
           </div>
 
+          <div style={S.cobroSection}>
+            <div style={S.cobroTitle}>Cobro</div>
+
+            <div style={S.cobroProgress(cubierto)}>
+              <span style={S.cobroProgressLabel}>
+                {cubierto ? '✅ Cobrado en su totalidad' : `Cobrado ${totalPagado.toFixed(2).replace('.', ',')}€ de ${total.toFixed(2).replace('.', ',')}€`}
+              </span>
+              {!cubierto && <span style={S.cobroProgressValue(false)}>Faltan {falta.toFixed(2).replace('.', ',')}€</span>}
+            </div>
+
+            {pagos.map(p => (
+              <div key={p.id} style={S.pagoRow}>
+                <div>
+                  <span>{p.monto.toFixed ? p.monto.toFixed(2).replace('.', ',') : parseFloat(p.monto).toFixed(2).replace('.', ',')}€</span>
+                  {' · '}
+                  <span>{METODOS.find(m => m.value === p.metodo_pago)?.label || p.metodo_pago}</span>
+                  <div style={S.pagoMeta}>{new Date(p.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</div>
+                </div>
+                <button style={S.pagoAnularBtn} onClick={() => voidPago(p.id)}>Anular</button>
+              </div>
+            ))}
+
+            {!cubierto && (
+              <div style={S.addPagoRow}>
+                <input
+                  style={S.addPagoInput}
+                  type="number"
+                  step="0.01"
+                  placeholder={falta.toFixed(2)}
+                  value={montoInput}
+                  onChange={e => setMontoInput(e.target.value)}
+                />
+                <select style={S.addPagoSelect} value={metodoInput} onChange={e => setMetodoInput(e.target.value)}>
+                  {METODOS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+                <button style={S.addPagoBtn} onClick={addPago} disabled={addingPago}>
+                  {addingPago ? '...' : '+ Registrar'}
+                </button>
+              </div>
+            )}
+          </div>
+
           <div style={S.actions}>
             <button style={S.btnGhost} onClick={onClose}>Cerrar</button>
             <button style={S.btnGhost} onClick={handlePrint}>🖨 Imprimir</button>
             {onConfirmCerrar && (
-              <button style={S.btnDanger} onClick={onConfirmCerrar} disabled={closing}>
+              <button style={S.btnDanger} onClick={onConfirmCerrar} disabled={closing || !cubierto} title={!cubierto ? `Faltan ${falta.toFixed(2).replace('.', ',')}€ por cobrar` : ''}>
                 {closing ? 'Cerrando...' : 'Confirmar cierre'}
               </button>
             )}
           </div>
+          {onConfirmCerrar && !cubierto && (
+            <div style={S.cierreBloqueado}>Registrá el cobro completo para poder cerrar la mesa</div>
+          )}
+
+          {onConfirmExencion && !cubierto && (
+            <div style={S.exencionBox}>
+              {!showExencion ? (
+                <button style={S.exencionToggle} onClick={() => setShowExencion(true)}>
+                  ¿Es una invitación de la casa? Cerrar sin cobro completo
+                </button>
+              ) : (
+                <>
+                  <input
+                    style={S.exencionInput}
+                    placeholder="Motivo (obligatorio, ej. cumpleaños del cliente)"
+                    value={motivoExencion}
+                    onChange={e => setMotivoExencion(e.target.value)}
+                  />
+                  <button
+                    style={S.exencionBtn(closing || !motivoExencion.trim())}
+                    disabled={closing || !motivoExencion.trim()}
+                    onClick={() => onConfirmExencion(motivoExencion.trim())}
+                  >
+                    {closing ? 'Cerrando...' : `🏠 Cerrar como invitación de la casa (faltaban ${falta.toFixed(2).replace('.', ',')}€)`}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
