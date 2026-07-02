@@ -204,8 +204,27 @@ export default function Mesa() {
       setEditingNoteFor(null)
       setOverlay('success')
     } catch (e) {
-      setSendError(e.message)
-      setOverlay('cart')
+      // Si la sesión se cerró mientras el cliente tenía el carrito
+      // abierto (ej. se le bloqueó el teléfono y perdió la conexión
+      // en tiempo real), la base rechaza el pedido con un error de
+      // RLS. En vez de mostrar ese mensaje técnico, confirmamos el
+      // estado real de la mesa y mandamos al cliente a la pantalla
+      // de espera correspondiente.
+      const esMesaCerrada = e.code === '42501' || /row-level security/i.test(e.message || '')
+      if (esMesaCerrada) {
+        const { data: sessionActual } = await supabase
+          .from('table_sessions')
+          .select('id, estado, abierta_at')
+          .eq('table_id', table.id)
+          .eq('estado', 'abierta')
+          .maybeSingle()
+        setSession(sessionActual || null)
+        setSendError(null)
+        setOverlay(null)
+      } else {
+        setSendError(e.message)
+        setOverlay('cart')
+      }
     }
   }
 

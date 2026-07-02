@@ -91,70 +91,103 @@ export default function CuentaMesa({ session, table, restaurantName, onClose, on
   }
 
   return (
-    <div style={S.overlay} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <>
       <style>{`
         @media print {
-          body * { visibility: hidden; }
-          #cuenta-mesa-print, #cuenta-mesa-print * { visibility: visible; }
-          #cuenta-mesa-print { position: fixed; inset: 0; background: #fff !important; color: #000 !important; }
-          #cuenta-mesa-print * { background: #fff !important; color: #000 !important; border-color: #ccc !important; }
-          #cuenta-mesa-print .no-print { display: none !important; }
+          .cuenta-mesa-overlay { display: none !important; }
+          #ticket-imprimible { display: block !important; }
         }
       `}</style>
-      <div style={S.modal} id="cuenta-mesa-print">
-        <div style={S.header}>
-          <div style={S.restName}>{restaurantName}</div>
-          <div style={S.mesaInfo}>
-            Mesa {table?.numero} · {table?.zona}
-            {session?.abierta_at && (
-              <> · desde {new Date(session.abierta_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</>
+
+      <div style={S.overlay} className="cuenta-mesa-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+        <div style={S.modal}>
+          <div style={S.header}>
+            <div style={S.restName}>{restaurantName}</div>
+            <div style={S.mesaInfo}>
+              Mesa {table?.numero} · {table?.zona}
+              {session?.abierta_at && (
+                <> · desde {new Date(session.abierta_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</>
+              )}
+            </div>
+          </div>
+
+          <div style={S.body}>
+            {loading && <div style={S.loading}>Cargando cuenta...</div>}
+            {error && <div style={{ ...S.loading, color: '#e87a7a' }}>{error}</div>}
+            {!loading && !error && pedidos.length === 0 && (
+              <div style={S.empty}>Todavía no hay pedidos en esta sesión.</div>
+            )}
+            {!loading && !error && pedidos.map(pedido => (
+              <div key={pedido.id} style={S.pedidoBlock}>
+                <div style={S.pedidoHora}>
+                  Pedido de las {new Date(pedido.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                </div>
+                {pedido.items.map(item => (
+                  <div key={item.id} style={S.itemRow}>
+                    <div style={S.itemNombre}>
+                      {item.cantidad}× {item.nombre_snapshot}
+                      {item.notas && <div style={S.itemNota}>{item.notas}</div>}
+                    </div>
+                    <div style={S.itemPrecio}>
+                      {(parseFloat(item.precio_snapshot) * item.cantidad).toFixed(2).replace('.', ',')}€
+                    </div>
+                  </div>
+                ))}
+                {pedido.notas && <div style={S.itemNota}>Nota del pedido: {pedido.notas}</div>}
+                <div style={S.pedidoSubtotal}>Subtotal: {parseFloat(pedido.total || 0).toFixed(2).replace('.', ',')}€</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={S.totalRow}>
+            <span style={S.totalLabel}>Total</span>
+            <span style={S.totalValue}>{total.toFixed(2).replace('.', ',')}€</span>
+          </div>
+
+          <div style={S.actions}>
+            <button style={S.btnGhost} onClick={onClose}>Cerrar</button>
+            <button style={S.btnGhost} onClick={handlePrint}>🖨 Imprimir</button>
+            {onConfirmCerrar && (
+              <button style={S.btnDanger} onClick={onConfirmCerrar} disabled={closing}>
+                {closing ? 'Cerrando...' : 'Confirmar cierre'}
+              </button>
             )}
           </div>
         </div>
+      </div>
 
-        <div style={S.body}>
-          {loading && <div style={S.loading}>Cargando cuenta...</div>}
-          {error && <div style={{ ...S.loading, color: '#e87a7a' }}>{error}</div>}
-          {!loading && !error && pedidos.length === 0 && (
-            <div style={S.empty}>Todavía no hay pedidos en esta sesión.</div>
-          )}
-          {!loading && !error && pedidos.map(pedido => (
-            <div key={pedido.id} style={S.pedidoBlock}>
-              <div style={S.pedidoHora}>
-                Pedido de las {new Date(pedido.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+      {/* Ticket imprimible: invisible en pantalla, solo aparece al imprimir.
+          Es un documento simple en flujo normal (sin overlay ni position:fixed)
+          para que el navegador lo pagine bien, sin páginas de más. */}
+      <div id="ticket-imprimible" style={{ display: 'none' }}>
+        <div style={{ fontFamily: "'Courier New', monospace", width: 320, margin: '0 auto', color: '#000', fontSize: 13, lineHeight: 1.5 }}>
+          <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 16, marginBottom: 4 }}>{restaurantName}</div>
+          <div style={{ textAlign: 'center', marginBottom: 10 }}>
+            Mesa {table?.numero} · {table?.zona}<br />
+            {session?.abierta_at && new Date(session.abierta_at).toLocaleString('es-ES')}
+          </div>
+          <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
+          {pedidos.map(pedido => (
+            <div key={pedido.id} style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 11, marginBottom: 4 }}>
+                — Pedido {new Date(pedido.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })} —
               </div>
               {pedido.items.map(item => (
-                <div key={item.id} style={S.itemRow}>
-                  <div style={S.itemNombre}>
-                    {item.cantidad}× {item.nombre_snapshot}
-                    {item.notas && <div style={S.itemNota}>{item.notas}</div>}
-                  </div>
-                  <div style={S.itemPrecio}>
-                    {(parseFloat(item.precio_snapshot) * item.cantidad).toFixed(2).replace('.', ',')}€
-                  </div>
+                <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>{item.cantidad}× {item.nombre_snapshot}</span>
+                  <span>{(parseFloat(item.precio_snapshot) * item.cantidad).toFixed(2).replace('.', ',')}€</span>
                 </div>
               ))}
-              {pedido.notas && <div style={S.itemNota}>Nota del pedido: {pedido.notas}</div>}
-              <div style={S.pedidoSubtotal}>Subtotal: {parseFloat(pedido.total || 0).toFixed(2).replace('.', ',')}€</div>
+              {pedido.notas && <div style={{ fontSize: 11 }}>Nota: {pedido.notas}</div>}
             </div>
           ))}
-        </div>
-
-        <div style={S.totalRow}>
-          <span style={S.totalLabel}>Total</span>
-          <span style={S.totalValue}>{total.toFixed(2).replace('.', ',')}€</span>
-        </div>
-
-        <div style={{ ...S.actions }} className="no-print">
-          <button style={S.btnGhost} onClick={onClose}>Cerrar</button>
-          <button style={S.btnGhost} onClick={handlePrint}>🖨 Imprimir</button>
-          {onConfirmCerrar && (
-            <button style={S.btnDanger} onClick={onConfirmCerrar} disabled={closing}>
-              {closing ? 'Cerrando...' : 'Confirmar cierre'}
-            </button>
-          )}
+          <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: 15 }}>
+            <span>TOTAL</span>
+            <span>{total.toFixed(2).replace('.', ',')}€</span>
+          </div>
         </div>
       </div>
-    </div>
+    </>
   )
 }
