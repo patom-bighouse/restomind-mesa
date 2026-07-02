@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
 const ESTADOS = ['pendiente', 'preparando', 'listo', 'entregado']
@@ -57,9 +57,11 @@ function formatHora(dateStr) {
 
 export default function Cocina() {
   const { restaurantId } = useParams()
+  const navigate = useNavigate()
   const [orders, setOrders] = useState([])
   const [orderItems, setOrderItems] = useState({})
   const [tables, setTables] = useState({})
+  const [tableSessions, setTableSessions] = useState({}) // table_id -> sesión activa
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [activeTab, setActiveTab] = useState('pendiente')
@@ -104,6 +106,19 @@ export default function Cocina() {
     }
   }
 
+  async function loadTableSessions() {
+    const { data } = await supabase
+      .from('table_sessions')
+      .select('id, table_id, abierta_at')
+      .eq('restaurant_id', restaurantId)
+      .eq('estado', 'abierta')
+    if (data) {
+      const map = {}
+      data.forEach(s => { map[s.table_id] = s })
+      setTableSessions(map)
+    }
+  }
+
   async function loadWaiterCalls() {
     const { data } = await supabase
       .from('waiter_calls')
@@ -129,7 +144,10 @@ export default function Cocina() {
   useEffect(() => {
     async function init() {
       try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) { navigate('/admin/login'); return }
         await loadTables()
+        await loadTableSessions()
         await loadOrders()
         await loadWaiterCalls()
       } catch (e) {
@@ -163,6 +181,23 @@ export default function Cocina() {
       }, (payload) => {
         setOrders(prev => prev.map(o => o.id === payload.new.id ? { ...o, ...payload.new } : o)
           .filter(o => ['pendiente', 'preparando', 'listo'].includes(o.estado)))
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'table_sessions',
+        filter: `restaurant_id=eq.${restaurantId}`
+      }, (payload) => {
+        setTableSessions(prev => {
+          const next = { ...prev }
+          const row = payload.eventType === 'DELETE' ? payload.old : payload.new
+          if (payload.eventType === 'DELETE' || row.estado !== 'abierta') {
+            if (next[row.table_id]?.id === row.id) delete next[row.table_id]
+          } else {
+            next[row.table_id] = row
+          }
+          return next
+        })
       })
       .on('postgres_changes', {
         event: 'INSERT',
@@ -208,6 +243,11 @@ export default function Cocina() {
     setWaiterCalls(prev => prev.filter(c => c.id !== id))
   }
 
+  async function handleLogout() {
+    await supabase.auth.signOut()
+    navigate('/admin/login')
+  }
+
   const byTab = orders.filter(o => o.estado === activeTab)
   const counts = { pendiente: 0, preparando: 0, listo: 0 }
   orders.forEach(o => { if (counts[o.estado] !== undefined) counts[o.estado]++ })
@@ -225,6 +265,10 @@ export default function Cocina() {
           <div style={S.liveTag(isLive)}>{isLive ? '● En vivo' : '○ Conectando...'}</div>
         </div>
         <div style={S.headerRight}>{new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+      </div>
+
+      <div style={{ padding: '8px 16px 0', display: 'flex', justifyContent: 'flex-end' }}>
+        <button onClick={handleLogout} style={{ background: 'transparent', border: '0.5px solid #2a2a2a', borderRadius: 8, padding: '6px 14px', fontSize: 12, color: '#8a7560', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>Cerrar sesión</button>
       </div>
 
       <div style={S.tabs}>
@@ -280,6 +324,11 @@ export default function Cocina() {
                     {table ? `Mesa ${table.numero}` : order.tipo === 'takeaway' ? 'Takeaway' : 'Mesa ?'}
                   </div>
                   <div style={S.mesaZona}>{table ? table.zona.charAt(0).toUpperCase() + table.zona.slice(1) : ''}</div>
+                  {order.tipo === 'mesa' && tableSessions[order.table_id] && (
+                    <div style={{ fontSize: 11, color: '#5a9c7a' }}>
+                      🟢 Sesión desde {formatHora(tableSessions[order.table_id].abierta_at)}
+                    </div>
+                  )}
                 </div>
                 <div style={S.timeTag}>
                   <div style={{ marginBottom: 2 }}>{formatHora(order.created_at)}</div>

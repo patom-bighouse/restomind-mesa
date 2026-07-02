@@ -54,6 +54,7 @@ export default function Mesa() {
   const { token } = useParams()
   const [restaurant, setRestaurant] = useState(null)
   const [table, setTable] = useState(null)
+  const [session, setSession] = useState(null)
   const [categories, setCategories] = useState([])
   const [items, setItems] = useState([])
   const [cart, setCart] = useState({})
@@ -87,12 +88,10 @@ export default function Mesa() {
   useEffect(() => {
     async function load() {
       try {
-        const { data: tableData, error: tErr } = await supabase
-          .from('tables')
-          .select('id, numero, zona, restaurant_id, activa')
-          .eq('qr_token', token)
-          .single()
-        if (tErr || !tableData) throw new Error('Mesa no encontrada')
+        const { data: tableRows, error: tErr } = await supabase
+          .rpc('get_table_by_qr', { p_token: token })
+        if (tErr || !tableRows || tableRows.length === 0) throw new Error('Mesa no encontrada')
+        const tableData = tableRows[0]
         setTable(tableData)
 
         const { data: rest } = await supabase
@@ -101,6 +100,14 @@ export default function Mesa() {
           .eq('id', tableData.restaurant_id)
           .single()
         setRestaurant(rest)
+
+        const { data: sessionData } = await supabase
+          .from('table_sessions')
+          .select('id, estado, abierta_at')
+          .eq('table_id', tableData.id)
+          .eq('estado', 'abierta')
+          .maybeSingle()
+        setSession(sessionData || null)
 
         await loadMenu(tableData.restaurant_id)
       } catch (e) {
@@ -129,6 +136,15 @@ export default function Mesa() {
         event: 'UPDATE', schema: 'public', table: 'tables',
         filter: `id=eq.${table.id}`
       }, (payload) => setTable(prev => ({ ...prev, ...payload.new })))
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'table_sessions',
+        filter: `table_id=eq.${table.id}`
+      }, (payload) => {
+        if (payload.eventType === 'DELETE') { setSession(null); return }
+        const row = payload.new
+        if (row.estado === 'abierta') setSession(row)
+        else setSession(prev => (prev && prev.id === row.id) ? null : prev)
+      })
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
@@ -156,19 +172,23 @@ export default function Mesa() {
   const filteredCats = activeCat === 'todos' ? categories : categories.filter(c => c.id === activeCat)
 
   async function confirmOrder() {
+    if (!session) {
+      setSendError('La mesa ya no tiene una sesión activa. Avisa al camarero.')
+      setOverlay('cart')
+      return
+    }
     setOverlay('sending')
     setSendError(null)
     try {
       const cartItems = Object.entries(cart).map(([id, v]) => ({ id, ...v }))
-      const { data: order, error: oErr } = await supabase
+      const newOrderId = crypto.randomUUID()
+      const { error: oErr } = await supabase
         .from('orders')
-        .insert({ restaurant_id: table.restaurant_id, table_id: table.id, tipo: 'mesa', estado: 'pendiente', total: parseFloat(cartTotal.toFixed(2)), notas: orderNote.trim() || null })
-        .select('id')
-        .single()
+        .insert({ id: newOrderId, restaurant_id: table.restaurant_id, table_id: table.id, table_session_id: session.id, tipo: 'mesa', estado: 'pendiente', total: parseFloat(cartTotal.toFixed(2)), notas: orderNote.trim() || null })
       if (oErr) throw oErr
 
       const lines = cartItems.map(i => ({
-        order_id: order.id,
+        order_id: newOrderId,
         menu_item_id: i.id,
         nombre_snapshot: i.nombre,
         precio_snapshot: i.precio,
@@ -178,7 +198,7 @@ export default function Mesa() {
       const { error: lErr } = await supabase.from('order_items').insert(lines)
       if (lErr) throw lErr
 
-      setOrderId(order.id)
+      setOrderId(newOrderId)
       setCart({})
       setOrderNote('')
       setEditingNoteFor(null)
@@ -226,6 +246,33 @@ export default function Mesa() {
         <div style={{ fontSize: 40 }}>🚫</div>
         <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: '#e8c97a' }}>Mesa no disponible</div>
         <div style={{ fontSize: 14, color: '#7a6a50', lineHeight: 1.6 }}>Esta mesa está temporalmente desactivada.<br />Por favor, consulta con el personal del restaurante.</div>
+      </div>
+    </div>
+  )
+
+  if (table && table.activa && !session) return (
+    <div style={S.app}>
+      <div style={S.header}>
+        <div>
+          <div style={S.logo}>{restaurant?.nombre || 'Restomind'}</div>
+        </div>
+        <div style={S.badge}>Mesa {table?.numero}</div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, padding: 40, textAlign: 'center', gap: 16 }}>
+        <div style={{ fontSize: 40 }}>🕒</div>
+        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: '#e8c97a' }}>Espera a que te atiendan</div>
+        <div style={{ fontSize: 14, color: '#7a6a50', lineHeight: 1.6 }}>El camarero abrirá tu mesa en breve.<br />En cuanto lo haga, podrás ver la carta y pedir aquí mismo.</div>
+        {overlay === 'waiter' ? (
+          <div style={{ fontSize: 13, color: '#e8c97a', marginTop: 8 }}>🛎 Camarero avisado, ¡ya vamos!</div>
+        ) : (
+          <div style={{ ...S.callBtn, margin: '8px 0 0', width: '100%', boxSizing: 'border-box', justifyContent: 'center' }} onClick={callWaiter}>
+            <span style={{ fontSize: 20 }}>🛎</span>
+            <div>
+              <div style={S.callTitle}>Avisar que ya llegué</div>
+              <div style={S.callSub}>Toca aquí para llamar al camarero</div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
