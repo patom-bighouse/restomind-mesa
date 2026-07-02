@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { playWaiterBell, unlockAudio } from '../lib/sound'
+import CuentaMesa from '../components/CuentaMesa'
 import QRCode from 'qrcode'
 
 const BASE_URL = 'https://restomind-mesa.vercel.app'
@@ -53,6 +54,8 @@ export default function AdminMesas() {
   const [sessions, setSessions] = useState({}) // table_id -> sesión activa
   const [sessionBusy, setSessionBusy] = useState(null) // table_id en proceso de abrir/cerrar
   const [waiterCalls, setWaiterCalls] = useState([])
+  const [cuentaModal, setCuentaModal] = useState(null) // { table, session, mode: 'ver'|'cerrar' } | null
+  const [closingSession, setClosingSession] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [newNumero, setNewNumero] = useState('')
@@ -155,34 +158,36 @@ export default function AdminMesas() {
     setSessions(prev => ({ ...prev, [table.id]: data }))
   }
 
-  async function closeTable(table) {
+  function openCuentaModal(table, mode) {
     const session = sessions[table.id]
     if (!session) return
+    setCuentaModal({ table, session, mode })
+  }
 
-    // Resumen de consumo de la sesión antes de cerrar
+  async function confirmCloseTable() {
+    const { table, session } = cuentaModal
+    if (!session) return
+
+    // Recalculamos el total real (autoritativo, calculado por la
+    // base a partir de los order_items) para dejarlo guardado en
+    // la sesión ya cerrada.
     const { data: pedidos } = await supabase
       .from('orders')
-      .select('id, total')
+      .select('total')
       .eq('table_session_id', session.id)
       .neq('estado', 'cancelado')
     const total = (pedidos || []).reduce((s, o) => s + parseFloat(o.total || 0), 0)
-    const cantidad = (pedidos || []).length
-
-    const resumen = cantidad > 0
-      ? `Pedidos en esta sesión: ${cantidad}\nTotal consumido: ${total.toFixed(2).replace('.', ',')}€\n\n`
-      : 'Esta sesión no tiene pedidos registrados.\n\n'
-
-    if (!window.confirm(`¿Cerrar Mesa ${table.numero}?\n\n${resumen}La mesa quedará libre para el siguiente cliente.`)) return
 
     setError(null)
-    setSessionBusy(table.id)
+    setClosingSession(true)
     const { error: err } = await supabase
       .from('table_sessions')
       .update({ estado: 'cerrada', cerrada_at: new Date().toISOString(), total })
       .eq('id', session.id)
-    setSessionBusy(null)
+    setClosingSession(false)
     if (err) { setError(err.message); return }
     setSessions(prev => { const next = { ...prev }; delete next[table.id]; return next })
+    setCuentaModal(null)
   }
 
   async function generateQRs(tabs) {
@@ -368,12 +373,20 @@ export default function AdminMesas() {
                     </div>
                     <button
                       style={S.sessionBtn(!!sessions[table.id], sessionBusy === table.id || !table.activa)}
-                      onClick={() => sessions[table.id] ? closeTable(table) : openTable(table)}
+                      onClick={() => sessions[table.id] ? openCuentaModal(table, 'cerrar') : openTable(table)}
                       disabled={sessionBusy === table.id || !table.activa}
                       title={!table.activa ? 'Activa la mesa primero para poder abrirla' : ''}
                     >
                       {sessionBusy === table.id ? 'Procesando...' : (sessions[table.id] ? 'Cerrar mesa' : 'Abrir mesa')}
                     </button>
+                    {sessions[table.id] && (
+                      <button
+                        style={{ ...S.sessionBtn(false, false), background: 'transparent', border: '0.5px solid #3a2e20', color: '#c4a85a' }}
+                        onClick={() => openCuentaModal(table, 'ver')}
+                      >
+                        🧾 Ver cuenta
+                      </button>
+                    )}
                     <div style={S.btnRow}>
                       <button style={S.dlBtn} onClick={() => downloadQR(table)}>⬇ QR</button>
                       <button style={S.toggleBtn(table.activa)} onClick={() => toggleTable(table)}>
@@ -389,6 +402,17 @@ export default function AdminMesas() {
           )
         })}
       </div>
+
+      {cuentaModal && (
+        <CuentaMesa
+          session={cuentaModal.session}
+          table={cuentaModal.table}
+          restaurantName={restaurant?.nombre}
+          onClose={() => setCuentaModal(null)}
+          onConfirmCerrar={cuentaModal.mode === 'cerrar' ? confirmCloseTable : null}
+          closing={closingSession}
+        />
+      )}
     </div>
   )
 }
