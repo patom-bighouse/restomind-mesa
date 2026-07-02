@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { playNewOrderChime, playWaiterBell } from '../lib/sound'
 
 const ESTADOS = ['pendiente', 'preparando', 'listo', 'entregado']
 
@@ -172,6 +173,7 @@ export default function Cocina() {
         await loadOrderItems([newOrder.id])
         setActiveTab('pendiente')
         showNotif('🍽 Nuevo pedido recibido')
+        playNewOrderChime()
       })
       .on('postgres_changes', {
         event: 'UPDATE',
@@ -207,19 +209,7 @@ export default function Cocina() {
       }, (payload) => {
         setWaiterCalls(prev => [...prev, payload.new])
         showNotif('🛎 Mesa llama al camarero')
-        // Play beep sound
-        try {
-          const ctx = new (window.AudioContext || window.webkitAudioContext)()
-          const osc = ctx.createOscillator()
-          const gain = ctx.createGain()
-          osc.connect(gain)
-          gain.connect(ctx.destination)
-          osc.frequency.value = 880
-          gain.gain.setValueAtTime(0.3, ctx.currentTime)
-          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4)
-          osc.start(ctx.currentTime)
-          osc.stop(ctx.currentTime + 0.4)
-        } catch(e) {}
+        playWaiterBell()
       })
       .subscribe((status) => {
         setIsLive(status === 'SUBSCRIBED')

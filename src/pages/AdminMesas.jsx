@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { playWaiterBell } from '../lib/sound'
 import QRCode from 'qrcode'
 
 const BASE_URL = 'https://restomind-mesa.vercel.app'
@@ -51,6 +52,7 @@ export default function AdminMesas() {
   const [qrUrls, setQrUrls] = useState({})
   const [sessions, setSessions] = useState({}) // table_id -> sesión activa
   const [sessionBusy, setSessionBusy] = useState(null) // table_id en proceso de abrir/cerrar
+  const [waiterCalls, setWaiterCalls] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [newNumero, setNewNumero] = useState('')
@@ -59,6 +61,33 @@ export default function AdminMesas() {
   const [adding, setAdding] = useState(false)
 
   useEffect(() => { checkAuth() }, [])
+
+  useEffect(() => {
+    if (!restaurantId) return
+    const channel = supabase
+      .channel('mesas-waiter-calls')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'waiter_calls',
+        filter: `restaurant_id=eq.${restaurantId}`
+      }, (payload) => {
+        setWaiterCalls(prev => [...prev, payload.new])
+        playWaiterBell()
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'waiter_calls',
+        filter: `restaurant_id=eq.${restaurantId}`
+      }, (payload) => {
+        if (payload.new.estado !== 'pendiente') {
+          setWaiterCalls(prev => prev.filter(c => c.id !== payload.new.id))
+        }
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [restaurantId])
 
   async function checkAuth() {
     const { data: { session } } = await supabase.auth.getSession()
@@ -76,6 +105,7 @@ export default function AdminMesas() {
     setTables(tabs || [])
     generateQRs(tabs || [])
     await loadSessions()
+    await loadWaiterCalls()
     setLoading(false)
   }
 
@@ -89,6 +119,21 @@ export default function AdminMesas() {
     const map = {}
     ;(sess || []).forEach(s => { map[s.table_id] = s })
     setSessions(map)
+  }
+
+  async function loadWaiterCalls() {
+    const { data } = await supabase
+      .from('waiter_calls')
+      .select('id, table_id, estado, created_at')
+      .eq('restaurant_id', restaurantId)
+      .eq('estado', 'pendiente')
+      .order('created_at', { ascending: true })
+    setWaiterCalls(data || [])
+  }
+
+  async function dismissWaiterCall(id) {
+    await supabase.from('waiter_calls').update({ estado: 'atendido' }).eq('id', id)
+    setWaiterCalls(prev => prev.filter(c => c.id !== id))
   }
 
   async function openTable(table) {
@@ -227,6 +272,27 @@ export default function AdminMesas() {
         <div style={S.sectionTitle}>Gestión de mesas</div>
         {error && <div style={S.error}>{error}</div>}
 
+        {waiterCalls.length > 0 && (
+          <div style={{ marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {waiterCalls.map(call => {
+              const t = tables.find(tb => tb.id === call.table_id)
+              return (
+                <div key={call.id} style={{ background: '#2a1a00', border: '1px solid #d4a017', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 18 }}>🛎</span>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: '#f0e8d8' }}>
+                      {t ? `Mesa ${t.numero} · ${t.zona.charAt(0).toUpperCase() + t.zona.slice(1)}` : 'Mesa'} llama al camarero
+                    </div>
+                  </div>
+                  <button onClick={() => dismissWaiterCall(call.id)} style={{ background: '#d4a017', border: 'none', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 500, color: '#111', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+                    Atendido
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
         {/* Añadir mesa */}
         <div style={S.addBar}>
           <input style={S.input} type="number" placeholder="Nº mesa" value={newNumero} onChange={e => setNewNumero(e.target.value)} min="1" />
@@ -272,8 +338,15 @@ export default function AdminMesas() {
                 <span style={S.zonaCount}>{zonaTablas.length} {zonaTablas.length === 1 ? 'mesa' : 'mesas'}</span>
               </div>
               <div style={S.grid}>
-                {zonaTablas.map(table => (
-                  <div key={table.id} style={S.card(table.activa)}>
+                {zonaTablas.map(table => {
+                  const llamando = waiterCalls.some(c => c.table_id === table.id)
+                  return (
+                  <div key={table.id} style={{ ...S.card(table.activa), ...(llamando ? { border: '1.5px solid #d4a017', boxShadow: '0 0 0 3px rgba(212,160,23,0.25)' } : {}) }}>
+                    {llamando && (
+                      <div style={{ width: '100%', textAlign: 'center', fontSize: 11, fontWeight: 600, color: '#111', background: '#d4a017', borderRadius: 8, padding: '4px 0' }}>
+                        🛎 Llamando al camarero
+                      </div>
+                    )}
                     <div style={S.mesaTitle}>Mesa {table.numero}</div>
                     <div style={S.mesaCap}>{table.capacidad} personas</div>
                     {qrUrls[table.id] && (
@@ -303,7 +376,8 @@ export default function AdminMesas() {
                     </div>
                     <button style={S.deleteBtn} onClick={() => deleteTable(table)}>Eliminar mesa</button>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )
