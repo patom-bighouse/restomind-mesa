@@ -94,6 +94,36 @@ export default function AdminMesas() {
           setWaiterCalls(prev => prev.filter(c => c.id !== payload.new.id))
         }
       })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'table_sessions',
+        filter: `restaurant_id=eq.${restaurantId}`
+      }, (payload) => {
+        // Mantiene sincronizado el estado de sesiones aunque la mesa
+        // se abra/cierre desde OTRA pestaña o dispositivo distinto
+        // al que está mirando este panel. Sin esto, esta pantalla
+        // podía quedarse "recordando" una sesión ya cerrada y mostrar
+        // los pedidos de un cliente anterior al pedir "Ver cuenta".
+        const row = payload.eventType === 'DELETE' ? payload.old : payload.new
+        setSessions(prev => {
+          const next = { ...prev }
+          if (payload.eventType === 'DELETE' || row.estado !== 'abierta') {
+            if (next[row.table_id]?.id === row.id) delete next[row.table_id]
+          } else {
+            next[row.table_id] = row
+          }
+          return next
+        })
+        // Si el modal de cuenta está abierto mirando justo esta mesa,
+        // lo actualizamos (o lo cerramos si la sesión que veía ya no
+        // corresponde) para no dejarlo mostrando datos obsoletos.
+        setCuentaModal(prev => {
+          if (!prev || prev.table.id !== row.table_id) return prev
+          if (payload.eventType === 'DELETE' || row.estado !== 'abierta') return null
+          return { ...prev, session: row }
+        })
+      })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [restaurantId])

@@ -93,9 +93,9 @@ export default function CuentaMesa({ session, table, restaurantName, onClose, on
 
   const ticket = (
     <div id="ticket-imprimible" style={{ display: 'none' }}>
-      <div style={{ fontFamily: "'Courier New', monospace", width: 320, margin: '0 auto', color: '#000', fontSize: 13, lineHeight: 1.5 }}>
-        <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 16, marginBottom: 4 }}>{restaurantName}</div>
-        <div style={{ textAlign: 'center', marginBottom: 10 }}>
+      <div style={{ fontFamily: "'Courier New', monospace", width: 320, color: '#000', fontSize: 13, lineHeight: 1.5, textAlign: 'left' }}>
+        <div style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 4 }}>{restaurantName}</div>
+        <div style={{ marginBottom: 10 }}>
           Mesa {table?.numero} · {table?.zona}<br />
           {session?.abierta_at && new Date(session.abierta_at).toLocaleString('es-ES')}
         </div>
