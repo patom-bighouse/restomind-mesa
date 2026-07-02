@@ -219,6 +219,18 @@ export default function Cocina() {
         showNotif('🛎 Mesa llama al camarero')
         playWaiterBell()
       })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'waiter_calls',
+        filter: `restaurant_id=eq.${restaurantId}`
+      }, (payload) => {
+        // Si la marcaron como atendida desde OTRA pantalla (ej. Mesas),
+        // que también desaparezca acá para no duplicar el aviso.
+        if (payload.new.estado !== 'pendiente') {
+          setWaiterCalls(prev => prev.filter(c => c.id !== payload.new.id))
+        }
+      })
       .subscribe((status) => {
         setIsLive(status === 'SUBSCRIBED')
       })
