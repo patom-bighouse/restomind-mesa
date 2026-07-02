@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
@@ -66,6 +66,24 @@ export default function Mesa() {
   const [sendError, setSendError] = useState(null)
   const [orderNote, setOrderNote] = useState('')
   const [editingNoteFor, setEditingNoteFor] = useState(null)
+  const prevSessionIdRef = useRef(undefined)
+
+  // Cada vez que la sesión de la mesa cambia (se cierra, se reabre,
+  // o pasa a ser una sesión distinta), vaciamos cualquier carrito sin
+  // enviar. Sin esto, un pedido armado durante una sesión podía
+  // quedar "flotando" en el navegador del cliente y reaparecer como
+  // si fuera un pedido válido cuando la mesa se reabre para otro
+  // grupo de comensales.
+  useEffect(() => {
+    const currentId = session?.id ?? null
+    if (prevSessionIdRef.current !== undefined && prevSessionIdRef.current !== currentId) {
+      setCart({})
+      setOrderNote('')
+      setEditingNoteFor(null)
+      setSendError(null)
+    }
+    prevSessionIdRef.current = currentId
+  }, [session?.id])
 
   async function loadMenu(restaurantId) {
     const { data: cats } = await supabase
