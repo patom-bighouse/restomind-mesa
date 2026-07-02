@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../lib/supabase'
 
 const S = {
@@ -90,16 +91,48 @@ export default function CuentaMesa({ session, table, restaurantName, onClose, on
     window.print()
   }
 
+  const ticket = (
+    <div id="ticket-imprimible" style={{ display: 'none' }}>
+      <div style={{ fontFamily: "'Courier New', monospace", width: 320, margin: '0 auto', color: '#000', fontSize: 13, lineHeight: 1.5 }}>
+        <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 16, marginBottom: 4 }}>{restaurantName}</div>
+        <div style={{ textAlign: 'center', marginBottom: 10 }}>
+          Mesa {table?.numero} · {table?.zona}<br />
+          {session?.abierta_at && new Date(session.abierta_at).toLocaleString('es-ES')}
+        </div>
+        <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
+        {pedidos.map(pedido => (
+          <div key={pedido.id} style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 11, marginBottom: 4 }}>
+              — Pedido {new Date(pedido.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })} —
+            </div>
+            {pedido.items.map(item => (
+              <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>{item.cantidad}× {item.nombre_snapshot}</span>
+                <span>{(parseFloat(item.precio_snapshot) * item.cantidad).toFixed(2).replace('.', ',')}€</span>
+              </div>
+            ))}
+            {pedido.notas && <div style={{ fontSize: 11 }}>Nota: {pedido.notas}</div>}
+          </div>
+        ))}
+        <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: 15 }}>
+          <span>TOTAL</span>
+          <span>{total.toFixed(2).replace('.', ',')}€</span>
+        </div>
+      </div>
+    </div>
+  )
+
   return (
     <>
       <style>{`
         @media print {
-          .cuenta-mesa-overlay { display: none !important; }
+          #root { display: none !important; }
           #ticket-imprimible { display: block !important; }
         }
       `}</style>
 
-      <div style={S.overlay} className="cuenta-mesa-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={S.overlay} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
         <div style={S.modal}>
           <div style={S.header}>
             <div style={S.restName}>{restaurantName}</div>
@@ -156,38 +189,12 @@ export default function CuentaMesa({ session, table, restaurantName, onClose, on
         </div>
       </div>
 
-      {/* Ticket imprimible: invisible en pantalla, solo aparece al imprimir.
-          Es un documento simple en flujo normal (sin overlay ni position:fixed)
-          para que el navegador lo pagine bien, sin páginas de más. */}
-      <div id="ticket-imprimible" style={{ display: 'none' }}>
-        <div style={{ fontFamily: "'Courier New', monospace", width: 320, margin: '0 auto', color: '#000', fontSize: 13, lineHeight: 1.5 }}>
-          <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 16, marginBottom: 4 }}>{restaurantName}</div>
-          <div style={{ textAlign: 'center', marginBottom: 10 }}>
-            Mesa {table?.numero} · {table?.zona}<br />
-            {session?.abierta_at && new Date(session.abierta_at).toLocaleString('es-ES')}
-          </div>
-          <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
-          {pedidos.map(pedido => (
-            <div key={pedido.id} style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 11, marginBottom: 4 }}>
-                — Pedido {new Date(pedido.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })} —
-              </div>
-              {pedido.items.map(item => (
-                <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>{item.cantidad}× {item.nombre_snapshot}</span>
-                  <span>{(parseFloat(item.precio_snapshot) * item.cantidad).toFixed(2).replace('.', ',')}€</span>
-                </div>
-              ))}
-              {pedido.notas && <div style={{ fontSize: 11 }}>Nota: {pedido.notas}</div>}
-            </div>
-          ))}
-          <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: 15 }}>
-            <span>TOTAL</span>
-            <span>{total.toFixed(2).replace('.', ',')}€</span>
-          </div>
-        </div>
-      </div>
+      {/* El ticket se monta como hijo directo de <body> (fuera de #root)
+          para poder ocultar TODA la app al imprimir sin ambigüedad,
+          y para que el ticket quede en flujo normal de documento
+          (sin heredar el position:fixed del overlay), así el
+          navegador lo pagina en una sola hoja. */}
+      {createPortal(ticket, document.body)}
     </>
   )
 }
