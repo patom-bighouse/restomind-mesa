@@ -5,7 +5,10 @@ import { playWaiterBell, unlockAudio } from '../lib/sound'
 import CuentaMesa from '../components/CuentaMesa'
 import QRCode from 'qrcode'
 
-const BASE_URL = 'https://restomind-mesa.vercel.app'
+// URL desde donde se está viendo el panel en cada momento (Test o
+// Producción) — así el QR generado siempre apunta al entorno
+// correcto, no queda fijo a un solo dominio.
+const BASE_URL = window.location.origin
 const ZONAS = ['interior', 'terraza', 'privado', 'barra']
 
 const S = {
