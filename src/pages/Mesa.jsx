@@ -66,6 +66,8 @@ export default function Mesa() {
   const [sendError, setSendError] = useState(null)
   const [orderNote, setOrderNote] = useState('')
   const [editingNoteFor, setEditingNoteFor] = useState(null)
+  const [misPedidos, setMisPedidos] = useState([])
+  const [loadingPedidos, setLoadingPedidos] = useState(false)
   const prevSessionIdRef = useRef(undefined)
 
   // Cada vez que la sesión de la mesa cambia (se cierra, se reabre,
@@ -256,6 +258,59 @@ export default function Mesa() {
     setTimeout(() => setOverlay(null), 2500)
   }
 
+  async function loadMisPedidos() {
+    if (!session?.id) return
+    setLoadingPedidos(true)
+    const { data, error: e } = await supabase.rpc('get_session_orders', {
+      p_session_id: session.id,
+      p_qr_token: token,
+    })
+    setLoadingPedidos(false)
+    if (e || !data) { setMisPedidos([]); return }
+
+    const porPedido = {}
+    data.forEach(row => {
+      if (!porPedido[row.order_id]) {
+        porPedido[row.order_id] = {
+          id: row.order_id,
+          created_at: row.order_created_at,
+          estado: row.order_estado,
+          total: row.order_total,
+          notas: row.order_notas,
+          items: [],
+        }
+      }
+      if (row.item_id) {
+        porPedido[row.order_id].items.push({
+          id: row.item_id,
+          nombre: row.item_nombre,
+          precio: row.item_precio,
+          cantidad: row.item_cantidad,
+          notas: row.item_notas,
+        })
+      }
+    })
+    setMisPedidos(Object.values(porPedido))
+  }
+
+  function abrirMisPedidos() {
+    setOverlay('misPedidos')
+    loadMisPedidos()
+  }
+
+  useEffect(() => {
+    if (overlay !== 'misPedidos') return
+    const interval = setInterval(loadMisPedidos, 15000)
+    return () => clearInterval(interval)
+  }, [overlay, session?.id])
+
+  const ESTADO_LABEL = {
+    pendiente: '🕒 Recibido',
+    preparando: '👨‍🍳 En preparación',
+    listo: '✅ Listo para servir',
+    entregado: '🍽 Entregado',
+  }
+
   if (loading) return (
     <div style={S.app}>
       <div style={S.loading}>
@@ -321,7 +376,12 @@ export default function Mesa() {
           <div style={S.logo}>{restaurant?.nombre || 'Restomind'}</div>
           <div style={S.sub}>Bienvenido · Pide desde la mesa</div>
         </div>
-        <div style={S.badge}>Mesa {table?.numero} · {table?.zona?.charAt(0).toUpperCase() + table?.zona?.slice(1)}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+          <div style={S.badge}>Mesa {table?.numero} · {table?.zona?.charAt(0).toUpperCase() + table?.zona?.slice(1)}</div>
+          <button onClick={abrirMisPedidos} style={{ background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 20, padding: '4px 12px', fontSize: 11, color: '#c4a85a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+            🧾 Mis pedidos
+          </button>
+        </div>
       </div>
 
       <div style={S.catsBar}>
@@ -429,6 +489,46 @@ export default function Mesa() {
               </div>
               {sendError && <div style={{ ...S.error, margin: '12px 0 0' }}>{sendError}</div>}
               <button style={S.confirmBtn(false)} onClick={confirmOrder}>Enviar pedido a cocina</button>
+            </>
+          )}
+
+          {overlay === 'misPedidos' && (
+            <>
+              <button style={S.closeBtn} onClick={() => setOverlay(null)}>×</button>
+              <div style={S.sheetTitle}>Mis pedidos</div>
+              {loadingPedidos && misPedidos.length === 0 && (
+                <div style={{ textAlign: 'center', color: '#7a6a50', fontSize: 13, padding: '20px 0' }}>Cargando...</div>
+              )}
+              {!loadingPedidos && misPedidos.length === 0 && (
+                <div style={{ textAlign: 'center', color: '#7a6a50', fontSize: 13, padding: '20px 0' }}>Todavía no has hecho ningún pedido en esta visita.</div>
+              )}
+              {misPedidos.map(pedido => (
+                <div key={pedido.id} style={{ marginBottom: 16, paddingBottom: 12, borderBottom: '0.5px solid #2a2018' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <span style={{ fontSize: 11, color: '#7a6a50' }}>
+                      {new Date(pedido.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    <span style={{ fontSize: 11, color: '#c4a85a', fontWeight: 500 }}>
+                      {ESTADO_LABEL[pedido.estado] || pedido.estado}
+                    </span>
+                  </div>
+                  {pedido.items.map(item => (
+                    <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#f0e8d8', padding: '2px 0' }}>
+                      <span>{item.cantidad}× {item.nombre}</span>
+                      <span style={{ color: '#c4a85a' }}>{(item.precio * item.cantidad).toFixed(2).replace('.', ',')}€</span>
+                    </div>
+                  ))}
+                  <div style={{ textAlign: 'right', fontSize: 12, color: '#7a6a50', marginTop: 4 }}>
+                    Subtotal: {parseFloat(pedido.total || 0).toFixed(2).replace('.', ',')}€
+                  </div>
+                </div>
+              ))}
+              {misPedidos.length > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16, fontWeight: 600, color: '#e8c97a', paddingTop: 8 }}>
+                  <span>Total pedido hasta ahora</span>
+                  <span>{misPedidos.reduce((s, p) => s + parseFloat(p.total || 0), 0).toFixed(2).replace('.', ',')}€</span>
+                </div>
+              )}
             </>
           )}
 
