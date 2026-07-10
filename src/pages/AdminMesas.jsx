@@ -315,6 +315,30 @@ export default function AdminMesas() {
     setTables(prev => prev.map(t => t.id === table.id ? { ...t, activa: newActiva } : t))
   }
 
+  async function regenerateQR(table) {
+    if (sessions[table.id]) {
+      setError(`La Mesa ${table.numero} tiene una sesión abierta. Cerrala antes de regenerar el QR.`)
+      return
+    }
+    if (!window.confirm(
+      `¿Regenerar el código QR de la Mesa ${table.numero}?\n\n` +
+      `El QR impreso actual dejará de funcionar de inmediato. Vas a tener que descargar e imprimir el nuevo.`
+    )) return
+
+    setError(null)
+    const newToken = crypto.randomUUID()
+    const { error: err } = await supabase
+      .from('tables')
+      .update({ qr_token: newToken })
+      .eq('id', table.id)
+    if (err) { setError(err.message); return }
+
+    setTables(prev => prev.map(t => t.id === table.id ? { ...t, qr_token: newToken } : t))
+    const url = `${BASE_URL}/mesa/${newToken}`
+    const qr = await QRCode.toDataURL(url, { width: 150, margin: 1, color: { dark: '#000', light: '#fff' } })
+    setQrUrls(prev => ({ ...prev, [table.id]: qr }))
+  }
+
   async function deleteTable(table) {
     if (sessions[table.id]) {
       setError(`La Mesa ${table.numero} tiene una sesión abierta. Cerrala primero antes de eliminarla.`)
@@ -480,6 +504,13 @@ export default function AdminMesas() {
                         {table.activa ? 'Desactivar' : 'Activar'}
                       </button>
                     </div>
+                    <button
+                      style={{ width: '100%', background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '7px 0', fontSize: 12, color: '#8a7560', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+                      onClick={() => regenerateQR(table)}
+                      title="Invalida el QR impreso actual y genera uno nuevo"
+                    >
+                      🔄 Regenerar QR
+                    </button>
                     <button style={S.deleteBtn} onClick={() => deleteTable(table)}>Eliminar mesa</button>
                   </div>
                   )
