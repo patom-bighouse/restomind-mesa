@@ -79,15 +79,19 @@ export default function Cocina() {
     if (!orderIds.length) return
     const { data } = await supabase
       .from('order_items')
-      .select('order_id, nombre_snapshot, cantidad, notas')
+      .select('id, order_id, nombre_snapshot, cantidad, notas')
       .in('order_id', orderIds)
     if (data) {
       setOrderItems(prev => {
         const next = { ...prev }
         data.forEach(item => {
           if (!next[item.order_id]) next[item.order_id] = []
-          if (!next[item.order_id].find(i => i.nombre_snapshot === item.nombre_snapshot)) {
-            next[item.order_id] = [...(next[item.order_id] || []), item]
+          // Deduplicamos por el id real de la fila de order_items, no por
+          // nombre de plato — dos líneas del mismo plato (ej. pedido
+          // agrupado con "Croquetas de jamón" dos veces) son ítems
+          // distintos y deben mostrarse las dos.
+          if (!next[item.order_id].find(i => i.id === item.id)) {
+            next[item.order_id] = [...next[item.order_id], item]
           }
         })
         return next
@@ -191,6 +195,19 @@ export default function Cocina() {
       }, (payload) => {
         setOrders(prev => prev.map(o => o.id === payload.new.id ? { ...o, ...payload.new } : o)
           .filter(o => ['pendiente', 'preparando', 'listo'].includes(o.estado)))
+      })
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'order_items',
+        filter: `restaurant_id=eq.${restaurantId}`
+      }, async (payload) => {
+        // Cubre el caso del modo agrupado: se suma un ítem a un pedido que
+        // YA existía (no dispara el INSERT de orders de más arriba, solo
+        // un UPDATE de orders.total vía trigger). Sin este listener, el
+        // total se actualizaba pero el ítem nuevo nunca se pedía ni se
+        // mostraba en la tarjeta.
+        await loadOrderItems([payload.new.order_id])
       })
       .on('postgres_changes', {
         event: '*',

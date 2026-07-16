@@ -45,6 +45,13 @@ const S = {
   infoCard: { background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 12, padding: '16px 20px', marginBottom: 24 },
   infoLabel: { fontSize: 12, color: '#8a7560', marginBottom: 6, display: 'block', marginTop: 12 },
   infoInput: { width: '100%', background: '#111', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '10px 14px', fontSize: 14, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', boxSizing: 'border-box' },
+
+  modoCocinaOptions: { display: 'flex', gap: 8, marginTop: 8 },
+  modoCocinaBtn: (active) => ({ flex: 1, textAlign: 'left', background: active ? '#2a2010' : '#111', border: `0.5px solid ${active ? '#e8c97a' : '#3a2e20'}`, borderRadius: 10, padding: '12px 14px', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }),
+  modoCocinaBtnTitle: (active) => ({ fontSize: 14, fontWeight: 500, color: active ? '#e8c97a' : '#f0e8d8', marginBottom: 3 }),
+  modoCocinaBtnDesc: { fontSize: 12, color: '#8a7560', lineHeight: 1.4 },
+  minutosRow: { display: 'flex', alignItems: 'center', gap: 10, marginTop: 14 },
+  minutosInput: { width: 70, background: '#111', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '8px 10px', fontSize: 14, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', textAlign: 'center' },
 }
 
 export default function AdminConfig() {
@@ -54,6 +61,8 @@ export default function AdminConfig() {
   const [horario, setHorario] = useState({})
   const [nombre, setNombre] = useState('')
   const [whatsapp, setWhatsapp] = useState('')
+  const [modoCocina, setModoCocina] = useState('orden_llegada')
+  const [minutosLimite, setMinutosLimite] = useState(20)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -70,13 +79,15 @@ export default function AdminConfig() {
   async function loadData() {
     const { data: rest } = await supabase
       .from('restaurants')
-      .select('nombre, whatsapp, config')
+      .select('nombre, whatsapp, config, modo_cocina, minutos_limite_agrupado')
       .eq('id', restaurantId)
       .single()
     if (rest) {
       setRestaurant(rest)
       setNombre(rest.nombre || '')
       setWhatsapp(rest.whatsapp || '')
+      setModoCocina(rest.modo_cocina || 'orden_llegada')
+      setMinutosLimite(rest.minutos_limite_agrupado ?? 20)
       // Init horario with defaults for any missing days
       const h = rest.config?.horario || {}
       const horarioCompleto = {}
@@ -108,16 +119,25 @@ export default function AdminConfig() {
   }
 
   async function handleSave() {
-    setSaving(true)
     setError(null)
     setSuccess(null)
+
+    const minutos = parseInt(minutosLimite, 10)
+    if (modoCocina === 'agrupado_mesa' && (!Number.isInteger(minutos) || minutos <= 0)) {
+      setError('Los minutos para agrupar pedidos deben ser un número mayor a 0.')
+      return
+    }
+
+    setSaving(true)
     try {
       const { error: err } = await supabase
         .from('restaurants')
         .update({
           nombre: nombre.trim(),
           whatsapp: whatsapp.trim(),
-          config: { ...restaurant?.config, horario }
+          config: { ...restaurant?.config, horario },
+          modo_cocina: modoCocina,
+          minutos_limite_agrupado: minutos,
         })
         .eq('id', restaurantId)
       if (err) throw err
@@ -169,6 +189,37 @@ export default function AdminConfig() {
           <label style={S.infoLabel}>WhatsApp (con prefijo, sin +)</label>
           <input style={S.infoInput} value={whatsapp} onChange={e => setWhatsapp(e.target.value)} placeholder="34600000000" />
           <div style={{ fontSize: 11, color: '#555', marginTop: 4 }}>El agente de WhatsApp identifica el restaurante por este número.</div>
+        </div>
+
+        {/* Modo de cocina */}
+        <div style={S.infoCard}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 4 }}>Modo de cocina</div>
+          <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 4 }}>Define cómo se agrupan los pedidos de una misma mesa en la pantalla de Cocina.</div>
+
+          <div style={S.modoCocinaOptions}>
+            <div style={S.modoCocinaBtn(modoCocina === 'orden_llegada')} onClick={() => setModoCocina('orden_llegada')}>
+              <div style={S.modoCocinaBtnTitle(modoCocina === 'orden_llegada')}>Orden de llegada</div>
+              <div style={S.modoCocinaBtnDesc}>Cada pedido se prepara y se sirve por separado, en el orden en que llegó.</div>
+            </div>
+            <div style={S.modoCocinaBtn(modoCocina === 'agrupado_mesa')} onClick={() => setModoCocina('agrupado_mesa')}>
+              <div style={S.modoCocinaBtnTitle(modoCocina === 'agrupado_mesa')}>Agrupado por mesa</div>
+              <div style={S.modoCocinaBtnDesc}>Los pedidos de una misma mesa se juntan para prepararlos y servirlos a la vez.</div>
+            </div>
+          </div>
+
+          {modoCocina === 'agrupado_mesa' && (
+            <div style={S.minutosRow}>
+              <span style={{ fontSize: 13, color: '#8a7560' }}>Agrupar pedidos de la misma mesa durante</span>
+              <input
+                style={S.minutosInput}
+                type="number"
+                min="1"
+                value={minutosLimite}
+                onChange={e => setMinutosLimite(e.target.value)}
+              />
+              <span style={{ fontSize: 13, color: '#8a7560' }}>minutos</span>
+            </div>
+          )}
         </div>
 
         {/* Horarios */}

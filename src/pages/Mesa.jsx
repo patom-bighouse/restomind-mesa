@@ -201,22 +201,23 @@ export default function Mesa() {
     setSendError(null)
     try {
       const cartItems = Object.entries(cart).map(([id, v]) => ({ id, ...v }))
-      const newOrderId = crypto.randomUUID()
-      const { error: oErr } = await supabase
-        .from('orders')
-        .insert({ id: newOrderId, restaurant_id: table.restaurant_id, table_id: table.id, table_session_id: session.id, tipo: 'mesa', estado: 'pendiente', total: parseFloat(cartTotal.toFixed(2)), notas: orderNote.trim() || null })
-      if (oErr) throw oErr
-
-      const lines = cartItems.map(i => ({
-        order_id: newOrderId,
+      const itemsPayload = cartItems.map(i => ({
         menu_item_id: i.id,
-        nombre_snapshot: i.nombre,
-        precio_snapshot: i.precio,
         cantidad: i.qty,
         notas: i.nota?.trim() || null,
       }))
-      const { error: lErr } = await supabase.from('order_items').insert(lines)
-      if (lErr) throw lErr
+
+      // fn_registrar_pedido decide, según el modo de Cocina del restaurante,
+      // si este envío se suma a un pedido "pendiente" ya abierto de esta
+      // misma mesa/sesión (modo agrupado) o si crea uno nuevo (modo orden
+      // de llegada). El mismo criterio se usa desde el flujo de WhatsApp,
+      // así que no se decide nada de esto acá en el cliente.
+      const { data: newOrderId, error: rpcErr } = await supabase.rpc('fn_registrar_pedido', {
+        p_table_session_id: session.id,
+        p_items: itemsPayload,
+        p_notas: orderNote.trim() || null,
+      })
+      if (rpcErr) throw rpcErr
 
       setOrderId(newOrderId)
       setCart({})
@@ -226,11 +227,12 @@ export default function Mesa() {
     } catch (e) {
       // Si la sesión se cerró mientras el cliente tenía el carrito
       // abierto (ej. se le bloqueó el teléfono y perdió la conexión
-      // en tiempo real), la base rechaza el pedido con un error de
-      // RLS. En vez de mostrar ese mensaje técnico, confirmamos el
-      // estado real de la mesa y mandamos al cliente a la pantalla
-      // de espera correspondiente.
-      const esMesaCerrada = e.code === '42501' || /row-level security/i.test(e.message || '')
+      // en tiempo real), fn_registrar_pedido rechaza el pedido con una
+      // excepción propia (ya no es un error de RLS, porque la función
+      // corre como security definer). En vez de mostrar ese mensaje
+      // técnico, confirmamos el estado real de la mesa y mandamos al
+      // cliente a la pantalla de espera correspondiente.
+      const esMesaCerrada = /no existe o ya está cerrada/i.test(e.message || '')
       if (esMesaCerrada) {
         const { data: sessionActual } = await supabase
           .from('table_sessions')
