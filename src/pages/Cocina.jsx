@@ -6,10 +6,10 @@ import { playNewOrderChime, playWaiterBell, unlockAudio } from '../lib/sound'
 const ESTADOS = ['pendiente', 'preparando', 'listo', 'entregado']
 
 const ESTADO_CFG = {
-  pendiente:  { label: 'Pendiente',  bg: '#2a1410', border: '#c0392b', dot: '#e74c3c', next: 'preparando',  nextLabel: 'Preparando →' },
-  preparando: { label: 'Preparando', bg: '#2a2010', border: '#d4a017', dot: '#f1c40f', next: 'listo',       nextLabel: 'Listo ✓' },
-  listo:      { label: 'Listo',      bg: '#0f2a15', border: '#27ae60', dot: '#2ecc71', next: 'entregado',   nextLabel: 'Entregado 🍽' },
-  entregado:  { label: 'Entregado',  bg: '#1a1a1a', border: '#3a3a3a', dot: '#555',    next: null,          nextLabel: null },
+  pendiente:  { label: 'Pendiente',  bg: '#2a1410', border: '#c0392b', dot: '#e74c3c', next: 'preparando',  nextLabel: 'Preparando →', prev: null },
+  preparando: { label: 'Preparando', bg: '#2a2010', border: '#d4a017', dot: '#f1c40f', next: 'listo',       nextLabel: 'Listo ✓',      prev: 'pendiente' },
+  listo:      { label: 'Listo',      bg: '#0f2a15', border: '#27ae60', dot: '#2ecc71', next: 'entregado',   nextLabel: 'Entregado 🍽', prev: 'preparando' },
+  entregado:  { label: 'Entregado',  bg: '#1a1a1a', border: '#3a3a3a', dot: '#555',    next: null,          nextLabel: null,           prev: null },
 }
 
 const S = {
@@ -37,6 +37,15 @@ const S = {
   itemName: { color: '#f0e8d8' },
   itemQty: { fontSize: 12, color: '#8a7560', background: '#1a1a1a', padding: '2px 8px', borderRadius: 10, fontWeight: 500 },
   nextBtn: (estado) => ({ width: '100%', padding: '10px 0', borderRadius: 10, border: 'none', background: ESTADO_CFG[estado].border, color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif", transition: 'opacity 0.15s' }),
+  cardFooter: { display: 'flex', gap: 8 },
+  revertBtn: { flex: '0 0 auto', padding: '10px 12px', borderRadius: 10, border: '0.5px solid #4a443a', background: 'transparent', color: '#8a7560', fontSize: 12, cursor: 'pointer', fontFamily: "'Inter', sans-serif", display: 'flex', alignItems: 'center', gap: 4 },
+  modalOverlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 },
+  modalBox: { background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 14, padding: 24, maxWidth: 360, width: '100%' },
+  modalTitle: { fontSize: 16, fontWeight: 600, color: '#f0e8d8', marginBottom: 8, fontFamily: "'Playfair Display', serif" },
+  modalText: { fontSize: 13, color: '#8a7560', lineHeight: 1.5, marginBottom: 20 },
+  modalActions: { display: 'flex', gap: 10 },
+  modalCancelBtn: { flex: 1, padding: '10px 0', borderRadius: 10, border: '0.5px solid #3a2e20', background: 'transparent', color: '#8a7560', fontSize: 13, cursor: 'pointer', fontFamily: "'Inter', sans-serif" },
+  modalConfirmBtn: { flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#c0392b', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif" },
   empty: { gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', gap: 12, color: '#444' },
   emptyIcon: { fontSize: 40 },
   emptyText: { fontSize: 14 },
@@ -69,6 +78,7 @@ export default function Cocina() {
   const [isLive, setIsLive] = useState(false)
   const [notif, setNotif] = useState(null)
   const [waiterCalls, setWaiterCalls] = useState([])
+  const [revertTarget, setRevertTarget] = useState(null) // order pendiente de confirmar reversión
 
   function showNotif(msg) {
     setNotif(msg)
@@ -265,6 +275,18 @@ export default function Cocina() {
     if (err) console.error(err)
   }
 
+  async function confirmRevertEstado() {
+    if (!revertTarget) return
+    const cfg = ESTADO_CFG[revertTarget.estado]
+    if (!cfg.prev) { setRevertTarget(null); return }
+    const { error: err } = await supabase
+      .from('orders')
+      .update({ estado: cfg.prev })
+      .eq('id', revertTarget.id)
+    if (err) console.error(err)
+    setRevertTarget(null)
+  }
+
   async function dismissWaiterCall(id) {
     await supabase.from('waiter_calls').update({ estado: 'atendido' }).eq('id', id)
     setWaiterCalls(prev => prev.filter(c => c.id !== id))
@@ -399,17 +421,45 @@ export default function Cocina() {
                 </div>
               )}
 
-              {cfg.next && (
-                <button style={S.nextBtn(order.estado)} onClick={() => advanceEstado(order)}>
-                  {cfg.nextLabel}
-                </button>
-              )}
+              <div style={S.cardFooter}>
+                {cfg.prev && (
+                  <button style={S.revertBtn} onClick={() => setRevertTarget(order)} title="Revertir al estado anterior">
+                    ↩ Revertir
+                  </button>
+                )}
+                {cfg.next && (
+                  <button style={{ ...S.nextBtn(order.estado), flex: 1 }} onClick={() => advanceEstado(order)}>
+                    {cfg.nextLabel}
+                  </button>
+                )}
+              </div>
             </div>
           )
         })}
       </div>
 
       <div style={S.notifBanner(!!notif)}>{notif}</div>
+
+      {revertTarget && (
+        <div style={S.modalOverlay} onClick={() => setRevertTarget(null)}>
+          <div style={S.modalBox} onClick={e => e.stopPropagation()}>
+            <div style={S.modalTitle}>¿Revertir este pedido?</div>
+            <div style={S.modalText}>
+              {tables[revertTarget.table_id] ? `Mesa ${tables[revertTarget.table_id].numero}` : 'Este pedido'} volverá a{' '}
+              <strong style={{ color: '#f0e8d8' }}>
+                {ESTADO_CFG[ESTADO_CFG[revertTarget.estado].prev]?.label.toLowerCase()}
+              </strong>.
+              {revertTarget.estado === 'preparando' && (
+                <> Si todavía está dentro de la ventana de tiempo para agrupar, podrá volver a admitir ítems nuevos de la misma mesa.</>
+              )}
+            </div>
+            <div style={S.modalActions}>
+              <button style={S.modalCancelBtn} onClick={() => setRevertTarget(null)}>Cancelar</button>
+              <button style={S.modalConfirmBtn} onClick={confirmRevertEstado}>Sí, revertir</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
