@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { formatMoney } from '../lib/money'
 
 const S = {
   app: { minHeight: '100vh', background: '#1a1410', color: '#f0e8d8', display: 'flex', flexDirection: 'column', maxWidth: 480, margin: '0 auto' },
@@ -116,7 +117,7 @@ export default function Mesa() {
 
         const { data: rest } = await supabase
           .from('restaurants')
-          .select('nombre')
+          .select('nombre, moneda')
           .eq('id', tableData.restaurant_id)
           .single()
         setRestaurant(rest)
@@ -411,7 +412,7 @@ export default function Mesa() {
                     <div style={S.info}>
                       <div style={S.name}>{item.nombre}</div>
                       {item.descripcion && <div style={S.desc}>{item.descripcion}</div>}
-                      <div style={S.price}>{parseFloat(item.precio).toFixed(2).replace('.', ',')} €</div>
+                      <div style={S.price}>{formatMoney(item.precio, restaurant?.moneda)}</div>
                     </div>
                     <div style={S.qty}>
                       <button style={S.btn} onClick={() => change(item, -1)}>−</button>
@@ -439,7 +440,7 @@ export default function Mesa() {
           <div style={S.cartBadge}>{cartCount}</div>
           <span style={{ fontSize: 14, fontWeight: 500, color: '#1a1410' }}>Ver pedido</span>
         </div>
-        <span style={{ fontSize: 15, fontWeight: 500, color: '#1a1410' }}>{cartTotal.toFixed(2).replace('.', ',')} €</span>
+        <span style={{ fontSize: 15, fontWeight: 500, color: '#1a1410' }}>{formatMoney(cartTotal, restaurant?.moneda)}</span>
       </div>
 
       <div style={S.overlay(overlay !== null)} onClick={e => { if (e.target === e.currentTarget) setOverlay(null) }}>
@@ -455,7 +456,7 @@ export default function Mesa() {
                       <div style={S.oName}>{v.nombre}</div>
                       <div style={S.oQty}>× {v.qty}</div>
                     </div>
-                    <div style={S.oPrice}>{(v.precio * v.qty).toFixed(2).replace('.', ',')} €</div>
+                    <div style={S.oPrice}>{formatMoney(v.precio * v.qty, restaurant?.moneda)}</div>
                   </div>
                   {editingNoteFor === id ? (
                     <input
@@ -487,7 +488,7 @@ export default function Mesa() {
 
               <div style={S.totalRow}>
                 <span style={{ fontSize: 15, color: '#8a7560' }}>Total</span>
-                <span style={{ fontSize: 17, fontWeight: 500, color: '#e8c97a' }}>{cartTotal.toFixed(2).replace('.', ',')} €</span>
+                <span style={{ fontSize: 17, fontWeight: 500, color: '#e8c97a' }}>{formatMoney(cartTotal, restaurant?.moneda)}</span>
               </div>
               {sendError && <div style={{ ...S.error, margin: '12px 0 0' }}>{sendError}</div>}
               <button style={S.confirmBtn(false)} onClick={confirmOrder}>Enviar pedido a cocina</button>
@@ -517,18 +518,18 @@ export default function Mesa() {
                   {pedido.items.map(item => (
                     <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#f0e8d8', padding: '2px 0' }}>
                       <span>{item.cantidad}× {item.nombre}</span>
-                      <span style={{ color: '#c4a85a' }}>{(item.precio * item.cantidad).toFixed(2).replace('.', ',')}€</span>
+                      <span style={{ color: '#c4a85a' }}>{formatMoney(item.precio * item.cantidad, restaurant?.moneda)}</span>
                     </div>
                   ))}
                   <div style={{ textAlign: 'right', fontSize: 12, color: '#7a6a50', marginTop: 4 }}>
-                    Subtotal: {parseFloat(pedido.total || 0).toFixed(2).replace('.', ',')}€
+                    Subtotal: {formatMoney(pedido.total || 0, restaurant?.moneda)}
                   </div>
                 </div>
               ))}
               {misPedidos.length > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16, fontWeight: 600, color: '#e8c97a', paddingTop: 8 }}>
                   <span>Total pedido hasta ahora</span>
-                  <span>{misPedidos.reduce((s, p) => s + parseFloat(p.total || 0), 0).toFixed(2).replace('.', ',')}€</span>
+                  <span>{formatMoney(misPedidos.reduce((s, p) => s + parseFloat(p.total || 0), 0), restaurant?.moneda)}</span>
                 </div>
               )}
             </>

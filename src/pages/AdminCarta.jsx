@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { formatMoney, getCurrencySymbol } from '../lib/money'
 
 const S = {
   app: { minHeight: '100vh', background: '#111', color: '#f0e8d8', fontFamily: "'Inter', sans-serif" },
@@ -83,7 +84,7 @@ export default function AdminCarta() {
   }
 
   async function loadData() {
-    const { data: rest } = await supabase.from('restaurants').select('nombre').eq('id', restaurantId).single()
+    const { data: rest } = await supabase.from('restaurants').select('nombre, moneda').eq('id', restaurantId).single()
     setRestaurant(rest)
 
     const { data: cats, error: catErr } = await supabase
@@ -322,7 +323,7 @@ export default function AdminCarta() {
                       <div style={S.itemInfo}>
                         <div style={S.itemName}>{item.nombre}</div>
                         {item.descripcion && <div style={S.itemDesc}>{item.descripcion}</div>}
-                        <div style={S.itemPrice}>{parseFloat(item.precio).toFixed(2).replace('.', ',')} €</div>
+                        <div style={S.itemPrice}>{formatMoney(item.precio, restaurant?.moneda)}</div>
                         <div style={S.itemActions}>
                           <div style={S.toggleSwitch(item.disponible)} onClick={() => toggleDisponible(item)} title={item.disponible ? 'Disponible' : 'No disponible'}>
                             <div style={S.toggleDot(item.disponible)}></div>
@@ -358,7 +359,7 @@ export default function AdminCarta() {
             <label style={S.label}>Descripción</label>
             <textarea style={S.textarea} value={formData.descripcion || ''} onChange={e => setFormData(prev => ({ ...prev, descripcion: e.target.value }))} placeholder="Ingredientes, detalles..." />
 
-            <label style={S.label}>Precio (€) *</label>
+            <label style={S.label}>Precio ({getCurrencySymbol(restaurant?.moneda)}) *</label>
             <input style={S.input} type="number" step="0.01" min="0" value={formData.precio ?? ''} onChange={e => setFormData(prev => ({ ...prev, precio: e.target.value }))} placeholder="9.50" />
 
             <label style={S.label}>Categoría</label>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { formatMoney } from '../lib/money'
 import { playNewOrderChime, playWaiterBell, unlockAudio } from '../lib/sound'
 
 const ESTADOS = ['pendiente', 'preparando', 'listo', 'entregado']
@@ -79,6 +80,16 @@ export default function Cocina() {
   const [notif, setNotif] = useState(null)
   const [waiterCalls, setWaiterCalls] = useState([])
   const [revertTarget, setRevertTarget] = useState(null) // order pendiente de confirmar reversión
+  const [moneda, setMoneda] = useState('EUR')
+
+  async function loadRestaurant() {
+    const { data } = await supabase
+      .from('restaurants')
+      .select('moneda')
+      .eq('id', restaurantId)
+      .single()
+    if (data?.moneda) setMoneda(data.moneda)
+  }
 
   function showNotif(msg) {
     setNotif(msg)
@@ -173,6 +184,7 @@ export default function Cocina() {
         await loadTableSessions()
         await loadOrders()
         await loadWaiterCalls()
+        await loadRestaurant()
       } catch (e) {
         setError(e.message)
       } finally {
@@ -417,7 +429,7 @@ export default function Cocina() {
               {order.tipo === 'mesa' && (
                 <div style={{ fontSize: 12, color: '#8a7560', display: 'flex', justifyContent: 'space-between' }}>
                   <span>Ref: {order.id.slice(0, 8).toUpperCase()}</span>
-                  <span style={{ color: '#e8c97a', fontWeight: 500 }}>{parseFloat(order.total).toFixed(2).replace('.', ',')} €</span>
+                  <span style={{ color: '#e8c97a', fontWeight: 500 }}>{formatMoney(order.total, moneda)}</span>
                 </div>
               )}
 
