@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../lib/supabase'
+import { formatMoney } from '../lib/money'
 
 const S = {
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 },
@@ -62,6 +63,7 @@ const METODOS = [
  * - table: { numero, zona }
  * - restaurantName: string
  * - restaurantId: string (necesario para registrar cobros)
+ * - moneda: string (código ISO 4217, ej. "EUR"; por defecto "EUR" si no llega)
  * - onClose: () => void   (cerrar el modal sin hacer nada más)
  * - onConfirmCerrar: () => void | null   (si se pasa, muestra el
  *   botón "Confirmar cierre de mesa"; si no, es solo lectura)
@@ -70,7 +72,7 @@ const METODOS = [
  *   cobro completo, dejando un motivo registrado)
  * - closing: boolean (estado de carga mientras se confirma el cierre)
  */
-export default function CuentaMesa({ session, table, restaurantName, restaurantId, onClose, onConfirmCerrar, onConfirmExencion, closing }) {
+export default function CuentaMesa({ session, table, restaurantName, restaurantId, moneda = 'EUR', onClose, onConfirmCerrar, onConfirmExencion, closing }) {
   const [loading, setLoading] = useState(true)
   const [pedidos, setPedidos] = useState([]) // [{ id, created_at, items: [...] }]
   const [pagos, setPagos] = useState([])
@@ -194,7 +196,7 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
             {pedido.items.map(item => (
               <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>{item.cantidad}× {item.nombre_snapshot}</span>
-                <span>{(parseFloat(item.precio_snapshot) * item.cantidad).toFixed(2).replace('.', ',')}€</span>
+                <span>{formatMoney(parseFloat(item.precio_snapshot) * item.cantidad, moneda)}</span>
               </div>
             ))}
             {pedido.notas && <div style={{ fontSize: 11 }}>Nota: {pedido.notas}</div>}
@@ -203,7 +205,7 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
         <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
         <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: 15 }}>
           <span>TOTAL</span>
-          <span>{total.toFixed(2).replace('.', ',')}€</span>
+          <span>{formatMoney(total, moneda)}</span>
         </div>
         {pagos.length > 0 && (
           <>
@@ -212,7 +214,7 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
             {pagos.map(p => (
               <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>{METODOS.find(m => m.value === p.metodo_pago)?.label || p.metodo_pago}</span>
-                <span>{parseFloat(p.monto).toFixed(2).replace('.', ',')}€</span>
+                <span>{formatMoney(p.monto, moneda)}</span>
               </div>
             ))}
           </>
@@ -260,19 +262,19 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
                       {item.notas && <div style={S.itemNota}>{item.notas}</div>}
                     </div>
                     <div style={S.itemPrecio}>
-                      {(parseFloat(item.precio_snapshot) * item.cantidad).toFixed(2).replace('.', ',')}€
+                      {formatMoney(parseFloat(item.precio_snapshot) * item.cantidad, moneda)}
                     </div>
                   </div>
                 ))}
                 {pedido.notas && <div style={S.itemNota}>Nota del pedido: {pedido.notas}</div>}
-                <div style={S.pedidoSubtotal}>Subtotal: {parseFloat(pedido.total || 0).toFixed(2).replace('.', ',')}€</div>
+                <div style={S.pedidoSubtotal}>Subtotal: {formatMoney(pedido.total || 0, moneda)}</div>
               </div>
             ))}
           </div>
 
           <div style={S.totalRow}>
             <span style={S.totalLabel}>Total</span>
-            <span style={S.totalValue}>{total.toFixed(2).replace('.', ',')}€</span>
+            <span style={S.totalValue}>{formatMoney(total, moneda)}</span>
           </div>
 
           <div style={S.cobroSection}>
@@ -280,15 +282,15 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
 
             <div style={S.cobroProgress(cubierto)}>
               <span style={S.cobroProgressLabel}>
-                {cubierto ? '✅ Cobrado en su totalidad' : `Cobrado ${totalPagado.toFixed(2).replace('.', ',')}€ de ${total.toFixed(2).replace('.', ',')}€`}
+                {cubierto ? '✅ Cobrado en su totalidad' : `Cobrado ${formatMoney(totalPagado, moneda)} de ${formatMoney(total, moneda)}`}
               </span>
-              {!cubierto && <span style={S.cobroProgressValue(false)}>Faltan {falta.toFixed(2).replace('.', ',')}€</span>}
+              {!cubierto && <span style={S.cobroProgressValue(false)}>Faltan {formatMoney(falta, moneda)}</span>}
             </div>
 
             {pagos.map(p => (
               <div key={p.id} style={S.pagoRow}>
                 <div>
-                  <span>{p.monto.toFixed ? p.monto.toFixed(2).replace('.', ',') : parseFloat(p.monto).toFixed(2).replace('.', ',')}€</span>
+                  <span>{formatMoney(p.monto, moneda)}</span>
                   {' · '}
                   <span>{METODOS.find(m => m.value === p.metodo_pago)?.label || p.metodo_pago}</span>
                   <div style={S.pagoMeta}>{new Date(p.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</div>
@@ -321,7 +323,7 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
             <button style={S.btnGhost} onClick={onClose}>Cerrar</button>
             <button style={S.btnGhost} onClick={handlePrint}>🖨 Imprimir</button>
             {onConfirmCerrar && (
-              <button style={S.btnDanger} onClick={onConfirmCerrar} disabled={closing || !cubierto} title={!cubierto ? `Faltan ${falta.toFixed(2).replace('.', ',')}€ por cobrar` : ''}>
+              <button style={S.btnDanger} onClick={onConfirmCerrar} disabled={closing || !cubierto} title={!cubierto ? `Faltan ${formatMoney(falta, moneda)} por cobrar` : ''}>
                 {closing ? 'Cerrando...' : 'Confirmar cierre'}
               </button>
             )}
@@ -349,7 +351,7 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
                     disabled={closing || !motivoExencion.trim()}
                     onClick={() => onConfirmExencion(motivoExencion.trim())}
                   >
-                    {closing ? 'Cerrando...' : `🏠 Cerrar como invitación de la casa (faltaban ${falta.toFixed(2).replace('.', ',')}€)`}
+                    {closing ? 'Cerrando...' : `🏠 Cerrar como invitación de la casa (faltaban ${formatMoney(falta, moneda)})`}
                   </button>
                 </>
               )}

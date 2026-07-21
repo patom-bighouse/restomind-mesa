@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { formatMoney } from '../lib/money'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 const S = {
@@ -105,7 +106,7 @@ export default function AdminDashboard() {
   async function checkAuth() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { navigate('/admin/login'); return }
-    const { data: rest } = await supabase.from('restaurants').select('id, nombre').eq('id', restaurantId).single()
+    const { data: rest } = await supabase.from('restaurants').select('id, nombre, moneda').eq('id', restaurantId).single()
     if (!rest) { navigate('/admin/login'); return }
     setRestaurant(rest)
     await loadTables(rest.id)
@@ -280,7 +281,7 @@ export default function AdminDashboard() {
         {/* KPIs */}
         <div style={S.kpiGrid}>
           <div style={S.kpiCard('#e8c97a')}>
-            <div style={S.kpiVal('#e8c97a')}>{ingresos.toFixed(2).replace('.', ',')} €</div>
+            <div style={S.kpiVal('#e8c97a')}>{formatMoney(ingresos, restaurant?.moneda)}</div>
             <div style={S.kpiLabel}>Ingresos</div>
           </div>
           <div style={S.kpiCard('#2ecc71')}>
@@ -288,7 +289,7 @@ export default function AdminDashboard() {
             <div style={S.kpiLabel}>Pedidos</div>
           </div>
           <div style={S.kpiCard('#3498db')}>
-            <div style={S.kpiVal('#3498db')}>{ticketMedio.toFixed(2).replace('.', ',')} €</div>
+            <div style={S.kpiVal('#3498db')}>{formatMoney(ticketMedio, restaurant?.moneda)}</div>
             <div style={S.kpiLabel}>Ticket medio</div>
           </div>
           <div style={S.kpiCard('#e74c3c')}>
@@ -379,7 +380,7 @@ export default function AdminDashboard() {
                         <td style={S.td}>{new Date(s.abierta_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
                         <td style={S.td}>{s.cerrada_at ? new Date(s.cerrada_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
                         <td style={S.td}>{s.pedidos}</td>
-                        <td style={S.td}>{s.totalCalculado.toFixed(2).replace('.', ',')} €</td>
+                        <td style={S.td}>{formatMoney(s.totalCalculado, restaurant?.moneda)}</td>
                         <td style={S.td}><span style={S.sesionEstadoBadge(s.estado === 'abierta')}>{s.estado === 'abierta' ? 'En curso' : 'Cerrada'}</span></td>
                         <td style={S.td}>
                           <span
@@ -422,7 +423,7 @@ export default function AdminDashboard() {
                         <td style={S.td}>{new Date(o.created_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
                         <td style={S.td}>{o.tipo === 'mesa' ? `Mesa ${tables[o.table_id]?.numero ?? '?'}` : 'Takeaway'}</td>
                         <td style={S.td}>{(orderItemsMap[o.id] || []).map(i => `${i.cantidad}× ${i.nombre_snapshot}`).join(', ') || '—'}</td>
-                        <td style={S.td}>{parseFloat(o.total).toFixed(2).replace('.', ',')} €</td>
+                        <td style={S.td}>{formatMoney(o.total, restaurant?.moneda)}</td>
                         <td style={S.td}><span style={S.estadoBadge(o.estado)}>{o.estado}</span></td>
                       </tr>
                     ))}

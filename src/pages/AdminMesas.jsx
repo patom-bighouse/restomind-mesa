@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { formatMoney } from '../lib/money'
 import { playWaiterBell, unlockAudio } from '../lib/sound'
 import CuentaMesa from '../components/CuentaMesa'
 import QRCode from 'qrcode'
@@ -138,7 +139,7 @@ export default function AdminMesas() {
   }
 
   async function loadData() {
-    const { data: rest } = await supabase.from('restaurants').select('nombre').eq('id', restaurantId).single()
+    const { data: rest } = await supabase.from('restaurants').select('nombre, moneda').eq('id', restaurantId).single()
     setRestaurant(rest)
     const { data: tabs, error: err } = await supabase
       .from('tables').select('id, numero, zona, capacidad, qr_token, activa')
@@ -221,7 +222,7 @@ export default function AdminMesas() {
       .eq('estado', 'registrado')
     const totalPagado = (pagos || []).reduce((s, p) => s + parseFloat(p.monto || 0), 0)
     if (total - totalPagado > 0.01) {
-      setError(`Faltan ${(total - totalPagado).toFixed(2).replace('.', ',')}€ por cobrar antes de cerrar la mesa.`)
+      setError(`Faltan ${formatMoney(total - totalPagado, restaurant?.moneda)} por cobrar antes de cerrar la mesa.`)
       return
     }
     const metodosUsados = [...new Set((pagos || []).map(p => p.metodo_pago))]
@@ -527,6 +528,7 @@ export default function AdminMesas() {
           table={cuentaModal.table}
           restaurantName={restaurant?.nombre}
           restaurantId={restaurantId}
+          moneda={restaurant?.moneda}
           onClose={() => setCuentaModal(null)}
           onConfirmCerrar={cuentaModal.mode === 'cerrar' ? confirmCloseTable : null}
           onConfirmExencion={cuentaModal.mode === 'cerrar' ? confirmCerrarExencion : null}

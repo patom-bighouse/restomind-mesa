@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createClient } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { isValidIban, formatIbanDisplay } from '../lib/iban'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -46,6 +47,20 @@ function slugify(text) {
     .replace(/(^-|-$)/g, '')
 }
 
+// Mismos países/monedas habilitados en el check constraint de la base
+// (restaurants_moneda_check). Si agregás una moneda nueva ahí, sumala acá
+// también para que aparezca en el selector.
+const PAISES = [
+  { code: 'ES', label: 'España', moneda: 'EUR' },
+  { code: 'MX', label: 'México', moneda: 'MXN' },
+  { code: 'AR', label: 'Argentina', moneda: 'ARS' },
+  { code: 'CO', label: 'Colombia', moneda: 'COP' },
+  { code: 'CL', label: 'Chile', moneda: 'CLP' },
+  { code: 'PE', label: 'Perú', moneda: 'PEN' },
+  { code: 'US', label: 'Estados Unidos', moneda: 'USD' },
+]
+const MONEDAS = ['EUR', 'USD', 'MXN', 'ARS', 'COP', 'CLP', 'PEN']
+
 export default function SuperAdminRestaurantes() {
   const navigate = useNavigate()
   const [restaurants, setRestaurants] = useState([])
@@ -53,9 +68,15 @@ export default function SuperAdminRestaurantes() {
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
 
-  const [showModal, setShowModal] = useState(false)
+  const [modalMode, setModalMode] = useState(null) // null | 'create' | 'edit'
+  const [editingId, setEditingId] = useState(null)
   const [creating, setCreating] = useState(false)
-  const [form, setForm] = useState({ nombre: '', email: '', password: '', whatsapp: '' })
+  const [form, setForm] = useState({
+    nombre: '', email: '', password: '', whatsapp: '',
+    pais: 'ES', moneda: 'EUR', direccion: '',
+    iban: '', titularCuenta: '',
+  })
+  const [ibanTouched, setIbanTouched] = useState(false)
 
   useEffect(() => { checkAuth() }, [])
 
@@ -70,18 +91,52 @@ export default function SuperAdminRestaurantes() {
   async function loadRestaurants() {
     const { data, error: err } = await supabase
       .from('restaurants')
-      .select('id, nombre, slug, whatsapp, activo, created_at, user_id')
+      .select('id, nombre, slug, whatsapp, activo, created_at, user_id, pais, moneda, direccion, email_dueno')
       .order('created_at', { ascending: false })
     if (err) { setError(err.message); setLoading(false); return }
     setRestaurants(data || [])
     setLoading(false)
   }
 
-  function openModal() {
-    setForm({ nombre: '', email: '', password: '', whatsapp: '' })
+  function openCreateModal() {
+    setForm({
+      nombre: '', email: '', password: '', whatsapp: '',
+      pais: 'ES', moneda: 'EUR', direccion: '',
+      iban: '', titularCuenta: '',
+    })
+    setIbanTouched(false)
     setError(null)
     setSuccess(null)
-    setShowModal(true)
+    setEditingId(null)
+    setModalMode('create')
+  }
+
+  async function openEditModal(rest) {
+    setError(null)
+    setSuccess(null)
+    setIbanTouched(false)
+    const { data: billing } = await supabase
+      .from('restaurant_billing')
+      .select('iban, titular_cuenta')
+      .eq('restaurant_id', rest.id)
+      .maybeSingle()
+    setForm({
+      nombre: rest.nombre || '',
+      email: rest.email_dueno || '', password: '',
+      whatsapp: rest.whatsapp || '',
+      pais: rest.pais || 'ES',
+      moneda: rest.moneda || 'EUR',
+      direccion: rest.direccion || '',
+      iban: billing?.iban || '',
+      titularCuenta: billing?.titular_cuenta || '',
+    })
+    setEditingId(rest.id)
+    setModalMode('edit')
+  }
+
+  function handlePaisChange(code) {
+    const pais = PAISES.find(p => p.code === code)
+    setForm(prev => ({ ...prev, pais: code, moneda: pais?.moneda || prev.moneda }))
   }
 
   async function createRestaurant() {
@@ -91,6 +146,10 @@ export default function SuperAdminRestaurantes() {
     }
     if (form.password.length < 6) {
       setError('La contraseña debe tener al menos 6 caracteres.')
+      return
+    }
+    if (form.iban.trim() && !isValidIban(form.iban)) {
+      setError('El IBAN no parece válido. Revisalo (o dejalo vacío y lo cargás más adelante).')
       return
     }
     setCreating(true)
@@ -117,6 +176,10 @@ export default function SuperAdminRestaurantes() {
           nombre: form.nombre.trim(),
           slug,
           whatsapp: form.whatsapp.trim() || null,
+          direccion: form.direccion.trim() || null,
+          pais: form.pais,
+          moneda: form.moneda,
+          email_dueno: form.email.trim(),
           user_id: newUserId,
           activo: true,
         })
@@ -151,8 +214,71 @@ export default function SuperAdminRestaurantes() {
         activa: true,
       })
 
+      // Datos bancarios (opcional). Va en tabla separada, con RLS
+      // restringida a superadmins — nunca se expone en el panel del
+      // propio restaurante ni en ninguna pantalla de cliente.
+      if (form.iban.trim()) {
+        const { error: billErr } = await supabase.from('restaurant_billing').insert({
+          restaurant_id: restData.id,
+          iban: form.iban.replace(/\s+/g, '').toUpperCase(),
+          titular_cuenta: form.titularCuenta.trim() || null,
+        })
+        if (billErr) throw billErr
+      }
+
       setSuccess(`Restaurante "${form.nombre}" creado correctamente.\n\nAcceso del cliente: ${form.email} / (la contraseña que definiste)\nPanel: /admin/login`)
-      setShowModal(false)
+      setModalMode(null)
+      loadRestaurants()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  async function updateRestaurant() {
+    if (!form.nombre.trim()) {
+      setError('El nombre es obligatorio.')
+      return
+    }
+    if (form.iban.trim() && !isValidIban(form.iban)) {
+      setError('El IBAN no parece válido. Revisalo (o dejalo vacío).')
+      return
+    }
+    setCreating(true)
+    setError(null)
+    try {
+      const { error: restErr } = await supabase
+        .from('restaurants')
+        .update({
+          nombre: form.nombre.trim(),
+          whatsapp: form.whatsapp.trim() || null,
+          direccion: form.direccion.trim() || null,
+          pais: form.pais,
+          moneda: form.moneda,
+          email_dueno: form.email.trim() || null,
+        })
+        .eq('id', editingId)
+      if (restErr) throw restErr
+
+      // upsert: si ya había datos bancarios los actualiza, si no, los crea.
+      // Si se vació el campo, en vez de dejar un IBAN viejo guardado, se borra.
+      if (form.iban.trim()) {
+        const { error: billErr } = await supabase
+          .from('restaurant_billing')
+          .upsert({
+            restaurant_id: editingId,
+            iban: form.iban.replace(/\s+/g, '').toUpperCase(),
+            titular_cuenta: form.titularCuenta.trim() || null,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'restaurant_id' })
+        if (billErr) throw billErr
+      } else {
+        await supabase.from('restaurant_billing').delete().eq('restaurant_id', editingId)
+      }
+
+      setSuccess(`Restaurante "${form.nombre}" actualizado correctamente.`)
+      setModalMode(null)
       loadRestaurants()
     } catch (e) {
       setError(e.message)
@@ -191,12 +317,13 @@ export default function SuperAdminRestaurantes() {
         {error && <div style={S.error}>{error}</div>}
         {success && <div style={S.success}>{success}</div>}
 
-        <button style={S.addBtn} onClick={openModal}>+ Nuevo restaurante</button>
+        <button style={S.addBtn} onClick={openCreateModal}>+ Nuevo restaurante</button>
 
         <table style={S.table}>
           <thead>
             <tr>
               <th style={S.th}>Restaurante</th>
+              <th style={S.th}>País / Moneda</th>
               <th style={S.th}>WhatsApp</th>
               <th style={S.th}>Estado</th>
               <th style={S.th}>Accesos</th>
@@ -209,6 +336,7 @@ export default function SuperAdminRestaurantes() {
                   <div style={S.restName}>{rest.nombre}</div>
                   <div style={S.restSlug}>{rest.slug} · {rest.id.slice(0, 8)}...</div>
                 </td>
+                <td style={S.td}>{PAISES.find(p => p.code === rest.pais)?.label || rest.pais || '—'} · {rest.moneda || '—'}</td>
                 <td style={S.td}>{rest.whatsapp || '—'}</td>
                 <td style={S.td}>
                   <span style={S.badge(rest.activo)} onClick={() => toggleActivo(rest)} role="button" title="Click para cambiar">
@@ -219,6 +347,7 @@ export default function SuperAdminRestaurantes() {
                   <a href={`/admin/mesas/${rest.id}`} style={S.linkBtn} target="_blank" rel="noreferrer">Mesas</a>
                   <a href={`/admin/carta/${rest.id}`} style={S.linkBtn} target="_blank" rel="noreferrer">Carta</a>
                   <a href={`/cocina/${rest.id}`} style={S.linkBtn} target="_blank" rel="noreferrer">Cocina</a>
+                  <button style={{ ...S.linkBtn, cursor: 'pointer' }} onClick={() => openEditModal(rest)}>Editar</button>
                 </td>
               </tr>
             ))}
@@ -232,29 +361,85 @@ export default function SuperAdminRestaurantes() {
         )}
       </div>
 
-      {showModal && (
-        <div style={S.modal} onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}>
+      {modalMode && (
+        <div style={S.modal} onClick={e => { if (e.target === e.currentTarget) setModalMode(null) }}>
           <div style={S.modalBox}>
-            <div style={S.modalTitle}>Nuevo restaurante</div>
+            <div style={S.modalTitle}>{modalMode === 'create' ? 'Nuevo restaurante' : 'Editar restaurante'}</div>
 
             <label style={S.label}>Nombre del restaurante *</label>
             <input style={S.input} value={form.nombre} onChange={e => setForm(prev => ({ ...prev, nombre: e.target.value }))} placeholder="Ej. La Taberna del Puerto" />
-            {form.nombre && <div style={S.hint}>slug: {slugify(form.nombre)}</div>}
+            {modalMode === 'create' && form.nombre && <div style={S.hint}>slug: {slugify(form.nombre)}</div>}
 
-            <label style={S.label}>Email del dueño (acceso al panel) *</label>
-            <input style={S.input} type="email" value={form.email} onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))} placeholder="dueno@restaurante.com" />
+            {modalMode === 'create' ? (
+              <>
+                <label style={S.label}>Email del dueño (acceso al panel) *</label>
+                <input style={S.input} type="email" value={form.email} onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))} placeholder="dueno@restaurante.com" />
 
-            <label style={S.label}>Contraseña inicial *</label>
-            <input style={S.input} type="text" value={form.password} onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))} placeholder="mínimo 6 caracteres" />
-            <div style={S.hint}>Compártesela al cliente; podrá usarla en /admin/login</div>
+                <label style={S.label}>Contraseña inicial *</label>
+                <input style={S.input} type="text" value={form.password} onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))} placeholder="mínimo 6 caracteres" />
+                <div style={S.hint}>Compártesela al cliente; podrá usarla en /admin/login</div>
+              </>
+            ) : (
+              <>
+                <label style={S.label}>Email del dueño (acceso al panel)</label>
+                <input style={S.input} type="email" value={form.email} onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))} placeholder="dueno@restaurante.com" />
+                <div style={S.hint}>Esto NO cambia el login real — es solo una copia de referencia. Para cambiar el acceso de verdad, hacelo desde Authentication → Users en Supabase, y después actualizá este campo para que coincida.</div>
+              </>
+            )}
 
             <label style={S.label}>WhatsApp (opcional)</label>
             <input style={S.input} value={form.whatsapp} onChange={e => setForm(prev => ({ ...prev, whatsapp: e.target.value }))} placeholder="+34600000000" />
 
+            <div style={{ display: 'flex', gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <label style={S.label}>País</label>
+                <select style={S.input} value={form.pais} onChange={e => handlePaisChange(e.target.value)}>
+                  {PAISES.map(p => <option key={p.code} value={p.code}>{p.label}</option>)}
+                </select>
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={S.label}>Moneda</label>
+                <select style={S.input} value={form.moneda} onChange={e => setForm(prev => ({ ...prev, moneda: e.target.value }))}>
+                  {MONEDAS.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={S.hint}>La moneda se ajusta sola según el país, pero podés cambiarla si el restaurante factura en otra.</div>
+
+            <label style={S.label}>Dirección (opcional)</label>
+            <input style={S.input} value={form.direccion} onChange={e => setForm(prev => ({ ...prev, direccion: e.target.value }))} placeholder="Calle, número, ciudad" />
+
+            <label style={S.label}>IBAN — para cobrar la suscripción más adelante (opcional)</label>
+            <input
+              style={S.input}
+              value={form.iban}
+              onChange={e => setForm(prev => ({ ...prev, iban: e.target.value }))}
+              onBlur={() => setIbanTouched(true)}
+              placeholder="ES91 2100 0418 4502 0005 1332"
+            />
+            {ibanTouched && form.iban.trim() && !isValidIban(form.iban) && (
+              <div style={{ ...S.hint, color: '#e87a7a' }}>Ese IBAN no parece válido — revisalo.</div>
+            )}
+            {form.iban.trim() && isValidIban(form.iban) && (
+              <div style={S.hint}>{formatIbanDisplay(form.iban)} ✓</div>
+            )}
+            <div style={S.hint}>
+              {modalMode === 'create'
+                ? 'Solo se guarda el dato — todavía no hay ningún cobro automático conectado.'
+                : 'Dejar este campo vacío y guardar borra el IBAN guardado para este restaurante.'}
+            </div>
+
+            <label style={S.label}>Titular de la cuenta (opcional)</label>
+            <input style={S.input} value={form.titularCuenta} onChange={e => setForm(prev => ({ ...prev, titularCuenta: e.target.value }))} placeholder="Nombre tal como figura en el banco" />
+
             <div style={S.modalBtns}>
-              <button style={S.cancelBtn} onClick={() => setShowModal(false)}>Cancelar</button>
-              <button style={S.saveBtn(creating)} onClick={createRestaurant} disabled={creating}>
-                {creating ? 'Creando...' : 'Crear restaurante'}
+              <button style={S.cancelBtn} onClick={() => setModalMode(null)}>Cancelar</button>
+              <button
+                style={S.saveBtn(creating)}
+                onClick={modalMode === 'create' ? createRestaurant : updateRestaurant}
+                disabled={creating}
+              >
+                {creating ? 'Guardando...' : modalMode === 'create' ? 'Crear restaurante' : 'Guardar cambios'}
               </button>
             </div>
           </div>
