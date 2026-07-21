@@ -91,7 +91,7 @@ export default function SuperAdminRestaurantes() {
   async function loadRestaurants() {
     const { data, error: err } = await supabase
       .from('restaurants')
-      .select('id, nombre, slug, whatsapp, activo, created_at, user_id, pais, moneda, direccion')
+      .select('id, nombre, slug, whatsapp, activo, created_at, user_id, pais, moneda, direccion, email_dueno')
       .order('created_at', { ascending: false })
     if (err) { setError(err.message); setLoading(false); return }
     setRestaurants(data || [])
@@ -122,7 +122,7 @@ export default function SuperAdminRestaurantes() {
       .maybeSingle()
     setForm({
       nombre: rest.nombre || '',
-      email: '', password: '',
+      email: rest.email_dueno || '', password: '',
       whatsapp: rest.whatsapp || '',
       pais: rest.pais || 'ES',
       moneda: rest.moneda || 'EUR',
@@ -179,6 +179,7 @@ export default function SuperAdminRestaurantes() {
           direccion: form.direccion.trim() || null,
           pais: form.pais,
           moneda: form.moneda,
+          email_dueno: form.email.trim(),
           user_id: newUserId,
           activo: true,
         })
@@ -255,6 +256,7 @@ export default function SuperAdminRestaurantes() {
           direccion: form.direccion.trim() || null,
           pais: form.pais,
           moneda: form.moneda,
+          email_dueno: form.email.trim() || null,
         })
         .eq('id', editingId)
       if (restErr) throw restErr
@@ -378,7 +380,11 @@ export default function SuperAdminRestaurantes() {
                 <div style={S.hint}>Compártesela al cliente; podrá usarla en /admin/login</div>
               </>
             ) : (
-              <div style={S.hint}>Para cambiar el email de acceso, hacelo directamente desde Authentication → Users en Supabase.</div>
+              <>
+                <label style={S.label}>Email del dueño (acceso al panel)</label>
+                <input style={S.input} type="email" value={form.email} onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))} placeholder="dueno@restaurante.com" />
+                <div style={S.hint}>Esto NO cambia el login real — es solo una copia de referencia. Para cambiar el acceso de verdad, hacelo desde Authentication → Users en Supabase, y después actualizá este campo para que coincida.</div>
+              </>
             )}
 
             <label style={S.label}>WhatsApp (opcional)</label>
