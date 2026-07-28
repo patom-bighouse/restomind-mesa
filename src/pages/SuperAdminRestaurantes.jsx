@@ -38,6 +38,8 @@ const S = {
   modalBtns: { display: 'flex', gap: 10, marginTop: 22 },
   saveBtn: (disabled) => ({ flex: 1, background: disabled ? '#3a3a2a' : '#e8c97a', color: disabled ? '#888' : '#111', border: 'none', borderRadius: 10, padding: 12, fontSize: 14, fontWeight: 500, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: "'Inter', sans-serif" }),
   cancelBtn: { flex: 1, background: 'transparent', border: '0.5px solid #2a2a2a', borderRadius: 10, padding: 12, fontSize: 14, color: '#8a8a8a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" },
+  tabBar: { display: 'flex', gap: 4, marginTop: 16, marginBottom: 4, borderBottom: '0.5px solid #2a2a2a' },
+  tabBtn: (active) => ({ background: 'transparent', border: 'none', borderBottom: active ? '2px solid #e8c97a' : '2px solid transparent', color: active ? '#e8c97a' : '#8a8a8a', padding: '8px 4px', marginRight: 18, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }),
 }
 
 function slugify(text) {
@@ -78,9 +80,8 @@ export default function SuperAdminRestaurantes() {
   })
   const [ibanTouched, setIbanTouched] = useState(false)
   const [modulosCatalogo, setModulosCatalogo] = useState([])
-  const [modulosModalRest, setModulosModalRest] = useState(null) // restaurante con el modal de módulos abierto
   const [modulosActivos, setModulosActivos] = useState(new Set())
-  const [guardandoModulos, setGuardandoModulos] = useState(false)
+  const [editTab, setEditTab] = useState('datos') // 'datos' | 'facturacion' | 'modulos'
 
   useEffect(() => { checkAuth() }, [])
   useEffect(() => { loadModulosCatalogo() }, [])
@@ -118,6 +119,7 @@ export default function SuperAdminRestaurantes() {
     setError(null)
     setSuccess(null)
     setEditingId(null)
+    setEditTab('datos')
     setModalMode('create')
   }
 
@@ -130,6 +132,13 @@ export default function SuperAdminRestaurantes() {
       .select('iban, titular_cuenta')
       .eq('restaurant_id', rest.id)
       .maybeSingle()
+    const { data: modActivos } = await supabase
+      .from('restaurant_modulos')
+      .select('modulo_key')
+      .eq('restaurant_id', rest.id)
+      .eq('activo', true)
+    setModulosActivos(new Set((modActivos || []).map(m => m.modulo_key)))
+    setEditTab('datos')
     setForm({
       nombre: rest.nombre || '',
       email: rest.email_dueno || '', password: '',
@@ -147,40 +156,6 @@ export default function SuperAdminRestaurantes() {
   function handlePaisChange(code) {
     const pais = PAISES.find(p => p.code === code)
     setForm(prev => ({ ...prev, pais: code, moneda: pais?.moneda || prev.moneda }))
-  }
-
-  async function openModulosModal(rest) {
-    setError(null)
-    setSuccess(null)
-    const { data: modActivos } = await supabase
-      .from('restaurant_modulos')
-      .select('modulo_key')
-      .eq('restaurant_id', rest.id)
-      .eq('activo', true)
-    setModulosActivos(new Set((modActivos || []).map(m => m.modulo_key)))
-    setModulosModalRest(rest)
-  }
-
-  async function guardarModulos() {
-    setGuardandoModulos(true)
-    setError(null)
-    try {
-      const filas = modulosCatalogo.map(m => ({
-        restaurant_id: modulosModalRest.id,
-        modulo_key: m.key,
-        activo: modulosActivos.has(m.key),
-      }))
-      const { error: modErr } = await supabase
-        .from('restaurant_modulos')
-        .upsert(filas, { onConflict: 'restaurant_id,modulo_key' })
-      if (modErr) throw modErr
-      setSuccess(`Módulos de "${modulosModalRest.nombre}" actualizados.`)
-      setModulosModalRest(null)
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setGuardandoModulos(false)
-    }
   }
 
   function toggleModulo(key) {
@@ -355,6 +330,18 @@ export default function SuperAdminRestaurantes() {
         await supabase.from('restaurant_billing').delete().eq('restaurant_id', editingId)
       }
 
+      const filasModulos = modulosCatalogo.map(m => ({
+        restaurant_id: editingId,
+        modulo_key: m.key,
+        activo: modulosActivos.has(m.key),
+      }))
+      if (filasModulos.length) {
+        const { error: modErr } = await supabase
+          .from('restaurant_modulos')
+          .upsert(filasModulos, { onConflict: 'restaurant_id,modulo_key' })
+        if (modErr) throw modErr
+      }
+
       setSuccess(`Restaurante "${form.nombre}" actualizado correctamente.`)
       setModalMode(null)
       loadRestaurants()
@@ -426,7 +413,6 @@ export default function SuperAdminRestaurantes() {
                   <a href={`/admin/carta/${rest.id}`} style={S.linkBtn} target="_blank" rel="noreferrer">Carta</a>
                   <a href={`/cocina/${rest.id}`} style={S.linkBtn} target="_blank" rel="noreferrer">Cocina</a>
                   <button style={{ ...S.linkBtn, cursor: 'pointer' }} onClick={() => openEditModal(rest)}>Editar</button>
-                  <button style={{ ...S.linkBtn, cursor: 'pointer' }} onClick={() => openModulosModal(rest)}>Módulos</button>
                 </td>
               </tr>
             ))}
@@ -457,59 +443,140 @@ export default function SuperAdminRestaurantes() {
                 <label style={S.label}>Contraseña inicial *</label>
                 <input style={S.input} type="text" value={form.password} onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))} placeholder="mínimo 6 caracteres" />
                 <div style={S.hint}>Compártesela al cliente; podrá usarla en /admin/login</div>
+
+                <label style={S.label}>WhatsApp (opcional)</label>
+                <input style={S.input} value={form.whatsapp} onChange={e => setForm(prev => ({ ...prev, whatsapp: e.target.value }))} placeholder="+34600000000" />
+
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={S.label}>País</label>
+                    <select style={S.input} value={form.pais} onChange={e => handlePaisChange(e.target.value)}>
+                      {PAISES.map(p => <option key={p.code} value={p.code}>{p.label}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={S.label}>Moneda</label>
+                    <select style={S.input} value={form.moneda} onChange={e => setForm(prev => ({ ...prev, moneda: e.target.value }))}>
+                      {MONEDAS.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div style={S.hint}>La moneda se ajusta sola según el país, pero podés cambiarla si el restaurante factura en otra.</div>
+
+                <label style={S.label}>Dirección (opcional)</label>
+                <input style={S.input} value={form.direccion} onChange={e => setForm(prev => ({ ...prev, direccion: e.target.value }))} placeholder="Calle, número, ciudad" />
+
+                <label style={S.label}>IBAN — para cobrar la suscripción más adelante (opcional)</label>
+                <input
+                  style={S.input}
+                  value={form.iban}
+                  onChange={e => setForm(prev => ({ ...prev, iban: e.target.value }))}
+                  onBlur={() => setIbanTouched(true)}
+                  placeholder="ES91 2100 0418 4502 0005 1332"
+                />
+                {ibanTouched && form.iban.trim() && !isValidIban(form.iban) && (
+                  <div style={{ ...S.hint, color: '#e87a7a' }}>Ese IBAN no parece válido — revisalo.</div>
+                )}
+                {form.iban.trim() && isValidIban(form.iban) && (
+                  <div style={S.hint}>{formatIbanDisplay(form.iban)} ✓</div>
+                )}
+                <div style={S.hint}>Solo se guarda el dato — todavía no hay ningún cobro automático conectado.</div>
+
+                <label style={S.label}>Titular de la cuenta (opcional)</label>
+                <input style={S.input} value={form.titularCuenta} onChange={e => setForm(prev => ({ ...prev, titularCuenta: e.target.value }))} placeholder="Nombre tal como figura en el banco" />
               </>
             ) : (
               <>
-                <label style={S.label}>Email del dueño (acceso al panel)</label>
-                <input style={S.input} type="email" value={form.email} onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))} placeholder="dueno@restaurante.com" />
-                <div style={S.hint}>Esto NO cambia el login real — es solo una copia de referencia. Para cambiar el acceso de verdad, hacelo desde Authentication → Users en Supabase, y después actualizá este campo para que coincida.</div>
+                <div style={S.tabBar}>
+                  <button style={S.tabBtn(editTab === 'datos')} onClick={() => setEditTab('datos')}>Datos</button>
+                  <button style={S.tabBtn(editTab === 'facturacion')} onClick={() => setEditTab('facturacion')}>Facturación</button>
+                  <button style={S.tabBtn(editTab === 'modulos')} onClick={() => setEditTab('modulos')}>Módulos</button>
+                </div>
+
+                {editTab === 'datos' && (
+                  <>
+                    <label style={S.label}>Email del dueño (acceso al panel)</label>
+                    <input style={S.input} type="email" value={form.email} onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))} placeholder="dueno@restaurante.com" />
+                    <div style={S.hint}>Esto NO cambia el login real — es solo una copia de referencia. Para cambiar el acceso de verdad, hacelo desde Authentication → Users en Supabase, y después actualizá este campo para que coincida.</div>
+
+                    <label style={S.label}>WhatsApp (opcional)</label>
+                    <input style={S.input} value={form.whatsapp} onChange={e => setForm(prev => ({ ...prev, whatsapp: e.target.value }))} placeholder="+34600000000" />
+
+                    <div style={{ display: 'flex', gap: 12 }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={S.label}>País</label>
+                        <select style={S.input} value={form.pais} onChange={e => handlePaisChange(e.target.value)}>
+                          {PAISES.map(p => <option key={p.code} value={p.code}>{p.label}</option>)}
+                        </select>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={S.label}>Moneda</label>
+                        <select style={S.input} value={form.moneda} onChange={e => setForm(prev => ({ ...prev, moneda: e.target.value }))}>
+                          {MONEDAS.map(m => <option key={m} value={m}>{m}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div style={S.hint}>La moneda se ajusta sola según el país, pero podés cambiarla si el restaurante factura en otra.</div>
+
+                    <label style={S.label}>Dirección (opcional)</label>
+                    <input style={S.input} value={form.direccion} onChange={e => setForm(prev => ({ ...prev, direccion: e.target.value }))} placeholder="Calle, número, ciudad" />
+                  </>
+                )}
+
+                {editTab === 'facturacion' && (
+                  <>
+                    <label style={S.label}>IBAN — para cobrar la suscripción más adelante (opcional)</label>
+                    <input
+                      style={S.input}
+                      value={form.iban}
+                      onChange={e => setForm(prev => ({ ...prev, iban: e.target.value }))}
+                      onBlur={() => setIbanTouched(true)}
+                      placeholder="ES91 2100 0418 4502 0005 1332"
+                    />
+                    {ibanTouched && form.iban.trim() && !isValidIban(form.iban) && (
+                      <div style={{ ...S.hint, color: '#e87a7a' }}>Ese IBAN no parece válido — revisalo.</div>
+                    )}
+                    {form.iban.trim() && isValidIban(form.iban) && (
+                      <div style={S.hint}>{formatIbanDisplay(form.iban)} ✓</div>
+                    )}
+                    <div style={S.hint}>Dejar este campo vacío y guardar borra el IBAN guardado para este restaurante.</div>
+
+                    <label style={S.label}>Titular de la cuenta (opcional)</label>
+                    <input style={S.input} value={form.titularCuenta} onChange={e => setForm(prev => ({ ...prev, titularCuenta: e.target.value }))} placeholder="Nombre tal como figura en el banco" />
+                  </>
+                )}
+
+                {editTab === 'modulos' && (
+                  <>
+                    {modulosCatalogo.map(m => {
+                      const activo = modulosActivos.has(m.key)
+                      const bloqueadoPorDependencia = m.key !== 'nucleo' && m.requiere && !modulosActivos.has(m.requiere) && !activo
+                      return (
+                        <div key={m.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0', borderBottom: '0.5px solid #1f1f1f' }}>
+                          <input
+                            type="checkbox"
+                            checked={activo}
+                            disabled={m.key === 'nucleo'}
+                            onChange={() => toggleModulo(m.key)}
+                            style={{ marginTop: 3 }}
+                          />
+                          <div>
+                            <div style={{ fontSize: 13, color: '#f0f0f0' }}>
+                              {m.nombre}{m.key === 'nucleo' && <span style={{ color: '#555', fontSize: 11 }}> (siempre incluido)</span>}
+                            </div>
+                            <div style={{ fontSize: 11, color: '#666' }}>{m.descripcion}</div>
+                            {bloqueadoPorDependencia && (
+                              <div style={{ fontSize: 11, color: '#e8c97a' }}>Requiere: {modulosCatalogo.find(x => x.key === m.requiere)?.nombre}</div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                    <div style={S.hint}>Activar un módulo prende automáticamente los que necesita. Desactivarlo apaga en cadena los que dependen de él.</div>
+                  </>
+                )}
               </>
             )}
-
-            <label style={S.label}>WhatsApp (opcional)</label>
-            <input style={S.input} value={form.whatsapp} onChange={e => setForm(prev => ({ ...prev, whatsapp: e.target.value }))} placeholder="+34600000000" />
-
-            <div style={{ display: 'flex', gap: 12 }}>
-              <div style={{ flex: 1 }}>
-                <label style={S.label}>País</label>
-                <select style={S.input} value={form.pais} onChange={e => handlePaisChange(e.target.value)}>
-                  {PAISES.map(p => <option key={p.code} value={p.code}>{p.label}</option>)}
-                </select>
-              </div>
-              <div style={{ flex: 1 }}>
-                <label style={S.label}>Moneda</label>
-                <select style={S.input} value={form.moneda} onChange={e => setForm(prev => ({ ...prev, moneda: e.target.value }))}>
-                  {MONEDAS.map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-              </div>
-            </div>
-            <div style={S.hint}>La moneda se ajusta sola según el país, pero podés cambiarla si el restaurante factura en otra.</div>
-
-            <label style={S.label}>Dirección (opcional)</label>
-            <input style={S.input} value={form.direccion} onChange={e => setForm(prev => ({ ...prev, direccion: e.target.value }))} placeholder="Calle, número, ciudad" />
-
-            <label style={S.label}>IBAN — para cobrar la suscripción más adelante (opcional)</label>
-            <input
-              style={S.input}
-              value={form.iban}
-              onChange={e => setForm(prev => ({ ...prev, iban: e.target.value }))}
-              onBlur={() => setIbanTouched(true)}
-              placeholder="ES91 2100 0418 4502 0005 1332"
-            />
-            {ibanTouched && form.iban.trim() && !isValidIban(form.iban) && (
-              <div style={{ ...S.hint, color: '#e87a7a' }}>Ese IBAN no parece válido — revisalo.</div>
-            )}
-            {form.iban.trim() && isValidIban(form.iban) && (
-              <div style={S.hint}>{formatIbanDisplay(form.iban)} ✓</div>
-            )}
-            <div style={S.hint}>
-              {modalMode === 'create'
-                ? 'Solo se guarda el dato — todavía no hay ningún cobro automático conectado.'
-                : 'Dejar este campo vacío y guardar borra el IBAN guardado para este restaurante.'}
-            </div>
-
-            <label style={S.label}>Titular de la cuenta (opcional)</label>
-            <input style={S.input} value={form.titularCuenta} onChange={e => setForm(prev => ({ ...prev, titularCuenta: e.target.value }))} placeholder="Nombre tal como figura en el banco" />
 
             <div style={S.modalBtns}>
               <button style={S.cancelBtn} onClick={() => setModalMode(null)}>Cancelar</button>
@@ -519,48 +586,6 @@ export default function SuperAdminRestaurantes() {
                 disabled={creating}
               >
                 {creating ? 'Guardando...' : modalMode === 'create' ? 'Crear restaurante' : 'Guardar cambios'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {modulosModalRest && (
-        <div style={S.modal} onClick={e => { if (e.target === e.currentTarget) setModulosModalRest(null) }}>
-          <div style={{ ...S.modalBox, maxWidth: 380 }}>
-            <div style={S.modalTitle}>Módulos — {modulosModalRest.nombre}</div>
-            {error && <div style={S.error}>{error}</div>}
-
-            {modulosCatalogo.map(m => {
-              const activo = modulosActivos.has(m.key)
-              const bloqueadoPorDependencia = m.key !== 'nucleo' && m.requiere && !modulosActivos.has(m.requiere) && !activo
-              return (
-                <div key={m.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0', borderBottom: '0.5px solid #1f1f1f' }}>
-                  <input
-                    type="checkbox"
-                    checked={activo}
-                    disabled={m.key === 'nucleo'}
-                    onChange={() => toggleModulo(m.key)}
-                    style={{ marginTop: 3 }}
-                  />
-                  <div>
-                    <div style={{ fontSize: 13, color: '#f0f0f0' }}>
-                      {m.nombre}{m.key === 'nucleo' && <span style={{ color: '#555', fontSize: 11 }}> (siempre incluido)</span>}
-                    </div>
-                    <div style={{ fontSize: 11, color: '#666' }}>{m.descripcion}</div>
-                    {bloqueadoPorDependencia && (
-                      <div style={{ fontSize: 11, color: '#e8c97a' }}>Requiere: {modulosCatalogo.find(x => x.key === m.requiere)?.nombre}</div>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-            <div style={S.hint}>Activar un módulo prende automáticamente los que necesita. Desactivarlo apaga en cadena los que dependen de él.</div>
-
-            <div style={S.modalBtns}>
-              <button style={S.cancelBtn} onClick={() => setModulosModalRest(null)}>Cancelar</button>
-              <button style={S.saveBtn(guardandoModulos)} onClick={guardarModulos} disabled={guardandoModulos}>
-                {guardandoModulos ? 'Guardando...' : 'Guardar módulos'}
               </button>
             </div>
           </div>
