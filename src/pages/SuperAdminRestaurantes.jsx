@@ -77,8 +77,16 @@ export default function SuperAdminRestaurantes() {
     iban: '', titularCuenta: '',
   })
   const [ibanTouched, setIbanTouched] = useState(false)
+  const [modulosCatalogo, setModulosCatalogo] = useState([])
+  const [modulosActivos, setModulosActivos] = useState(new Set())
 
   useEffect(() => { checkAuth() }, [])
+  useEffect(() => { loadModulosCatalogo() }, [])
+
+  async function loadModulosCatalogo() {
+    const { data } = await supabase.from('modulos').select('key, nombre, descripcion, requiere').order('orden')
+    setModulosCatalogo(data || [])
+  }
 
   async function checkAuth() {
     const { data: { session } } = await supabase.auth.getSession()
@@ -120,6 +128,12 @@ export default function SuperAdminRestaurantes() {
       .select('iban, titular_cuenta')
       .eq('restaurant_id', rest.id)
       .maybeSingle()
+    const { data: modActivos } = await supabase
+      .from('restaurant_modulos')
+      .select('modulo_key')
+      .eq('restaurant_id', rest.id)
+      .eq('activo', true)
+    setModulosActivos(new Set((modActivos || []).map(m => m.modulo_key)))
     setForm({
       nombre: rest.nombre || '',
       email: rest.email_dueno || '', password: '',
@@ -137,6 +151,40 @@ export default function SuperAdminRestaurantes() {
   function handlePaisChange(code) {
     const pais = PAISES.find(p => p.code === code)
     setForm(prev => ({ ...prev, pais: code, moneda: pais?.moneda || prev.moneda }))
+  }
+
+  function toggleModulo(key) {
+    setModulosActivos(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        // Al apagar un módulo, apagar en cascada todo lo que dependa de
+        // él — no puede quedar activo "Take away" sin "Agente WhatsApp",
+        // por ejemplo.
+        let cambio = true
+        next.delete(key)
+        while (cambio) {
+          cambio = false
+          for (const m of modulosCatalogo) {
+            if (next.has(m.key) && m.requiere && !next.has(m.requiere)) {
+              next.delete(m.key)
+              cambio = true
+            }
+          }
+        }
+      } else {
+        // Al prender un módulo, prender también, en cadena, todo lo que
+        // necesita (ej. activar "Take away" prende "Agente WhatsApp" y,
+        // si hiciera falta, lo que ese a su vez requiera).
+        let actual = modulosCatalogo.find(m => m.key === key)
+        const aActivar = [key]
+        while (actual?.requiere) {
+          aActivar.push(actual.requiere)
+          actual = modulosCatalogo.find(m => m.key === actual.requiere)
+        }
+        aActivar.forEach(k => next.add(k))
+      }
+      return next
+    })
   }
 
   async function createRestaurant() {
@@ -275,6 +323,20 @@ export default function SuperAdminRestaurantes() {
         if (billErr) throw billErr
       } else {
         await supabase.from('restaurant_billing').delete().eq('restaurant_id', editingId)
+      }
+
+      // Sincronizar módulos: upsert de todos los del catálogo, marcando
+      // activo según lo que quedó tildado en el modal.
+      const filasModulos = modulosCatalogo.map(m => ({
+        restaurant_id: editingId,
+        modulo_key: m.key,
+        activo: modulosActivos.has(m.key),
+      }))
+      if (filasModulos.length) {
+        const { error: modErr } = await supabase
+          .from('restaurant_modulos')
+          .upsert(filasModulos, { onConflict: 'restaurant_id,modulo_key' })
+        if (modErr) throw modErr
       }
 
       setSuccess(`Restaurante "${form.nombre}" actualizado correctamente.`)
@@ -431,6 +493,37 @@ export default function SuperAdminRestaurantes() {
 
             <label style={S.label}>Titular de la cuenta (opcional)</label>
             <input style={S.input} value={form.titularCuenta} onChange={e => setForm(prev => ({ ...prev, titularCuenta: e.target.value }))} placeholder="Nombre tal como figura en el banco" />
+
+            {modalMode === 'edit' && (
+              <>
+                <label style={S.label}>Módulos activos</label>
+                {modulosCatalogo.map(m => {
+                  const activo = modulosActivos.has(m.key)
+                  const bloqueadoPorDependencia = m.key !== 'nucleo' && m.requiere && !modulosActivos.has(m.requiere) && !activo
+                  return (
+                    <div key={m.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0', borderBottom: '0.5px solid #1f1f1f' }}>
+                      <input
+                        type="checkbox"
+                        checked={activo}
+                        disabled={m.key === 'nucleo'}
+                        onChange={() => toggleModulo(m.key)}
+                        style={{ marginTop: 3 }}
+                      />
+                      <div>
+                        <div style={{ fontSize: 13, color: '#f0f0f0' }}>
+                          {m.nombre}{m.key === 'nucleo' && <span style={{ color: '#555', fontSize: 11 }}> (siempre incluido)</span>}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#666' }}>{m.descripcion}</div>
+                        {bloqueadoPorDependencia && (
+                          <div style={{ fontSize: 11, color: '#e8c97a' }}>Requiere: {modulosCatalogo.find(x => x.key === m.requiere)?.nombre}</div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+                <div style={S.hint}>Activar un módulo prende automáticamente los que necesita. Desactivarlo apaga en cadena los que dependen de él.</div>
+              </>
+            )}
 
             <div style={S.modalBtns}>
               <button style={S.cancelBtn} onClick={() => setModalMode(null)}>Cancelar</button>
