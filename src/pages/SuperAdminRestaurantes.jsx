@@ -30,7 +30,7 @@ const S = {
   badge: (active) => ({ fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 20, background: active ? '#142a1a' : '#2a1414', color: active ? '#2ecc71' : '#e74c3c' }),
 
   modal: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 20 },
-  modalBox: { background: '#161616', border: '0.5px solid #2a2a2a', borderRadius: 16, padding: 24, width: '100%', maxWidth: 420 },
+  modalBox: { background: '#161616', border: '0.5px solid #2a2a2a', borderRadius: 16, padding: 24, width: '100%', maxWidth: 420, maxHeight: '85vh', overflowY: 'auto' },
   modalTitle: { fontFamily: "'Playfair Display', serif", fontSize: 18, color: '#e8c97a', marginBottom: 18 },
   label: { fontSize: 12, color: '#8a8a8a', marginBottom: 6, display: 'block', marginTop: 14 },
   input: { width: '100%', background: '#0a0a0a', border: '0.5px solid #2a2a2a', borderRadius: 10, padding: '10px 14px', fontSize: 14, color: '#f0f0f0', fontFamily: "'Inter', sans-serif", outline: 'none', boxSizing: 'border-box' },
