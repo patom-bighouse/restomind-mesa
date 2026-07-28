@@ -78,7 +78,9 @@ export default function SuperAdminRestaurantes() {
   })
   const [ibanTouched, setIbanTouched] = useState(false)
   const [modulosCatalogo, setModulosCatalogo] = useState([])
+  const [modulosModalRest, setModulosModalRest] = useState(null) // restaurante con el modal de módulos abierto
   const [modulosActivos, setModulosActivos] = useState(new Set())
+  const [guardandoModulos, setGuardandoModulos] = useState(false)
 
   useEffect(() => { checkAuth() }, [])
   useEffect(() => { loadModulosCatalogo() }, [])
@@ -128,12 +130,6 @@ export default function SuperAdminRestaurantes() {
       .select('iban, titular_cuenta')
       .eq('restaurant_id', rest.id)
       .maybeSingle()
-    const { data: modActivos } = await supabase
-      .from('restaurant_modulos')
-      .select('modulo_key')
-      .eq('restaurant_id', rest.id)
-      .eq('activo', true)
-    setModulosActivos(new Set((modActivos || []).map(m => m.modulo_key)))
     setForm({
       nombre: rest.nombre || '',
       email: rest.email_dueno || '', password: '',
@@ -151,6 +147,40 @@ export default function SuperAdminRestaurantes() {
   function handlePaisChange(code) {
     const pais = PAISES.find(p => p.code === code)
     setForm(prev => ({ ...prev, pais: code, moneda: pais?.moneda || prev.moneda }))
+  }
+
+  async function openModulosModal(rest) {
+    setError(null)
+    setSuccess(null)
+    const { data: modActivos } = await supabase
+      .from('restaurant_modulos')
+      .select('modulo_key')
+      .eq('restaurant_id', rest.id)
+      .eq('activo', true)
+    setModulosActivos(new Set((modActivos || []).map(m => m.modulo_key)))
+    setModulosModalRest(rest)
+  }
+
+  async function guardarModulos() {
+    setGuardandoModulos(true)
+    setError(null)
+    try {
+      const filas = modulosCatalogo.map(m => ({
+        restaurant_id: modulosModalRest.id,
+        modulo_key: m.key,
+        activo: modulosActivos.has(m.key),
+      }))
+      const { error: modErr } = await supabase
+        .from('restaurant_modulos')
+        .upsert(filas, { onConflict: 'restaurant_id,modulo_key' })
+      if (modErr) throw modErr
+      setSuccess(`Módulos de "${modulosModalRest.nombre}" actualizados.`)
+      setModulosModalRest(null)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setGuardandoModulos(false)
+    }
   }
 
   function toggleModulo(key) {
@@ -325,20 +355,6 @@ export default function SuperAdminRestaurantes() {
         await supabase.from('restaurant_billing').delete().eq('restaurant_id', editingId)
       }
 
-      // Sincronizar módulos: upsert de todos los del catálogo, marcando
-      // activo según lo que quedó tildado en el modal.
-      const filasModulos = modulosCatalogo.map(m => ({
-        restaurant_id: editingId,
-        modulo_key: m.key,
-        activo: modulosActivos.has(m.key),
-      }))
-      if (filasModulos.length) {
-        const { error: modErr } = await supabase
-          .from('restaurant_modulos')
-          .upsert(filasModulos, { onConflict: 'restaurant_id,modulo_key' })
-        if (modErr) throw modErr
-      }
-
       setSuccess(`Restaurante "${form.nombre}" actualizado correctamente.`)
       setModalMode(null)
       loadRestaurants()
@@ -410,6 +426,7 @@ export default function SuperAdminRestaurantes() {
                   <a href={`/admin/carta/${rest.id}`} style={S.linkBtn} target="_blank" rel="noreferrer">Carta</a>
                   <a href={`/cocina/${rest.id}`} style={S.linkBtn} target="_blank" rel="noreferrer">Cocina</a>
                   <button style={{ ...S.linkBtn, cursor: 'pointer' }} onClick={() => openEditModal(rest)}>Editar</button>
+                  <button style={{ ...S.linkBtn, cursor: 'pointer' }} onClick={() => openModulosModal(rest)}>Módulos</button>
                 </td>
               </tr>
             ))}
@@ -494,37 +511,6 @@ export default function SuperAdminRestaurantes() {
             <label style={S.label}>Titular de la cuenta (opcional)</label>
             <input style={S.input} value={form.titularCuenta} onChange={e => setForm(prev => ({ ...prev, titularCuenta: e.target.value }))} placeholder="Nombre tal como figura en el banco" />
 
-            {modalMode === 'edit' && (
-              <>
-                <label style={S.label}>Módulos activos</label>
-                {modulosCatalogo.map(m => {
-                  const activo = modulosActivos.has(m.key)
-                  const bloqueadoPorDependencia = m.key !== 'nucleo' && m.requiere && !modulosActivos.has(m.requiere) && !activo
-                  return (
-                    <div key={m.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0', borderBottom: '0.5px solid #1f1f1f' }}>
-                      <input
-                        type="checkbox"
-                        checked={activo}
-                        disabled={m.key === 'nucleo'}
-                        onChange={() => toggleModulo(m.key)}
-                        style={{ marginTop: 3 }}
-                      />
-                      <div>
-                        <div style={{ fontSize: 13, color: '#f0f0f0' }}>
-                          {m.nombre}{m.key === 'nucleo' && <span style={{ color: '#555', fontSize: 11 }}> (siempre incluido)</span>}
-                        </div>
-                        <div style={{ fontSize: 11, color: '#666' }}>{m.descripcion}</div>
-                        {bloqueadoPorDependencia && (
-                          <div style={{ fontSize: 11, color: '#e8c97a' }}>Requiere: {modulosCatalogo.find(x => x.key === m.requiere)?.nombre}</div>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-                <div style={S.hint}>Activar un módulo prende automáticamente los que necesita. Desactivarlo apaga en cadena los que dependen de él.</div>
-              </>
-            )}
-
             <div style={S.modalBtns}>
               <button style={S.cancelBtn} onClick={() => setModalMode(null)}>Cancelar</button>
               <button
@@ -533,6 +519,48 @@ export default function SuperAdminRestaurantes() {
                 disabled={creating}
               >
                 {creating ? 'Guardando...' : modalMode === 'create' ? 'Crear restaurante' : 'Guardar cambios'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modulosModalRest && (
+        <div style={S.modal} onClick={e => { if (e.target === e.currentTarget) setModulosModalRest(null) }}>
+          <div style={{ ...S.modalBox, maxWidth: 380 }}>
+            <div style={S.modalTitle}>Módulos — {modulosModalRest.nombre}</div>
+            {error && <div style={S.error}>{error}</div>}
+
+            {modulosCatalogo.map(m => {
+              const activo = modulosActivos.has(m.key)
+              const bloqueadoPorDependencia = m.key !== 'nucleo' && m.requiere && !modulosActivos.has(m.requiere) && !activo
+              return (
+                <div key={m.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0', borderBottom: '0.5px solid #1f1f1f' }}>
+                  <input
+                    type="checkbox"
+                    checked={activo}
+                    disabled={m.key === 'nucleo'}
+                    onChange={() => toggleModulo(m.key)}
+                    style={{ marginTop: 3 }}
+                  />
+                  <div>
+                    <div style={{ fontSize: 13, color: '#f0f0f0' }}>
+                      {m.nombre}{m.key === 'nucleo' && <span style={{ color: '#555', fontSize: 11 }}> (siempre incluido)</span>}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#666' }}>{m.descripcion}</div>
+                    {bloqueadoPorDependencia && (
+                      <div style={{ fontSize: 11, color: '#e8c97a' }}>Requiere: {modulosCatalogo.find(x => x.key === m.requiere)?.nombre}</div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+            <div style={S.hint}>Activar un módulo prende automáticamente los que necesita. Desactivarlo apaga en cadena los que dependen de él.</div>
+
+            <div style={S.modalBtns}>
+              <button style={S.cancelBtn} onClick={() => setModulosModalRest(null)}>Cancelar</button>
+              <button style={S.saveBtn(guardandoModulos)} onClick={guardarModulos} disabled={guardandoModulos}>
+                {guardandoModulos ? 'Guardando...' : 'Guardar módulos'}
               </button>
             </div>
           </div>
