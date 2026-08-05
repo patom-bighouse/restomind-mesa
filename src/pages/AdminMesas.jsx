@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/money'
+import { useRestaurantModulos } from '../lib/modulos'
 import { playWaiterBell, unlockAudio } from '../lib/sound'
 import CuentaMesa from '../components/CuentaMesa'
 import QRCode from 'qrcode'
@@ -52,6 +53,7 @@ const S = {
 export default function AdminMesas() {
   const { restaurantId } = useParams()
   const navigate = useNavigate()
+  const { tieneModulo } = useRestaurantModulos(restaurantId)
   const [restaurant, setRestaurant] = useState(null)
   const [tables, setTables] = useState([])
   const [qrUrls, setQrUrls] = useState({})
@@ -383,7 +385,7 @@ export default function AdminMesas() {
           <div style={S.restName}>{restaurant?.nombre}</div>
         </div>
         <div style={S.navTabs}>
-          <a href={`/admin/dashboard/${restaurantId}`} style={S.navTab(false)}>Dashboard</a>
+          {tieneModulo('reportes') && <a href={`/admin/dashboard/${restaurantId}`} style={S.navTab(false)}>Dashboard</a>}
           <a href={`/admin/mesas/${restaurantId}`} style={S.navTab(true)}>Mesas</a>
           <a href={`/admin/carta/${restaurantId}`} style={S.navTab(false)}>Carta</a>
           <a href={`/admin/config/${restaurantId}`} style={S.navTab(false)}>Configuración</a>

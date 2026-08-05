@@ -30,7 +30,7 @@ const S = {
   badge: (active) => ({ fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 20, background: active ? '#142a1a' : '#2a1414', color: active ? '#2ecc71' : '#e74c3c' }),
 
   modal: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 20 },
-  modalBox: { background: '#161616', border: '0.5px solid #2a2a2a', borderRadius: 16, padding: 24, width: '100%', maxWidth: 420 },
+  modalBox: { background: '#161616', border: '0.5px solid #2a2a2a', borderRadius: 16, padding: 24, width: '100%', maxWidth: 420, maxHeight: '85vh', overflowY: 'auto' },
   modalTitle: { fontFamily: "'Playfair Display', serif", fontSize: 18, color: '#e8c97a', marginBottom: 18 },
   label: { fontSize: 12, color: '#8a8a8a', marginBottom: 6, display: 'block', marginTop: 14 },
   input: { width: '100%', background: '#0a0a0a', border: '0.5px solid #2a2a2a', borderRadius: 10, padding: '10px 14px', fontSize: 14, color: '#f0f0f0', fontFamily: "'Inter', sans-serif", outline: 'none', boxSizing: 'border-box' },
@@ -38,6 +38,8 @@ const S = {
   modalBtns: { display: 'flex', gap: 10, marginTop: 22 },
   saveBtn: (disabled) => ({ flex: 1, background: disabled ? '#3a3a2a' : '#e8c97a', color: disabled ? '#888' : '#111', border: 'none', borderRadius: 10, padding: 12, fontSize: 14, fontWeight: 500, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: "'Inter', sans-serif" }),
   cancelBtn: { flex: 1, background: 'transparent', border: '0.5px solid #2a2a2a', borderRadius: 10, padding: 12, fontSize: 14, color: '#8a8a8a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" },
+  tabBar: { display: 'flex', gap: 4, marginTop: 16, marginBottom: 4, borderBottom: '0.5px solid #2a2a2a' },
+  tabBtn: (active) => ({ background: 'transparent', border: 'none', borderBottom: active ? '2px solid #e8c97a' : '2px solid transparent', color: active ? '#e8c97a' : '#8a8a8a', padding: '8px 4px', marginRight: 18, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }),
 }
 
 function slugify(text) {
@@ -77,8 +79,17 @@ export default function SuperAdminRestaurantes() {
     iban: '', titularCuenta: '',
   })
   const [ibanTouched, setIbanTouched] = useState(false)
+  const [modulosCatalogo, setModulosCatalogo] = useState([])
+  const [modulosActivos, setModulosActivos] = useState(new Set())
+  const [editTab, setEditTab] = useState('datos') // 'datos' | 'facturacion' | 'modulos'
 
   useEffect(() => { checkAuth() }, [])
+  useEffect(() => { loadModulosCatalogo() }, [])
+
+  async function loadModulosCatalogo() {
+    const { data } = await supabase.from('modulos').select('key, nombre, descripcion, requiere').order('orden')
+    setModulosCatalogo(data || [])
+  }
 
   async function checkAuth() {
     const { data: { session } } = await supabase.auth.getSession()
@@ -104,10 +115,12 @@ export default function SuperAdminRestaurantes() {
       pais: 'ES', moneda: 'EUR', direccion: '',
       iban: '', titularCuenta: '',
     })
+    setModulosActivos(new Set(['nucleo']))
     setIbanTouched(false)
     setError(null)
     setSuccess(null)
     setEditingId(null)
+    setEditTab('datos')
     setModalMode('create')
   }
 
@@ -120,6 +133,13 @@ export default function SuperAdminRestaurantes() {
       .select('iban, titular_cuenta')
       .eq('restaurant_id', rest.id)
       .maybeSingle()
+    const { data: modActivos } = await supabase
+      .from('restaurant_modulos')
+      .select('modulo_key')
+      .eq('restaurant_id', rest.id)
+      .eq('activo', true)
+    setModulosActivos(new Set((modActivos || []).map(m => m.modulo_key)))
+    setEditTab('datos')
     setForm({
       nombre: rest.nombre || '',
       email: rest.email_dueno || '', password: '',
@@ -137,6 +157,40 @@ export default function SuperAdminRestaurantes() {
   function handlePaisChange(code) {
     const pais = PAISES.find(p => p.code === code)
     setForm(prev => ({ ...prev, pais: code, moneda: pais?.moneda || prev.moneda }))
+  }
+
+  function toggleModulo(key) {
+    setModulosActivos(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        // Al apagar un módulo, apagar en cascada todo lo que dependa de
+        // él — no puede quedar activo "Take away" sin "Agente WhatsApp",
+        // por ejemplo.
+        let cambio = true
+        next.delete(key)
+        while (cambio) {
+          cambio = false
+          for (const m of modulosCatalogo) {
+            if (next.has(m.key) && m.requiere && !next.has(m.requiere)) {
+              next.delete(m.key)
+              cambio = true
+            }
+          }
+        }
+      } else {
+        // Al prender un módulo, prender también, en cadena, todo lo que
+        // necesita (ej. activar "Take away" prende "Agente WhatsApp" y,
+        // si hiciera falta, lo que ese a su vez requiera).
+        let actual = modulosCatalogo.find(m => m.key === key)
+        const aActivar = [key]
+        while (actual?.requiere) {
+          aActivar.push(actual.requiere)
+          actual = modulosCatalogo.find(m => m.key === actual.requiere)
+        }
+        aActivar.forEach(k => next.add(k))
+      }
+      return next
+    })
   }
 
   async function createRestaurant() {
@@ -226,6 +280,21 @@ export default function SuperAdminRestaurantes() {
         if (billErr) throw billErr
       }
 
+      // Módulos elegidos en la pestaña "Módulos" del alta. El trigger
+      // trg_activar_modulo_nucleo ya insertó 'nucleo' — este upsert es
+      // idempotente, así que no genera conflicto con eso.
+      const filasModulos = modulosCatalogo.map(m => ({
+        restaurant_id: restData.id,
+        modulo_key: m.key,
+        activo: modulosActivos.has(m.key),
+      }))
+      if (filasModulos.length) {
+        const { error: modErr } = await supabase
+          .from('restaurant_modulos')
+          .upsert(filasModulos, { onConflict: 'restaurant_id,modulo_key' })
+        if (modErr) throw modErr
+      }
+
       setSuccess(`Restaurante "${form.nombre}" creado correctamente.\n\nAcceso del cliente: ${form.email} / (la contraseña que definiste)\nPanel: /admin/login`)
       setModalMode(null)
       loadRestaurants()
@@ -275,6 +344,18 @@ export default function SuperAdminRestaurantes() {
         if (billErr) throw billErr
       } else {
         await supabase.from('restaurant_billing').delete().eq('restaurant_id', editingId)
+      }
+
+      const filasModulos = modulosCatalogo.map(m => ({
+        restaurant_id: editingId,
+        modulo_key: m.key,
+        activo: modulosActivos.has(m.key),
+      }))
+      if (filasModulos.length) {
+        const { error: modErr } = await supabase
+          .from('restaurant_modulos')
+          .upsert(filasModulos, { onConflict: 'restaurant_id,modulo_key' })
+        if (modErr) throw modErr
       }
 
       setSuccess(`Restaurante "${form.nombre}" actualizado correctamente.`)
@@ -370,67 +451,111 @@ export default function SuperAdminRestaurantes() {
             <input style={S.input} value={form.nombre} onChange={e => setForm(prev => ({ ...prev, nombre: e.target.value }))} placeholder="Ej. La Taberna del Puerto" />
             {modalMode === 'create' && form.nombre && <div style={S.hint}>slug: {slugify(form.nombre)}</div>}
 
-            {modalMode === 'create' ? (
-              <>
-                <label style={S.label}>Email del dueño (acceso al panel) *</label>
-                <input style={S.input} type="email" value={form.email} onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))} placeholder="dueno@restaurante.com" />
-
-                <label style={S.label}>Contraseña inicial *</label>
-                <input style={S.input} type="text" value={form.password} onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))} placeholder="mínimo 6 caracteres" />
-                <div style={S.hint}>Compártesela al cliente; podrá usarla en /admin/login</div>
-              </>
-            ) : (
-              <>
-                <label style={S.label}>Email del dueño (acceso al panel)</label>
-                <input style={S.input} type="email" value={form.email} onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))} placeholder="dueno@restaurante.com" />
-                <div style={S.hint}>Esto NO cambia el login real — es solo una copia de referencia. Para cambiar el acceso de verdad, hacelo desde Authentication → Users en Supabase, y después actualizá este campo para que coincida.</div>
-              </>
-            )}
-
-            <label style={S.label}>WhatsApp (opcional)</label>
-            <input style={S.input} value={form.whatsapp} onChange={e => setForm(prev => ({ ...prev, whatsapp: e.target.value }))} placeholder="+34600000000" />
-
-            <div style={{ display: 'flex', gap: 12 }}>
-              <div style={{ flex: 1 }}>
-                <label style={S.label}>País</label>
-                <select style={S.input} value={form.pais} onChange={e => handlePaisChange(e.target.value)}>
-                  {PAISES.map(p => <option key={p.code} value={p.code}>{p.label}</option>)}
-                </select>
-              </div>
-              <div style={{ flex: 1 }}>
-                <label style={S.label}>Moneda</label>
-                <select style={S.input} value={form.moneda} onChange={e => setForm(prev => ({ ...prev, moneda: e.target.value }))}>
-                  {MONEDAS.map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-              </div>
-            </div>
-            <div style={S.hint}>La moneda se ajusta sola según el país, pero podés cambiarla si el restaurante factura en otra.</div>
-
-            <label style={S.label}>Dirección (opcional)</label>
-            <input style={S.input} value={form.direccion} onChange={e => setForm(prev => ({ ...prev, direccion: e.target.value }))} placeholder="Calle, número, ciudad" />
-
-            <label style={S.label}>IBAN — para cobrar la suscripción más adelante (opcional)</label>
-            <input
-              style={S.input}
-              value={form.iban}
-              onChange={e => setForm(prev => ({ ...prev, iban: e.target.value }))}
-              onBlur={() => setIbanTouched(true)}
-              placeholder="ES91 2100 0418 4502 0005 1332"
-            />
-            {ibanTouched && form.iban.trim() && !isValidIban(form.iban) && (
-              <div style={{ ...S.hint, color: '#e87a7a' }}>Ese IBAN no parece válido — revisalo.</div>
-            )}
-            {form.iban.trim() && isValidIban(form.iban) && (
-              <div style={S.hint}>{formatIbanDisplay(form.iban)} ✓</div>
-            )}
-            <div style={S.hint}>
-              {modalMode === 'create'
-                ? 'Solo se guarda el dato — todavía no hay ningún cobro automático conectado.'
-                : 'Dejar este campo vacío y guardar borra el IBAN guardado para este restaurante.'}
+            <div style={S.tabBar}>
+              <button style={S.tabBtn(editTab === 'datos')} onClick={() => setEditTab('datos')}>Datos</button>
+              <button style={S.tabBtn(editTab === 'facturacion')} onClick={() => setEditTab('facturacion')}>Facturación</button>
+              <button style={S.tabBtn(editTab === 'modulos')} onClick={() => setEditTab('modulos')}>Módulos</button>
             </div>
 
-            <label style={S.label}>Titular de la cuenta (opcional)</label>
-            <input style={S.input} value={form.titularCuenta} onChange={e => setForm(prev => ({ ...prev, titularCuenta: e.target.value }))} placeholder="Nombre tal como figura en el banco" />
+            {editTab === 'datos' && (
+              <>
+                {modalMode === 'create' ? (
+                  <>
+                    <label style={S.label}>Email del dueño (acceso al panel) *</label>
+                    <input style={S.input} type="email" value={form.email} onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))} placeholder="dueno@restaurante.com" />
+
+                    <label style={S.label}>Contraseña inicial *</label>
+                    <input style={S.input} type="text" value={form.password} onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))} placeholder="mínimo 6 caracteres" />
+                    <div style={S.hint}>Compártesela al cliente; podrá usarla en /admin/login</div>
+                  </>
+                ) : (
+                  <>
+                    <label style={S.label}>Email del dueño (acceso al panel)</label>
+                    <input style={S.input} type="email" value={form.email} onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))} placeholder="dueno@restaurante.com" />
+                    <div style={S.hint}>Esto NO cambia el login real — es solo una copia de referencia. Para cambiar el acceso de verdad, hacelo desde Authentication → Users en Supabase, y después actualizá este campo para que coincida.</div>
+                  </>
+                )}
+
+                <label style={S.label}>WhatsApp (opcional)</label>
+                <input style={S.input} value={form.whatsapp} onChange={e => setForm(prev => ({ ...prev, whatsapp: e.target.value }))} placeholder="+34600000000" />
+
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={S.label}>País</label>
+                    <select style={S.input} value={form.pais} onChange={e => handlePaisChange(e.target.value)}>
+                      {PAISES.map(p => <option key={p.code} value={p.code}>{p.label}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={S.label}>Moneda</label>
+                    <select style={S.input} value={form.moneda} onChange={e => setForm(prev => ({ ...prev, moneda: e.target.value }))}>
+                      {MONEDAS.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div style={S.hint}>La moneda se ajusta sola según el país, pero podés cambiarla si el restaurante factura en otra.</div>
+
+                <label style={S.label}>Dirección (opcional)</label>
+                <input style={S.input} value={form.direccion} onChange={e => setForm(prev => ({ ...prev, direccion: e.target.value }))} placeholder="Calle, número, ciudad" />
+              </>
+            )}
+
+            {editTab === 'facturacion' && (
+              <>
+                <label style={S.label}>IBAN — para cobrar la suscripción más adelante (opcional)</label>
+                <input
+                  style={S.input}
+                  value={form.iban}
+                  onChange={e => setForm(prev => ({ ...prev, iban: e.target.value }))}
+                  onBlur={() => setIbanTouched(true)}
+                  placeholder="ES91 2100 0418 4502 0005 1332"
+                />
+                {ibanTouched && form.iban.trim() && !isValidIban(form.iban) && (
+                  <div style={{ ...S.hint, color: '#e87a7a' }}>Ese IBAN no parece válido — revisalo.</div>
+                )}
+                {form.iban.trim() && isValidIban(form.iban) && (
+                  <div style={S.hint}>{formatIbanDisplay(form.iban)} ✓</div>
+                )}
+                <div style={S.hint}>
+                  {modalMode === 'create'
+                    ? 'Solo se guarda el dato — todavía no hay ningún cobro automático conectado.'
+                    : 'Dejar este campo vacío y guardar borra el IBAN guardado para este restaurante.'}
+                </div>
+
+                <label style={S.label}>Titular de la cuenta (opcional)</label>
+                <input style={S.input} value={form.titularCuenta} onChange={e => setForm(prev => ({ ...prev, titularCuenta: e.target.value }))} placeholder="Nombre tal como figura en el banco" />
+              </>
+            )}
+
+            {editTab === 'modulos' && (
+              <>
+                {modulosCatalogo.map(m => {
+                  const activo = modulosActivos.has(m.key)
+                  const bloqueadoPorDependencia = m.key !== 'nucleo' && m.requiere && !modulosActivos.has(m.requiere) && !activo
+                  return (
+                    <div key={m.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0', borderBottom: '0.5px solid #1f1f1f' }}>
+                      <input
+                        type="checkbox"
+                        checked={activo}
+                        disabled={m.key === 'nucleo'}
+                        onChange={() => toggleModulo(m.key)}
+                        style={{ marginTop: 3 }}
+                      />
+                      <div>
+                        <div style={{ fontSize: 13, color: '#f0f0f0' }}>
+                          {m.nombre}{m.key === 'nucleo' && <span style={{ color: '#555', fontSize: 11 }}> (siempre incluido)</span>}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#666' }}>{m.descripcion}</div>
+                        {bloqueadoPorDependencia && (
+                          <div style={{ fontSize: 11, color: '#e8c97a' }}>Requiere: {modulosCatalogo.find(x => x.key === m.requiere)?.nombre}</div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+                <div style={S.hint}>Activar un módulo prende automáticamente los que necesita. Desactivarlo apaga en cadena los que dependen de él.</div>
+              </>
+            )}
 
             <div style={S.modalBtns}>
               <button style={S.cancelBtn} onClick={() => setModalMode(null)}>Cancelar</button>

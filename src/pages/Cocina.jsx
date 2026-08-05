@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/money'
 import { playNewOrderChime, playWaiterBell, unlockAudio } from '../lib/sound'
+import { useRestaurantModulos } from '../lib/modulos'
+import { ESTADOS_DELIVERY } from '../lib/delivery/DeliveryProvider'
 
 const ESTADOS = ['pendiente', 'preparando', 'listo', 'entregado']
 
@@ -12,6 +14,21 @@ const ESTADO_CFG = {
   listo:      { label: 'Listo',      bg: '#0f2a15', border: '#27ae60', dot: '#2ecc71', next: 'entregado',   nextLabel: 'Entregado 🍽', prev: 'preparando' },
   entregado:  { label: 'Entregado',  bg: '#1a1a1a', border: '#3a3a3a', dot: '#555',    next: null,          nextLabel: null,           prev: null },
 }
+
+// Estados del ENVÍO (distintos de los de la comanda). El orden acá
+// representa el flujo normal de un envío ya confirmado.
+const ENTREGA_CFG = {
+  [ESTADOS_DELIVERY.COTIZANDO]: { label: 'Cotizando envío', color: '#8a7560', siguiente: ESTADOS_DELIVERY.CONFIRMADO },
+  [ESTADOS_DELIVERY.CONFIRMADO]: { label: 'Envío confirmado', color: '#3498db', siguiente: ESTADOS_DELIVERY.ASIGNADO },
+  [ESTADOS_DELIVERY.ASIGNADO]: { label: 'Repartidor asignado', color: '#9b59b6', siguiente: ESTADOS_DELIVERY.EN_CAMINO },
+  [ESTADOS_DELIVERY.EN_CAMINO]: { label: 'En camino', color: '#f1c40f', siguiente: ESTADOS_DELIVERY.ENTREGADO },
+  [ESTADOS_DELIVERY.ENTREGADO]: { label: 'Entregado', color: '#2ecc71', siguiente: null },
+  [ESTADOS_DELIVERY.CANCELADO]: { label: 'Cancelado', color: '#e74c3c', siguiente: null },
+}
+const ORDEN_ENTREGA = [
+  ESTADOS_DELIVERY.COTIZANDO, ESTADOS_DELIVERY.CONFIRMADO, ESTADOS_DELIVERY.ASIGNADO,
+  ESTADOS_DELIVERY.EN_CAMINO, ESTADOS_DELIVERY.ENTREGADO,
+]
 
 const S = {
   app: { minHeight: '100vh', background: '#111', color: '#f0e8d8', fontFamily: "'Inter', sans-serif" },
@@ -68,6 +85,7 @@ function formatHora(dateStr) {
 
 export default function Cocina() {
   const { restaurantId } = useParams()
+  const { tieneModulo } = useRestaurantModulos(restaurantId)
   const navigate = useNavigate()
   const [orders, setOrders] = useState([])
   const [orderItems, setOrderItems] = useState({})
@@ -81,6 +99,7 @@ export default function Cocina() {
   const [waiterCalls, setWaiterCalls] = useState([])
   const [revertTarget, setRevertTarget] = useState(null) // order pendiente de confirmar reversión
   const [moneda, setMoneda] = useState('EUR')
+  const [orderDeliveries, setOrderDeliveries] = useState({}) // order_id -> fila de order_deliveries
 
   async function loadRestaurant() {
     const { data } = await supabase
@@ -118,6 +137,38 @@ export default function Cocina() {
         return next
       })
     }
+  }
+
+  async function loadOrderDeliveries(orderIds) {
+    if (!orderIds.length) return
+    const { data } = await supabase
+      .from('order_deliveries')
+      .select('order_id, estado, proveedor, costo_envio, moneda, tracking_url')
+      .in('order_id', orderIds)
+    if (data) {
+      setOrderDeliveries(prev => {
+        const next = { ...prev }
+        data.forEach(row => { next[row.order_id] = row })
+        return next
+      })
+    }
+  }
+
+  // Solo tiene sentido para el proveedor 'manual': sin webhooks de un
+  // proveedor real todavía, el propio restaurante avanza el estado a
+  // mano. El día que se conecte Glovo/PedidosYa de verdad, esto se
+  // reemplaza por lo que llegue del webhook — no hace falta este botón
+  // para esos proveedores.
+  async function avanzarEntregaManual(orderId) {
+    const actual = orderDeliveries[orderId]
+    const siguiente = ENTREGA_CFG[actual?.estado]?.siguiente
+    if (!siguiente) return
+    const { error: err } = await supabase
+      .from('order_deliveries')
+      .update({ estado: siguiente, updated_at: new Date().toISOString() })
+      .eq('order_id', orderId)
+    if (err) { console.error(err); return }
+    setOrderDeliveries(prev => ({ ...prev, [orderId]: { ...prev[orderId], estado: siguiente } }))
   }
 
   async function loadTables() {
@@ -158,13 +209,16 @@ export default function Cocina() {
   async function loadOrders() {
     const { data, error: err } = await supabase
       .from('orders')
-      .select('id, table_id, estado, total, created_at, tipo, notas')
+      .select('id, table_id, estado, total, created_at, tipo, notas, metodo_entrega')
       .eq('restaurant_id', restaurantId)
       .in('estado', ['pendiente', 'preparando', 'listo'])
       .order('created_at', { ascending: true })
     if (err) { setError(err.message); return }
     setOrders(data || [])
     await loadOrderItems((data || []).map(o => o.id))
+    if (tieneModulo('takeaway_delivery')) {
+      await loadOrderDeliveries((data || []).filter(o => o.tipo === 'takeaway').map(o => o.id))
+    }
   }
 
   useEffect(() => {
@@ -230,6 +284,17 @@ export default function Cocina() {
         // total se actualizaba pero el ítem nuevo nunca se pedía ni se
         // mostraba en la tarjeta.
         await loadOrderItems([payload.new.order_id])
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'order_deliveries',
+        filter: `restaurant_id=eq.${restaurantId}`
+      }, (payload) => {
+        // Cubre tanto el avance manual (mientras no haya proveedor real
+        // conectado) como, a futuro, lo que vaya llegando por webhook de
+        // Glovo/PedidosYa y actualice esta tabla desde el servidor.
+        setOrderDeliveries(prev => ({ ...prev, [payload.new.order_id]: payload.new }))
       })
       .on('postgres_changes', {
         event: '*',
@@ -390,6 +455,11 @@ export default function Cocina() {
                       🟢 Sesión desde {formatHora(tableSessions[order.table_id].abierta_at)}
                     </div>
                   )}
+                  {order.tipo === 'takeaway' && tieneModulo('takeaway_delivery') && (
+                    <div style={{ fontSize: 11, color: '#8a7560', marginTop: 2 }}>
+                      {order.metodo_entrega === 'domicilio' ? '🛵 Entrega a domicilio' : '🥡 Retiro en el local'}
+                    </div>
+                  )}
                 </div>
                 <div style={S.timeTag}>
                   <div style={{ marginBottom: 2 }}>{formatHora(order.created_at)}</div>
@@ -426,12 +496,27 @@ export default function Cocina() {
                 </div>
               )}
 
-              {order.tipo === 'mesa' && (
-                <div style={{ fontSize: 12, color: '#8a7560', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Ref: {order.id.slice(0, 8).toUpperCase()}</span>
-                  <span style={{ color: '#e8c97a', fontWeight: 500 }}>{formatMoney(order.total, moneda)}</span>
+              {order.tipo === 'takeaway' && order.metodo_entrega === 'domicilio' && tieneModulo('takeaway_delivery') && orderDeliveries[order.id] && (
+                <div style={{ fontSize: 12, background: '#161616', border: '0.5px solid #2a2a2a', borderRadius: 8, padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                  <span style={{ color: ENTREGA_CFG[orderDeliveries[order.id].estado]?.color || '#8a7560' }}>
+                    ● {ENTREGA_CFG[orderDeliveries[order.id].estado]?.label || orderDeliveries[order.id].estado}
+                    {orderDeliveries[order.id].proveedor !== 'manual' && ` · ${orderDeliveries[order.id].proveedor}`}
+                  </span>
+                  {orderDeliveries[order.id].proveedor === 'manual' && ENTREGA_CFG[orderDeliveries[order.id].estado]?.siguiente && (
+                    <button
+                      style={{ background: 'transparent', border: '0.5px solid #4a443a', color: '#e8c97a', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+                      onClick={() => avanzarEntregaManual(order.id)}
+                    >
+                      Marcar "{ENTREGA_CFG[ENTREGA_CFG[orderDeliveries[order.id].estado].siguiente].label}"
+                    </button>
+                  )}
                 </div>
               )}
+
+              <div style={{ fontSize: 12, color: '#8a7560', display: 'flex', justifyContent: 'space-between' }}>
+                <span>Ref: {order.id.slice(0, 8).toUpperCase()}</span>
+                <span style={{ color: '#e8c97a', fontWeight: 500 }}>{formatMoney(order.total, moneda)}</span>
+              </div>
 
               <div style={S.cardFooter}>
                 {cfg.prev && (

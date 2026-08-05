@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatMoney, getCurrencySymbol } from '../lib/money'
+import { useRestaurantModulos } from '../lib/modulos'
 
 const S = {
   app: { minHeight: '100vh', background: '#111', color: '#f0e8d8', fontFamily: "'Inter', sans-serif" },
@@ -60,6 +61,7 @@ const EMOJI_OPTIONS = ['🍽','🥗','🍖','🐟','🥩','🍝','🍮','🍫','
 export default function AdminCarta() {
   const { restaurantId } = useParams()
   const navigate = useNavigate()
+  const { tieneModulo } = useRestaurantModulos(restaurantId)
   const [restaurant, setRestaurant] = useState(null)
   const [categories, setCategories] = useState([])
   const [items, setItems] = useState([])
@@ -264,7 +266,7 @@ export default function AdminCarta() {
           <div style={S.restName}>{restaurant?.nombre}</div>
         </div>
         <div style={S.navTabs}>
-          <a href={`/admin/dashboard/${restaurantId}`} style={S.navTab(false)}>Dashboard</a>
+          {tieneModulo('reportes') && <a href={`/admin/dashboard/${restaurantId}`} style={S.navTab(false)}>Dashboard</a>}
           <a href={`/admin/mesas/${restaurantId}`} style={S.navTab(false)}>Mesas</a>
           <a href={`/admin/carta/${restaurantId}`} style={S.navTab(true)}>Carta</a>
           <a href={`/admin/config/${restaurantId}`} style={S.navTab(false)}>Configuración</a>

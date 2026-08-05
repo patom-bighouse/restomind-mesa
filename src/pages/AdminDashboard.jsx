@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/money'
+import { useRestaurantModulos } from '../lib/modulos'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 const S = {
@@ -88,6 +89,7 @@ function getRangeDates(range, customFrom, customTo) {
 export default function AdminDashboard() {
   const { restaurantId } = useParams()
   const navigate = useNavigate()
+  const { tieneModulo, loading: loadingModulos } = useRestaurantModulos(restaurantId)
   const [restaurant, setRestaurant] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -194,7 +196,15 @@ export default function AdminDashboard() {
     navigate('/admin/login')
   }
 
-  if (loading) return <div style={S.app}><div style={S.loading}>Cargando...</div></div>
+  if (loading || loadingModulos) return <div style={S.app}><div style={S.loading}>Cargando...</div></div>
+
+  if (!tieneModulo('reportes')) {
+    return (
+      <div style={S.app}>
+        <div style={S.loading}>Este restaurante no tiene activo el módulo de Reportes y Dashboard.</div>
+      </div>
+    )
+  }
 
   // ---------- Cálculos ----------
   const validOrders = orders.filter(o => o.estado !== 'cancelado')
