@@ -116,7 +116,7 @@ export default function AdminDashboard() {
   }
 
   async function loadTables(restId) {
-    const { data } = await supabase.from('tables').select('id, numero, zona').eq('restaurant_id', restId)
+    const { data } = await supabase.from('tables').select('id, numero, zona, capacidad').eq('restaurant_id', restId)
     const map = {}
     ;(data || []).forEach(t => { map[t.id] = t })
     setTables(map)
@@ -132,7 +132,7 @@ export default function AdminDashboard() {
     const { from, to } = getRangeDates(range, customFrom, customTo)
     const { data, error: err } = await supabase
       .from('table_sessions')
-      .select('id, table_id, estado, abierta_at, cerrada_at, total, estado_pago, motivo_exencion')
+      .select('id, table_id, estado, abierta_at, cerrada_at, total, estado_pago, motivo_exencion, comensales')
       .eq('restaurant_id', restaurantId)
       .gte('abierta_at', from.toISOString())
       .lt('abierta_at', to.toISOString())
@@ -253,6 +253,33 @@ export default function AdminDashboard() {
     totalCalculado: pedidosPorSesion[s.id]?.total ?? parseFloat(s.total || 0),
   })).sort((a, b) => new Date(b.abierta_at) - new Date(a.abierta_at))
 
+  // Comensales: promedio real vs capacidad teórica, por mesa. Solo
+  // cuentan las sesiones que tienen el dato cargado (comensales no nulo);
+  // las mesas abiertas antes de este feature no lo tienen y no deben
+  // distorsionar el promedio.
+  const sesionesConComensales = sessions.filter(s => s.comensales != null)
+  const comensalesPromedioGeneral = sesionesConComensales.length
+    ? sesionesConComensales.reduce((sum, s) => sum + s.comensales, 0) / sesionesConComensales.length
+    : null
+
+  const comensalesPorMesa = {}
+  sesionesConComensales.forEach(s => {
+    if (!comensalesPorMesa[s.table_id]) comensalesPorMesa[s.table_id] = { suma: 0, visitas: 0, maxComensales: 0 }
+    comensalesPorMesa[s.table_id].suma += s.comensales
+    comensalesPorMesa[s.table_id].visitas += 1
+    comensalesPorMesa[s.table_id].maxComensales = Math.max(comensalesPorMesa[s.table_id].maxComensales, s.comensales)
+  })
+  const comensalesPorMesaData = Object.entries(comensalesPorMesa)
+    .map(([tableId, d]) => ({
+      tableId,
+      numero: tables[tableId]?.numero ?? '?',
+      capacidad: tables[tableId]?.capacidad ?? null,
+      promedio: d.suma / d.visitas,
+      maxComensales: d.maxComensales,
+      visitas: d.visitas,
+    }))
+    .sort((a, b) => a.numero - b.numero)
+
   return (
     <div style={S.app}>
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
@@ -305,6 +332,10 @@ export default function AdminDashboard() {
           <div style={S.kpiCard('#e74c3c')}>
             <div style={S.kpiVal('#e74c3c')}>{orders.filter(o => o.estado === 'cancelado').length}</div>
             <div style={S.kpiLabel}>Cancelados</div>
+          </div>
+          <div style={S.kpiCard('#9b59b6')}>
+            <div style={S.kpiVal('#9b59b6')}>{comensalesPromedioGeneral != null ? comensalesPromedioGeneral.toFixed(1) : '—'}</div>
+            <div style={S.kpiLabel}>Comensales promedio</div>
           </div>
         </div>
 
@@ -377,6 +408,7 @@ export default function AdminDashboard() {
                       <th style={S.th}>Mesa</th>
                       <th style={S.th}>Abierta</th>
                       <th style={S.th}>Cerrada</th>
+                      <th style={S.th}>Comensales</th>
                       <th style={S.th}>Pedidos</th>
                       <th style={S.th}>Total</th>
                       <th style={S.th}>Estado</th>
@@ -389,6 +421,13 @@ export default function AdminDashboard() {
                         <td style={S.td}>Mesa {tables[s.table_id]?.numero ?? '?'}</td>
                         <td style={S.td}>{new Date(s.abierta_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
                         <td style={S.td}>{s.cerrada_at ? new Date(s.cerrada_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                        <td style={S.td}>
+                          {s.comensales != null ? (
+                            <span style={s.comensales > (tables[s.table_id]?.capacidad ?? Infinity) ? { color: '#e74c3c', fontWeight: 600 } : {}}>
+                              {s.comensales}{tables[s.table_id]?.capacidad ? ` / ${tables[s.table_id].capacidad}` : ''}
+                            </span>
+                          ) : '—'}
+                        </td>
                         <td style={S.td}>{s.pedidos}</td>
                         <td style={S.td}>{formatMoney(s.totalCalculado, restaurant?.moneda)}</td>
                         <td style={S.td}><span style={S.sesionEstadoBadge(s.estado === 'abierta')}>{s.estado === 'abierta' ? 'En curso' : 'Cerrada'}</span></td>
@@ -402,6 +441,50 @@ export default function AdminDashboard() {
                         </td>
                       </tr>
                     ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Comensales por mesa: promedio real vs capacidad teórica */}
+        <div style={S.section}>
+          <div style={S.chartCard}>
+            <div style={S.cardTitle}>Comensales por mesa</div>
+            <div style={{ fontSize: 12, color: '#666', marginBottom: 14, marginTop: -6 }}>
+              Promedio real de comensales por visita, comparado con la capacidad teórica de cada mesa. En rojo, las mesas que en promedio reciben más gente de la esperada.
+            </div>
+            {comensalesPorMesaData.length === 0 ? (
+              <div style={{ fontSize: 13, color: '#555' }}>Sin datos de comensales en este rango.</div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={S.table}>
+                  <thead>
+                    <tr>
+                      <th style={S.th}>Mesa</th>
+                      <th style={S.th}>Capacidad teórica</th>
+                      <th style={S.th}>Comensales promedio</th>
+                      <th style={S.th}>Máximo registrado</th>
+                      <th style={S.th}>Visitas</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {comensalesPorMesaData.map(m => {
+                      const excedida = m.capacidad != null && m.promedio > m.capacidad
+                      return (
+                        <tr key={m.tableId}>
+                          <td style={S.td}>Mesa {m.numero}</td>
+                          <td style={S.td}>{m.capacidad ?? '—'}</td>
+                          <td style={{ ...S.td, ...(excedida ? { color: '#e74c3c', fontWeight: 600 } : {}) }}>
+                            {m.promedio.toFixed(1)}
+                            {excedida ? ' ⚠️' : ''}
+                          </td>
+                          <td style={S.td}>{m.maxComensales}</td>
+                          <td style={S.td}>{m.visitas}</td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
