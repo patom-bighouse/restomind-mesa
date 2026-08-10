@@ -157,7 +157,7 @@ export default function AdminMesas() {
   async function loadSessions() {
     const { data: sess, error: err } = await supabase
       .from('table_sessions')
-      .select('id, table_id, abierta_at')
+      .select('id, table_id, abierta_at, comensales')
       .eq('restaurant_id', restaurantId)
       .eq('estado', 'abierta')
     if (err) { setError(err.message); return }
@@ -186,12 +186,30 @@ export default function AdminMesas() {
     setSessionBusy(table.id)
     const { data, error: err } = await supabase
       .from('table_sessions')
-      .insert({ table_id: table.id, restaurant_id: restaurantId })
-      .select('id, table_id, abierta_at')
+      .insert({ table_id: table.id, restaurant_id: restaurantId, comensales: table.capacidad })
+      .select('id, table_id, abierta_at, comensales')
       .single()
     setSessionBusy(null)
     if (err) { setError(err.message); return }
     setSessions(prev => ({ ...prev, [table.id]: data }))
+  }
+
+  // Comensales reales de la sesión — distinto de tables.capacidad (el
+  // número teórico de la mesa). Se inicializa con la capacidad al abrir,
+  // pero queda editable en cualquier momento mientras la mesa esté
+  // abierta (pueden sumarse o restarse comensales durante la visita).
+  async function updateComensales(table, nuevoValor) {
+    const session = sessions[table.id]
+    if (!session) return
+    const valor = parseInt(nuevoValor)
+    if (!valor || valor < 1) return
+    if (valor === session.comensales) return
+    const { error: err } = await supabase
+      .from('table_sessions')
+      .update({ comensales: valor })
+      .eq('id', session.id)
+    if (err) { setError(err.message); return }
+    setSessions(prev => ({ ...prev, [table.id]: { ...prev[table.id], comensales: valor } }))
   }
 
   function openCuentaModal(table, mode) {
@@ -473,7 +491,20 @@ export default function AdminMesas() {
                       </div>
                     )}
                     <div style={S.mesaTitle}>Mesa {table.numero}</div>
-                    <div style={S.mesaCap}>{table.capacidad} personas</div>
+                    <div style={S.mesaCap}>Capacidad: {table.capacidad} personas</div>
+                    {sessions[table.id] && (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, color: '#c4a85a' }}>
+                        <span>Comensales:</span>
+                        <input
+                          key={sessions[table.id].id}
+                          type="number"
+                          min="1"
+                          defaultValue={sessions[table.id].comensales || table.capacidad}
+                          onBlur={(e) => updateComensales(table, e.target.value)}
+                          style={{ width: 50, background: '#1a1a1a', color: '#fff', border: '0.5px solid #3a2e20', borderRadius: 6, padding: '2px 6px', fontSize: 12, textAlign: 'center' }}
+                        />
+                      </div>
+                    )}
                     {qrUrls[table.id] && (
                       <div style={S.qrWrap}>
                         <img src={qrUrls[table.id]} alt={`QR Mesa ${table.numero}`} width={130} height={130} />
