@@ -280,6 +280,17 @@ export default function AdminDashboard() {
     }))
     .sort((a, b) => a.numero - b.numero)
 
+  // Etiqueta de mesa incluyendo zona, para distinguir mesas con el mismo
+  // número físico pero ubicadas en zonas distintas (ej: dos "Mesa 1",
+  // una interior y otra exterior).
+  function mesaLabel(tableId) {
+    const t = tables[tableId]
+    if (!t) return 'Mesa ?'
+    if (!t.zona) return `Mesa ${t.numero}`
+    const zonaCapitalizada = t.zona.charAt(0).toUpperCase() + t.zona.slice(1)
+    return `Mesa ${t.numero} (${zonaCapitalizada})`
+  }
+
   return (
     <div style={S.app}>
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
@@ -382,7 +393,7 @@ export default function AdminDashboard() {
                   .sort((a, b) => (tables[a[0]]?.numero || 0) - (tables[b[0]]?.numero || 0))
                   .map(([tableId, count]) => (
                   <div key={tableId} style={S.mesaCell(0.15 + (count / maxMesaCount) * 0.7)}>
-                    <div style={S.mesaNum}>Mesa {tables[tableId]?.numero ?? '?'}</div>
+                    <div style={S.mesaNum}>{mesaLabel(tableId)}</div>
                     <div style={S.mesaCount}>{count} {count === 1 ? 'pedido' : 'pedidos'}</div>
                   </div>
                 ))}
@@ -418,7 +429,7 @@ export default function AdminDashboard() {
                   <tbody>
                     {sesionesConDatos.map(s => (
                       <tr key={s.id}>
-                        <td style={S.td}>Mesa {tables[s.table_id]?.numero ?? '?'}</td>
+                        <td style={S.td}>{mesaLabel(s.table_id)}</td>
                         <td style={S.td}>{new Date(s.abierta_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
                         <td style={S.td}>{s.cerrada_at ? new Date(s.cerrada_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
                         <td style={S.td}>
@@ -474,7 +485,7 @@ export default function AdminDashboard() {
                       const excedida = m.capacidad != null && m.promedio > m.capacidad
                       return (
                         <tr key={m.tableId}>
-                          <td style={S.td}>Mesa {m.numero}</td>
+                          <td style={S.td}>{mesaLabel(m.tableId)}</td>
                           <td style={S.td}>{m.capacidad ?? '—'}</td>
                           <td style={{ ...S.td, ...(excedida ? { color: '#e74c3c', fontWeight: 600 } : {}) }}>
                             {m.promedio.toFixed(1)}
@@ -514,7 +525,7 @@ export default function AdminDashboard() {
                     {orders.map(o => (
                       <tr key={o.id}>
                         <td style={S.td}>{new Date(o.created_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
-                        <td style={S.td}>{o.tipo === 'mesa' ? `Mesa ${tables[o.table_id]?.numero ?? '?'}` : 'Takeaway'}</td>
+                        <td style={S.td}>{o.tipo === 'mesa' ? mesaLabel(o.table_id) : 'Takeaway'}</td>
                         <td style={S.td}>{(orderItemsMap[o.id] || []).map(i => `${i.cantidad}× ${i.nombre_snapshot}`).join(', ') || '—'}</td>
                         <td style={S.td}>{formatMoney(o.total, restaurant?.moneda)}</td>
                         <td style={S.td}><span style={S.estadoBadge(o.estado)}>{o.estado}</span></td>
