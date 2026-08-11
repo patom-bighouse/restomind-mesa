@@ -96,7 +96,7 @@ export default function AdminCarta() {
     setCategories(cats || [])
 
     const { data: menuItems, error: itemErr } = await supabase
-      .from('menu_items').select('id, nombre, descripcion, precio, emoji, foto_url, category_id, disponible, orden')
+      .from('menu_items').select('id, nombre, descripcion, precio, precio_costo, emoji, foto_url, category_id, disponible, orden')
       .eq('restaurant_id', restaurantId).order('orden')
     if (itemErr) { setError(itemErr.message); setLoading(false); return }
     setItems(menuItems || [])
@@ -162,7 +162,7 @@ export default function AdminCarta() {
   function openNewItem(categoryId) {
     setEditingCatId(categoryId)
     setEditingItem('new')
-    setFormData({ nombre: '', descripcion: '', precio: '', emoji: '🍽', foto_url: '', disponible: true })
+    setFormData({ nombre: '', descripcion: '', precio: '', precio_costo: '', emoji: '🍽', foto_url: '', disponible: true })
   }
 
   function openEditItem(item) {
@@ -208,6 +208,7 @@ export default function AdminCarta() {
       nombre: formData.nombre.trim(),
       descripcion: formData.descripcion?.trim() || null,
       precio: parseFloat(formData.precio),
+      precio_costo: formData.precio_costo !== '' && formData.precio_costo != null ? parseFloat(formData.precio_costo) : null,
       emoji: formData.emoji || '🍽',
       foto_url: formData.foto_url || null,
       disponible: formData.disponible !== false,
@@ -326,6 +327,11 @@ export default function AdminCarta() {
                         <div style={S.itemName}>{item.nombre}</div>
                         {item.descripcion && <div style={S.itemDesc}>{item.descripcion}</div>}
                         <div style={S.itemPrice}>{formatMoney(item.precio, restaurant?.moneda)}</div>
+                        {item.precio_costo != null && item.precio > 0 && (
+                          <div style={{ fontSize: 11, color: '#8a8a8a' }}>
+                            Margen: {formatMoney(item.precio - item.precio_costo, restaurant?.moneda)} ({(((item.precio - item.precio_costo) / item.precio) * 100).toFixed(0)}%)
+                          </div>
+                        )}
                         <div style={S.itemActions}>
                           <div style={S.toggleSwitch(item.disponible)} onClick={() => toggleDisponible(item)} title={item.disponible ? 'Disponible' : 'No disponible'}>
                             <div style={S.toggleDot(item.disponible)}></div>
@@ -363,6 +369,9 @@ export default function AdminCarta() {
 
             <label style={S.label}>Precio ({getCurrencySymbol(restaurant?.moneda)}) *</label>
             <input style={S.input} type="number" step="0.01" min="0" value={formData.precio ?? ''} onChange={e => setFormData(prev => ({ ...prev, precio: e.target.value }))} placeholder="9.50" />
+
+            <label style={S.label}>Precio de coste ({getCurrencySymbol(restaurant?.moneda)})</label>
+            <input style={S.input} type="number" step="0.01" min="0" value={formData.precio_costo ?? ''} onChange={e => setFormData(prev => ({ ...prev, precio_costo: e.target.value }))} placeholder="Opcional, para calcular rentabilidad" />
 
             <label style={S.label}>Categoría</label>
             <select
