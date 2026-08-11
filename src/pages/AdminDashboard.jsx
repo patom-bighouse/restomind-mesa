@@ -108,7 +108,7 @@ export default function AdminDashboard() {
   async function checkAuth() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { navigate('/admin/login'); return }
-    const { data: rest } = await supabase.from('restaurants').select('id, nombre, moneda').eq('id', restaurantId).single()
+    const { data: rest } = await supabase.from('restaurants').select('id, nombre, moneda, config').eq('id', restaurantId).single()
     if (!rest) { navigate('/admin/login'); return }
     setRestaurant(rest)
     await loadTables(rest.id)
@@ -178,7 +178,7 @@ export default function AdminDashboard() {
     if (ids.length) {
       const { data: items } = await supabase
         .from('order_items')
-        .select('order_id, nombre_snapshot, cantidad, precio_snapshot, notas')
+        .select('order_id, nombre_snapshot, cantidad, precio_snapshot, costo_snapshot, notas')
         .in('order_id', ids)
       const map = {}
       ;(items || []).forEach(i => {
@@ -221,6 +221,41 @@ export default function AdminDashboard() {
   })
   const topPlatos = Object.entries(platoCounts).sort((a, b) => b[1] - a[1]).slice(0, 8)
   const maxPlatoCount = topPlatos.length ? topPlatos[0][1] : 1
+
+  // Rentabilidad por producto: ingreso, coste y margen en el rango.
+  // Solo se computa coste/margen sobre las unidades que tienen
+  // costo_snapshot cargado — las que no lo tienen (ventas anteriores a
+  // esta funcionalidad, o productos sin coste trackeado) se excluyen del
+  // cálculo de margen pero igual suman al ingreso, para no subestimarlo.
+  const rentabilidadPorProducto = {}
+  Object.values(orderItemsMap).flat().forEach(item => {
+    const ordenIsValid = validOrders.find(o => orderItemsMap[o.id]?.includes(item))
+    if (!ordenIsValid) return
+    const key = item.nombre_snapshot
+    if (!rentabilidadPorProducto[key]) {
+      rentabilidadPorProducto[key] = { unidades: 0, ingreso: 0, ingresoConCosto: 0, costo: 0, tieneCosto: false }
+    }
+    const r = rentabilidadPorProducto[key]
+    const ingresoLinea = item.cantidad * parseFloat(item.precio_snapshot || 0)
+    r.unidades += item.cantidad
+    r.ingreso += ingresoLinea
+    if (item.costo_snapshot != null) {
+      r.ingresoConCosto += ingresoLinea
+      r.costo += item.cantidad * parseFloat(item.costo_snapshot)
+      r.tieneCosto = true
+    }
+  })
+  const rentabilidadData = Object.entries(rentabilidadPorProducto)
+    .map(([nombre, r]) => ({
+      nombre,
+      unidades: r.unidades,
+      ingreso: r.ingreso,
+      costo: r.tieneCosto ? r.costo : null,
+      margen: r.tieneCosto ? r.ingresoConCosto - r.costo : null,
+      margenPct: r.tieneCosto && r.ingresoConCosto > 0 ? ((r.ingresoConCosto - r.costo) / r.ingresoConCosto) * 100 : null,
+    }))
+    .sort((a, b) => (b.margen ?? -Infinity) - (a.margen ?? -Infinity))
+  const umbralMargenAlerta = restaurant?.config?.umbral_margen_alerta ?? 20
 
   // Ocupación de mesas
   const mesaCounts = {}
@@ -496,6 +531,50 @@ export default function AdminDashboard() {
                         </tr>
                       )
                     })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Rentabilidad por producto: ingreso, coste y margen */}
+        <div style={S.section}>
+          <div style={S.chartCard}>
+            <div style={S.cardTitle}>Rentabilidad por producto</div>
+            <div style={{ fontSize: 12, color: '#666', marginBottom: 14, marginTop: -6 }}>
+              Margen calculado con el precio de coste vigente en el momento de cada venta. Los productos sin coste cargado muestran el margen como "—".
+            </div>
+            {rentabilidadData.length === 0 ? (
+              <div style={{ fontSize: 13, color: '#555' }}>Sin ventas en este rango.</div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={S.table}>
+                  <thead>
+                    <tr>
+                      <th style={S.th}>Producto</th>
+                      <th style={S.th}>Unidades</th>
+                      <th style={S.th}>Ingreso</th>
+                      <th style={S.th}>Coste</th>
+                      <th style={S.th}>Margen</th>
+                      <th style={S.th}>Margen %</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rentabilidadData.map(p => (
+                      <tr key={p.nombre}>
+                        <td style={S.td}>{p.nombre}</td>
+                        <td style={S.td}>{p.unidades}</td>
+                        <td style={S.td}>{formatMoney(p.ingreso, restaurant?.moneda)}</td>
+                        <td style={S.td}>{p.costo != null ? formatMoney(p.costo, restaurant?.moneda) : '—'}</td>
+                        <td style={{ ...S.td, ...(p.margen != null && p.margenPct < umbralMargenAlerta ? { color: '#e74c3c', fontWeight: 600 } : {}) }}>
+                          {p.margen != null ? formatMoney(p.margen, restaurant?.moneda) : '—'}
+                        </td>
+                        <td style={{ ...S.td, ...(p.margenPct != null && p.margenPct < umbralMargenAlerta ? { color: '#e74c3c', fontWeight: 600 } : {}) }}>
+                          {p.margenPct != null ? `${p.margenPct.toFixed(0)}%` : '—'}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
