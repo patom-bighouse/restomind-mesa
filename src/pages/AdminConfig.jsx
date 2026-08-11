@@ -65,6 +65,7 @@ export default function AdminConfig() {
   const [whatsapp, setWhatsapp] = useState('')
   const [modoCocina, setModoCocina] = useState('orden_llegada')
   const [minutosLimite, setMinutosLimite] = useState(20)
+  const [umbralMargenAlerta, setUmbralMargenAlerta] = useState(20)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -90,6 +91,7 @@ export default function AdminConfig() {
       setWhatsapp(rest.whatsapp || '')
       setModoCocina(rest.modo_cocina || 'orden_llegada')
       setMinutosLimite(rest.minutos_limite_agrupado ?? 20)
+      setUmbralMargenAlerta(rest.config?.umbral_margen_alerta ?? 20)
       // Init horario with defaults for any missing days
       const h = rest.config?.horario || {}
       const horarioCompleto = {}
@@ -130,6 +132,12 @@ export default function AdminConfig() {
       return
     }
 
+    const umbral = parseInt(umbralMargenAlerta, 10)
+    if (!Number.isInteger(umbral) || umbral < 0 || umbral > 100) {
+      setError('El umbral de alerta de margen debe ser un número entre 0 y 100.')
+      return
+    }
+
     setSaving(true)
     try {
       const { error: err } = await supabase
@@ -137,7 +145,7 @@ export default function AdminConfig() {
         .update({
           nombre: nombre.trim(),
           whatsapp: whatsapp.trim(),
-          config: { ...restaurant?.config, horario },
+          config: { ...restaurant?.config, horario, umbral_margen_alerta: umbral },
           modo_cocina: modoCocina,
           minutos_limite_agrupado: minutos,
         })
@@ -222,6 +230,26 @@ export default function AdminConfig() {
               <span style={{ fontSize: 13, color: '#8a7560' }}>minutos</span>
             </div>
           )}
+        </div>
+
+        {/* Alerta de margen */}
+        <div style={S.infoCard}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 4 }}>Alerta de rentabilidad</div>
+          <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 4 }}>
+            En el Dashboard, la sección "Rentabilidad por producto" resalta en rojo los productos cuyo margen esté por debajo de este porcentaje.
+          </div>
+          <div style={S.minutosRow}>
+            <span style={{ fontSize: 13, color: '#8a7560' }}>Avisar cuando el margen sea menor a</span>
+            <input
+              style={S.minutosInput}
+              type="number"
+              min="0"
+              max="100"
+              value={umbralMargenAlerta}
+              onChange={e => setUmbralMargenAlerta(e.target.value)}
+            />
+            <span style={{ fontSize: 13, color: '#8a7560' }}>%</span>
+          </div>
         </div>
 
         {/* Horarios */}

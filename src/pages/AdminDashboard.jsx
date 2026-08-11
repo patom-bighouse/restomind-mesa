@@ -108,7 +108,7 @@ export default function AdminDashboard() {
   async function checkAuth() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { navigate('/admin/login'); return }
-    const { data: rest } = await supabase.from('restaurants').select('id, nombre, moneda').eq('id', restaurantId).single()
+    const { data: rest } = await supabase.from('restaurants').select('id, nombre, moneda, config').eq('id', restaurantId).single()
     if (!rest) { navigate('/admin/login'); return }
     setRestaurant(rest)
     await loadTables(rest.id)
@@ -255,6 +255,7 @@ export default function AdminDashboard() {
       margenPct: r.tieneCosto && r.ingresoConCosto > 0 ? ((r.ingresoConCosto - r.costo) / r.ingresoConCosto) * 100 : null,
     }))
     .sort((a, b) => (b.margen ?? -Infinity) - (a.margen ?? -Infinity))
+  const umbralMargenAlerta = restaurant?.config?.umbral_margen_alerta ?? 20
 
   // Ocupación de mesas
   const mesaCounts = {}
@@ -566,10 +567,10 @@ export default function AdminDashboard() {
                         <td style={S.td}>{p.unidades}</td>
                         <td style={S.td}>{formatMoney(p.ingreso, restaurant?.moneda)}</td>
                         <td style={S.td}>{p.costo != null ? formatMoney(p.costo, restaurant?.moneda) : '—'}</td>
-                        <td style={{ ...S.td, ...(p.margen != null && p.margenPct < 20 ? { color: '#e74c3c', fontWeight: 600 } : {}) }}>
+                        <td style={{ ...S.td, ...(p.margen != null && p.margenPct < umbralMargenAlerta ? { color: '#e74c3c', fontWeight: 600 } : {}) }}>
                           {p.margen != null ? formatMoney(p.margen, restaurant?.moneda) : '—'}
                         </td>
-                        <td style={{ ...S.td, ...(p.margenPct != null && p.margenPct < 20 ? { color: '#e74c3c', fontWeight: 600 } : {}) }}>
+                        <td style={{ ...S.td, ...(p.margenPct != null && p.margenPct < umbralMargenAlerta ? { color: '#e74c3c', fontWeight: 600 } : {}) }}>
                           {p.margenPct != null ? `${p.margenPct.toFixed(0)}%` : '—'}
                         </td>
                       </tr>
