@@ -141,7 +141,7 @@ export default function AdminMesas() {
   }
 
   async function loadData() {
-    const { data: rest } = await supabase.from('restaurants').select('nombre, moneda').eq('id', restaurantId).single()
+    const { data: rest } = await supabase.from('restaurants').select('nombre, moneda, config').eq('id', restaurantId).single()
     setRestaurant(rest)
     const { data: tabs, error: err } = await supabase
       .from('tables').select('id, numero, zona, capacidad, qr_token, activa')
@@ -407,6 +407,9 @@ export default function AdminMesas() {
           <a href={`/admin/mesas/${restaurantId}`} style={S.navTab(true)}>Mesas</a>
           <a href={`/admin/carta/${restaurantId}`} style={S.navTab(false)}>Carta</a>
           <a href={`/admin/config/${restaurantId}`} style={S.navTab(false)}>Configuración</a>
+          {restaurant?.config?.modo_pedidos === 'camarero' && (
+            <a href={`/camarero/${restaurantId}`} target="_blank" rel="noreferrer" style={S.navTab(false)}>Pantalla camarero ↗</a>
+          )}
           <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
         </div>
       </div>
