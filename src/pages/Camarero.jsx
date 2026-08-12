@@ -62,6 +62,8 @@ export default function Camarero() {
   const [tables, setTables] = useState([])
   const [sessions, setSessions] = useState({}) // table_id -> session row
   const [selectedTable, setSelectedTable] = useState(null)
+  const [modoHabilitado, setModoHabilitado] = useState(true)
+  const [abriendoMesa, setAbriendoMesa] = useState(null)
 
   const [categories, setCategories] = useState([])
   const [items, setItems] = useState([])
@@ -77,8 +79,9 @@ export default function Camarero() {
   }, [restaurantId])
 
   async function loadRestaurant() {
-    const { data } = await supabase.from('restaurants').select('nombre, moneda').eq('id', restaurantId).single()
+    const { data } = await supabase.from('restaurants').select('nombre, moneda, config').eq('id', restaurantId).single()
     setRestaurant(data)
+    setModoHabilitado((data?.config?.modo_pedidos || 'cliente') === 'camarero')
   }
 
   // ---------- Login por PIN ----------
@@ -130,7 +133,7 @@ export default function Camarero() {
 
     const { data: sess } = await supabase
       .from('table_sessions')
-      .select('id, table_id, comensales')
+      .select('id, table_id, comensales, camarero_id')
       .eq('restaurant_id', restaurantId)
       .eq('estado', 'abierta')
     const map = {}
@@ -138,14 +141,58 @@ export default function Camarero() {
     setSessions(map)
   }
 
+  // Realtime: refresca la lista de mesas cuando cambian sesiones (otra
+  // mesa se abre/cierra, o se la toma otro camarero) sin necesitar F5.
+  useEffect(() => {
+    if (!camarero || !restaurantId) return
+    const channel = supabase
+      .channel(`camarero-mesas-${restaurantId}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'table_sessions',
+        filter: `restaurant_id=eq.${restaurantId}`,
+      }, () => { loadTablas() })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [camarero, restaurantId])
+
   async function abrirMesa(table) {
+    setAbriendoMesa(table.id)
     const session = sessions[table.id]
-    if (!session) return // solo se puede cargar pedido en mesas ya abiertas por el staff
-    setSelectedTable({ ...table, session })
-    setCart({})
-    setSendSuccess(false)
-    setSendError(null)
-    await loadMenu()
+    try {
+      if (!session) {
+        // Mesa sin sesión: el camarero la abre él mismo, asignándosela.
+        const { data, error: err } = await supabase
+          .from('table_sessions')
+          .insert({ table_id: table.id, restaurant_id: restaurantId, comensales: table.capacidad, camarero_id: camarero.id })
+          .select('id, table_id, comensales, camarero_id')
+          .single()
+        if (err) throw err
+        setSelectedTable({ ...table, session: data })
+      } else if (!session.camarero_id) {
+        // Mesa abierta desde el Dashboard, sin dueño: la toma este camarero.
+        const { error: err } = await supabase
+          .from('table_sessions')
+          .update({ camarero_id: camarero.id })
+          .eq('id', session.id)
+        if (err) throw err
+        setSelectedTable({ ...table, session: { ...session, camarero_id: camarero.id } })
+      } else if (session.camarero_id === camarero.id) {
+        setSelectedTable({ ...table, session })
+      } else {
+        // Ya la tomó otro camarero justo antes (carrera poco probable
+        // gracias al realtime, pero se cubre igual).
+        await loadTablas()
+        return
+      }
+      setCart({})
+      setSendSuccess(false)
+      setSendError(null)
+      await loadMenu()
+    } catch (e) {
+      setSendError(e.message)
+    } finally {
+      setAbriendoMesa(null)
+    }
   }
 
   function volverAMesas() {
@@ -246,7 +293,29 @@ export default function Camarero() {
 
   // ---------- Render: selector de mesas ----------
   if (!selectedTable) {
-    const mesasAbiertas = tables.filter(t => sessions[t.id])
+    if (!modoHabilitado) {
+      return (
+        <div style={S.app}>
+          <div style={S.header}>
+            <div style={S.logo}>{restaurant?.nombre || 'Restomind'}</div>
+            <button style={S.logoutBtn} onClick={cambiarCamarero}>Salir</button>
+          </div>
+          <div style={S.center}>
+            <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 17, color: '#e8c97a' }}>Modo camarero no habilitado</div>
+            <div style={{ fontSize: 13, color: '#8a7560' }}>Este restaurante no tiene activado el modo de pedidos por camarero. Pedile al dueño que lo active desde Configuración.</div>
+          </div>
+        </div>
+      )
+    }
+    // Mesas que este camarero puede ver: sin sesión (para abrir) o con
+    // sesión sin dueño / suya (para tomar o seguir atendiendo). Las que
+    // ya tiene otro camarero quedan ocultas.
+    const mesasVisibles = tables.filter(t => {
+      const s = sessions[t.id]
+      return !s || !s.camarero_id || s.camarero_id === camarero.id
+    })
+    const mesasPropias = mesasVisibles.filter(t => sessions[t.id])
+    const mesasParaAbrir = mesasVisibles.filter(t => !sessions[t.id])
     return (
       <div style={S.app}>
         <div style={S.header}>
@@ -256,15 +325,33 @@ export default function Camarero() {
           </div>
           <button style={S.logoutBtn} onClick={cambiarCamarero}>Cambiar de camarero</button>
         </div>
-        {mesasAbiertas.length === 0 ? (
-          <div style={S.emptyMsg}>No hay mesas abiertas todavía. Abrilas desde la pantalla de Mesas.</div>
+        {sendError && <div style={{ ...S.error, padding: '10px 16px' }}>{sendError}</div>}
+
+        {mesasPropias.length > 0 && (
+          <>
+            <div style={{ ...S.secTitle, padding: '0 20px' }}>Tus mesas</div>
+            <div style={S.mesasGrid}>
+              {mesasPropias.map(t => (
+                <div key={t.id} style={S.mesaCard} onClick={() => abrirMesa(t)}>
+                  <div style={S.mesaNum}>Mesa {t.numero}</div>
+                  {t.zona && <div style={S.mesaZona}>{t.zona.charAt(0).toUpperCase() + t.zona.slice(1)}</div>}
+                  <div style={S.mesaComensales}>{sessions[t.id]?.comensales ?? t.capacidad} comensales</div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        <div style={{ ...S.secTitle, padding: '0 20px' }}>Mesas para abrir</div>
+        {mesasParaAbrir.length === 0 ? (
+          <div style={S.emptyMsg}>No hay mesas libres en este momento.</div>
         ) : (
           <div style={S.mesasGrid}>
-            {mesasAbiertas.map(t => (
-              <div key={t.id} style={S.mesaCard} onClick={() => abrirMesa(t)}>
+            {mesasParaAbrir.map(t => (
+              <div key={t.id} style={{ ...S.mesaCard, opacity: abriendoMesa === t.id ? 0.5 : 1 }} onClick={() => abrirMesa(t)}>
                 <div style={S.mesaNum}>Mesa {t.numero}</div>
                 {t.zona && <div style={S.mesaZona}>{t.zona.charAt(0).toUpperCase() + t.zona.slice(1)}</div>}
-                <div style={S.mesaComensales}>{sessions[t.id]?.comensales ?? t.capacidad} comensales</div>
+                <div style={S.mesaComensales}>Capacidad: {t.capacidad}</div>
               </div>
             ))}
           </div>
