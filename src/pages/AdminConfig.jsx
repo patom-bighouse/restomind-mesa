@@ -66,6 +66,11 @@ export default function AdminConfig() {
   const [modoCocina, setModoCocina] = useState('orden_llegada')
   const [minutosLimite, setMinutosLimite] = useState(20)
   const [umbralMargenAlerta, setUmbralMargenAlerta] = useState(20)
+  const [modoPedidos, setModoPedidos] = useState('cliente')
+  const [camareros, setCamareros] = useState([])
+  const [nuevoCamareroNombre, setNuevoCamareroNombre] = useState('')
+  const [nuevoCamareroPin, setNuevoCamareroPin] = useState('')
+  const [camareroError, setCamareroError] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -92,6 +97,7 @@ export default function AdminConfig() {
       setModoCocina(rest.modo_cocina || 'orden_llegada')
       setMinutosLimite(rest.minutos_limite_agrupado ?? 20)
       setUmbralMargenAlerta(rest.config?.umbral_margen_alerta ?? 20)
+      setModoPedidos(rest.config?.modo_pedidos || 'cliente')
       // Init horario with defaults for any missing days
       const h = rest.config?.horario || {}
       const horarioCompleto = {}
@@ -100,7 +106,46 @@ export default function AdminConfig() {
       })
       setHorario(horarioCompleto)
     }
+    await loadCamareros()
     setLoading(false)
+  }
+
+  async function loadCamareros() {
+    const { data } = await supabase
+      .from('camareros')
+      .select('id, nombre, pin, activo')
+      .eq('restaurant_id', restaurantId)
+      .order('nombre')
+    setCamareros(data || [])
+  }
+
+  async function addCamarero() {
+    setCamareroError(null)
+    const nombre = nuevoCamareroNombre.trim()
+    const pin = nuevoCamareroPin.trim()
+    if (!nombre) { setCamareroError('Ingresá el nombre del camarero.'); return }
+    if (!/^\d{4}$/.test(pin)) { setCamareroError('El PIN debe ser de 4 dígitos numéricos.'); return }
+    const { error: err } = await supabase
+      .from('camareros')
+      .insert({ restaurant_id: restaurantId, nombre, pin })
+    if (err) {
+      setCamareroError(err.code === '23505' ? 'Ya existe un camarero con ese PIN. Elegí otro.' : err.message)
+      return
+    }
+    setNuevoCamareroNombre('')
+    setNuevoCamareroPin('')
+    await loadCamareros()
+  }
+
+  async function toggleCamareroActivo(camarero) {
+    await supabase.from('camareros').update({ activo: !camarero.activo }).eq('id', camarero.id)
+    await loadCamareros()
+  }
+
+  async function eliminarCamarero(camarero) {
+    if (!confirm(`¿Eliminar a ${camarero.nombre}? Los pedidos que ya cargó quedan igual en el historial.`)) return
+    await supabase.from('camareros').delete().eq('id', camarero.id)
+    await loadCamareros()
   }
 
   function updateDia(diaKey, field, value) {
@@ -145,7 +190,7 @@ export default function AdminConfig() {
         .update({
           nombre: nombre.trim(),
           whatsapp: whatsapp.trim(),
-          config: { ...restaurant?.config, horario, umbral_margen_alerta: umbral },
+          config: { ...restaurant?.config, horario, umbral_margen_alerta: umbral, modo_pedidos: modoPedidos },
           modo_cocina: modoCocina,
           minutos_limite_agrupado: minutos,
         })
@@ -251,6 +296,74 @@ export default function AdminConfig() {
             <span style={{ fontSize: 13, color: '#8a7560' }}>%</span>
           </div>
         </div>
+
+        {/* Modo de pedidos: cliente desde la mesa vs camarero con tablet */}
+        <div style={S.infoCard}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 4 }}>Modo de pedidos</div>
+          <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 4 }}>Define quién carga los pedidos de las mesas.</div>
+
+          <div style={S.modoCocinaOptions}>
+            <div style={S.modoCocinaBtn(modoPedidos === 'cliente')} onClick={() => setModoPedidos('cliente')}>
+              <div style={S.modoCocinaBtnTitle(modoPedidos === 'cliente')}>Cliente desde la mesa</div>
+              <div style={S.modoCocinaBtnDesc}>El cliente escanea el QR y arma su pedido solo, desde su celular.</div>
+            </div>
+            <div style={S.modoCocinaBtn(modoPedidos === 'camarero')} onClick={() => setModoPedidos('camarero')}>
+              <div style={S.modoCocinaBtnTitle(modoPedidos === 'camarero')}>Camarero con tablet</div>
+              <div style={S.modoCocinaBtnDesc}>El camarero toma el pedido desde su propia pantalla. El cliente solo ve la carta y su cuenta.</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Gestión de camareros, solo relevante en modo 'camarero' */}
+        {modoPedidos === 'camarero' && (
+          <div style={S.infoCard}>
+            <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 4 }}>Camareros</div>
+            <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 12 }}>
+              Cada camarero entra a su pantalla con este PIN de 4 dígitos. Recordá guardar la configuración de arriba para activar el modo camarero.
+            </div>
+
+            {camareroError && <div style={{ ...S.error, marginBottom: 12 }}>{camareroError}</div>}
+
+            {camareros.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                {camareros.map(c => (
+                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '0.5px solid #2a2a2a' }}>
+                    <div>
+                      <span style={{ fontSize: 14, color: c.activo ? '#f0e8d8' : '#666' }}>{c.nombre}</span>
+                      <span style={{ fontSize: 12, color: '#7a6a50', marginLeft: 10 }}>PIN: {c.pin}</span>
+                      {!c.activo && <span style={{ fontSize: 11, color: '#e87a7a', marginLeft: 10 }}>Inactivo</span>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button style={S.franjaToggle(c.activo)} onClick={() => toggleCamareroActivo(c)}>
+                        {c.activo ? 'Desactivar' : 'Activar'}
+                      </button>
+                      <button style={{ ...S.franjaToggle(false), color: '#e87a7a', borderColor: '#6a2e20' }} onClick={() => eliminarCamarero(c)}>
+                        Eliminar
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <input
+                style={{ ...S.infoInput, width: 180 }}
+                placeholder="Nombre del camarero"
+                value={nuevoCamareroNombre}
+                onChange={e => setNuevoCamareroNombre(e.target.value)}
+              />
+              <input
+                style={{ ...S.infoInput, width: 90 }}
+                placeholder="PIN (4 dígitos)"
+                maxLength={4}
+                value={nuevoCamareroPin}
+                onChange={e => setNuevoCamareroPin(e.target.value.replace(/\D/g, ''))}
+              />
+              <button style={S.franjaToggle(true)} onClick={addCamarero}>+ Agregar</button>
+            </div>
+          </div>
+        )}
 
         {/* Horarios */}
         <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 16 }}>Horarios de apertura</div>
