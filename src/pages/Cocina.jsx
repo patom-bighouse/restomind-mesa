@@ -90,6 +90,7 @@ export default function Cocina() {
   const [orders, setOrders] = useState([])
   const [orderItems, setOrderItems] = useState({})
   const [tables, setTables] = useState({})
+  const [camareros, setCamareros] = useState({})
   const [tableSessions, setTableSessions] = useState({}) // table_id -> sesión activa
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -183,6 +184,18 @@ export default function Cocina() {
     }
   }
 
+  async function loadCamareros() {
+    const { data } = await supabase
+      .from('camareros')
+      .select('id, nombre')
+      .eq('restaurant_id', restaurantId)
+    if (data) {
+      const map = {}
+      data.forEach(c => { map[c.id] = c })
+      setCamareros(map)
+    }
+  }
+
   async function loadTableSessions() {
     const { data } = await supabase
       .from('table_sessions')
@@ -209,7 +222,7 @@ export default function Cocina() {
   async function loadOrders() {
     const { data, error: err } = await supabase
       .from('orders')
-      .select('id, table_id, estado, total, created_at, tipo, notas, metodo_entrega')
+      .select('id, table_id, estado, total, created_at, tipo, notas, metodo_entrega, tomado_por')
       .eq('restaurant_id', restaurantId)
       .in('estado', ['pendiente', 'preparando', 'listo'])
       .order('created_at', { ascending: true })
@@ -235,6 +248,7 @@ export default function Cocina() {
         const { data: { session } } = await supabase.auth.getSession()
         if (!session) { navigate('/admin/login'); return }
         await loadTables()
+        await loadCamareros()
         await loadTableSessions()
         await loadOrders()
         await loadWaiterCalls()
@@ -450,6 +464,11 @@ export default function Cocina() {
                     {table ? `Mesa ${table.numero}` : order.tipo === 'takeaway' ? 'Takeaway' : 'Mesa ?'}
                   </div>
                   <div style={S.mesaZona}>{table ? table.zona.charAt(0).toUpperCase() + table.zona.slice(1) : ''}</div>
+                  {order.tomado_por && camareros[order.tomado_por] && (
+                    <div style={{ fontSize: 11, color: '#c4a85a', marginTop: 2 }}>
+                      👤 {camareros[order.tomado_por].nombre}
+                    </div>
+                  )}
                   {order.tipo === 'mesa' && tableSessions[order.table_id] && (
                     <div style={{ fontSize: 11, color: '#5a9c7a' }}>
                       🟢 Sesión desde {formatHora(tableSessions[order.table_id].abierta_at)}
