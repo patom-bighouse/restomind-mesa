@@ -71,6 +71,10 @@ export default function AdminConfig() {
   const [nuevoCamareroNombre, setNuevoCamareroNombre] = useState('')
   const [nuevoCamareroPin, setNuevoCamareroPin] = useState('')
   const [camareroError, setCamareroError] = useState(null)
+  const [sectoresCocinaActivo, setSectoresCocinaActivo] = useState(false)
+  const [sectores, setSectores] = useState([])
+  const [nuevoSectorNombre, setNuevoSectorNombre] = useState('')
+  const [sectorError, setSectorError] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -98,6 +102,7 @@ export default function AdminConfig() {
       setMinutosLimite(rest.minutos_limite_agrupado ?? 20)
       setUmbralMargenAlerta(rest.config?.umbral_margen_alerta ?? 20)
       setModoPedidos(rest.config?.modo_pedidos || 'cliente')
+      setSectoresCocinaActivo(rest.config?.sectores_cocina_activo || false)
       // Init horario with defaults for any missing days
       const h = rest.config?.horario || {}
       const horarioCompleto = {}
@@ -107,7 +112,43 @@ export default function AdminConfig() {
       setHorario(horarioCompleto)
     }
     await loadCamareros()
+    await loadSectores()
     setLoading(false)
+  }
+
+  async function loadSectores() {
+    const { data } = await supabase
+      .from('sectores_cocina')
+      .select('id, nombre, orden')
+      .eq('restaurant_id', restaurantId)
+      .order('orden')
+    setSectores(data || [])
+  }
+
+  async function addSector() {
+    setSectorError(null)
+    const nombre = nuevoSectorNombre.trim()
+    if (!nombre) { setSectorError('Ingresá el nombre del sector.'); return }
+    const orden = sectores.length
+    const { error: err } = await supabase
+      .from('sectores_cocina')
+      .insert({ restaurant_id: restaurantId, nombre, orden })
+    if (err) { setSectorError(err.message); return }
+    setNuevoSectorNombre('')
+    await loadSectores()
+  }
+
+  async function renombrarSector(sector, nuevoNombre) {
+    const nombre = nuevoNombre.trim()
+    if (!nombre || nombre === sector.nombre) return
+    await supabase.from('sectores_cocina').update({ nombre }).eq('id', sector.id)
+    await loadSectores()
+  }
+
+  async function eliminarSector(sector) {
+    if (!confirm(`¿Eliminar el sector "${sector.nombre}"? Los platos que lo tenían asignado quedarán sin sector (generales).`)) return
+    await supabase.from('sectores_cocina').delete().eq('id', sector.id)
+    await loadSectores()
   }
 
   async function loadCamareros() {
@@ -190,7 +231,7 @@ export default function AdminConfig() {
         .update({
           nombre: nombre.trim(),
           whatsapp: whatsapp.trim(),
-          config: { ...restaurant?.config, horario, umbral_margen_alerta: umbral, modo_pedidos: modoPedidos },
+          config: { ...restaurant?.config, horario, umbral_margen_alerta: umbral, modo_pedidos: modoPedidos, sectores_cocina_activo: sectoresCocinaActivo },
           modo_cocina: modoCocina,
           minutos_limite_agrupado: minutos,
         })
@@ -364,6 +405,58 @@ export default function AdminConfig() {
             </div>
           </div>
         )}
+
+        {/* Sectores de cocina */}
+        <div style={S.infoCard}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 4 }}>Sectores de cocina</div>
+          <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 12 }}>
+            Si tu cocina está dividida en estaciones (Parrilla, Cocina fría, Postres...), activá esto para poder filtrar las comandas por sector en la pantalla de Cocina.
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: sectoresCocinaActivo ? 16 : 0 }}>
+            <div style={S.toggleSwitch(sectoresCocinaActivo)} onClick={() => setSectoresCocinaActivo(!sectoresCocinaActivo)}>
+              <div style={S.toggleDot(sectoresCocinaActivo)}></div>
+            </div>
+            <span style={{ fontSize: 13, color: '#8a7560' }}>¿Tiene distintos sectores de cocina?</span>
+          </div>
+
+          {sectoresCocinaActivo && (
+            <>
+              {sectorError && <div style={{ ...S.error, marginBottom: 12 }}>{sectorError}</div>}
+
+              {sectores.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  {sectores.map(s => (
+                    <div key={s.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '0.5px solid #2a2a2a' }}>
+                      <input
+                        style={{ ...S.infoInput, width: 220, padding: '6px 10px' }}
+                        defaultValue={s.nombre}
+                        onBlur={e => renombrarSector(s, e.target.value)}
+                      />
+                      <button style={{ ...S.franjaToggle(false), color: '#e87a7a', borderColor: '#6a2e20' }} onClick={() => eliminarSector(s)}>
+                        Eliminar
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <input
+                  style={{ ...S.infoInput, width: 220 }}
+                  placeholder="Nombre del sector (ej: Parrilla)"
+                  value={nuevoSectorNombre}
+                  onChange={e => setNuevoSectorNombre(e.target.value)}
+                />
+                <button style={S.franjaToggle(true)} onClick={addSector}>+ Agregar</button>
+              </div>
+
+              <div style={{ fontSize: 11, color: '#555', marginTop: 12 }}>
+                Los platos sin sector asignado se consideran "generales" y aparecen siempre visibles en Cocina, sin importar el filtro activo.
+              </div>
+            </>
+          )}
+        </div>
 
         {/* Horarios */}
         <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 16 }}>Horarios de apertura</div>
