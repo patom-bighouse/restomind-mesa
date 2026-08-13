@@ -65,6 +65,7 @@ export default function AdminCarta() {
   const [restaurant, setRestaurant] = useState(null)
   const [categories, setCategories] = useState([])
   const [items, setItems] = useState([])
+  const [sectores, setSectores] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [newCatName, setNewCatName] = useState('')
@@ -86,7 +87,7 @@ export default function AdminCarta() {
   }
 
   async function loadData() {
-    const { data: rest } = await supabase.from('restaurants').select('nombre, moneda').eq('id', restaurantId).single()
+    const { data: rest } = await supabase.from('restaurants').select('nombre, moneda, config').eq('id', restaurantId).single()
     setRestaurant(rest)
 
     const { data: cats, error: catErr } = await supabase
@@ -96,10 +97,17 @@ export default function AdminCarta() {
     setCategories(cats || [])
 
     const { data: menuItems, error: itemErr } = await supabase
-      .from('menu_items').select('id, nombre, descripcion, precio, precio_costo, emoji, foto_url, category_id, disponible, orden')
+      .from('menu_items').select('id, nombre, descripcion, precio, precio_costo, emoji, foto_url, category_id, disponible, orden, sector_cocina_id')
       .eq('restaurant_id', restaurantId).order('orden')
     if (itemErr) { setError(itemErr.message); setLoading(false); return }
     setItems(menuItems || [])
+
+    if (rest?.config?.sectores_cocina_activo) {
+      const { data: secs } = await supabase
+        .from('sectores_cocina').select('id, nombre, orden')
+        .eq('restaurant_id', restaurantId).order('orden')
+      setSectores(secs || [])
+    }
     setLoading(false)
   }
 
@@ -162,7 +170,7 @@ export default function AdminCarta() {
   function openNewItem(categoryId) {
     setEditingCatId(categoryId)
     setEditingItem('new')
-    setFormData({ nombre: '', descripcion: '', precio: '', precio_costo: '', emoji: '🍽', foto_url: '', disponible: true })
+    setFormData({ nombre: '', descripcion: '', precio: '', precio_costo: '', emoji: '🍽', foto_url: '', disponible: true, sector_cocina_id: '' })
   }
 
   function openEditItem(item) {
@@ -209,6 +217,7 @@ export default function AdminCarta() {
       descripcion: formData.descripcion?.trim() || null,
       precio: parseFloat(formData.precio),
       precio_costo: formData.precio_costo !== '' && formData.precio_costo != null ? parseFloat(formData.precio_costo) : null,
+      sector_cocina_id: formData.sector_cocina_id || null,
       emoji: formData.emoji || '🍽',
       foto_url: formData.foto_url || null,
       disponible: formData.disponible !== false,
@@ -332,6 +341,11 @@ export default function AdminCarta() {
                             Margen: {formatMoney(item.precio - item.precio_costo, restaurant?.moneda)} ({(((item.precio - item.precio_costo) / item.precio) * 100).toFixed(0)}%)
                           </div>
                         )}
+                        {restaurant?.config?.sectores_cocina_activo && item.sector_cocina_id && (
+                          <div style={{ fontSize: 11, color: '#c4a85a', marginTop: 2 }}>
+                            {sectores.find(s => s.id === item.sector_cocina_id)?.nombre || ''}
+                          </div>
+                        )}
                         <div style={S.itemActions}>
                           <div style={S.toggleSwitch(item.disponible)} onClick={() => toggleDisponible(item)} title={item.disponible ? 'Disponible' : 'No disponible'}>
                             <div style={S.toggleDot(item.disponible)}></div>
@@ -372,6 +386,22 @@ export default function AdminCarta() {
 
             <label style={S.label}>Precio de coste ({getCurrencySymbol(restaurant?.moneda)})</label>
             <input style={S.input} type="number" step="0.01" min="0" value={formData.precio_costo ?? ''} onChange={e => setFormData(prev => ({ ...prev, precio_costo: e.target.value }))} placeholder="Opcional, para calcular rentabilidad" />
+
+            {restaurant?.config?.sectores_cocina_activo && (
+              <>
+                <label style={S.label}>Sector de cocina</label>
+                <select
+                  style={S.input}
+                  value={formData.sector_cocina_id || ''}
+                  onChange={e => setFormData(prev => ({ ...prev, sector_cocina_id: e.target.value }))}
+                >
+                  <option value="">General (sin sector)</option>
+                  {sectores.map(s => (
+                    <option key={s.id} value={s.id}>{s.nombre}</option>
+                  ))}
+                </select>
+              </>
+            )}
 
             <label style={S.label}>Categoría</label>
             <select

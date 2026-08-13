@@ -101,14 +101,42 @@ export default function Cocina() {
   const [revertTarget, setRevertTarget] = useState(null) // order pendiente de confirmar reversión
   const [moneda, setMoneda] = useState('EUR')
   const [orderDeliveries, setOrderDeliveries] = useState({}) // order_id -> fila de order_deliveries
+  const [sectoresCocinaActivo, setSectoresCocinaActivo] = useState(false)
+  const [sectores, setSectores] = useState([])
+  const [menuItemSector, setMenuItemSector] = useState({}) // menu_item_id -> sector_cocina_id
+  const [activeSector, setActiveSector] = useState('todos')
 
   async function loadRestaurant() {
     const { data } = await supabase
       .from('restaurants')
-      .select('moneda')
+      .select('moneda, config')
       .eq('id', restaurantId)
       .single()
     if (data?.moneda) setMoneda(data.moneda)
+    setSectoresCocinaActivo(data?.config?.sectores_cocina_activo || false)
+    if (data?.config?.sectores_cocina_activo) {
+      await loadSectores()
+      await loadMenuItemsSector()
+    }
+  }
+
+  async function loadSectores() {
+    const { data } = await supabase
+      .from('sectores_cocina')
+      .select('id, nombre, orden')
+      .eq('restaurant_id', restaurantId)
+      .order('orden')
+    setSectores(data || [])
+  }
+
+  async function loadMenuItemsSector() {
+    const { data } = await supabase
+      .from('menu_items')
+      .select('id, sector_cocina_id')
+      .eq('restaurant_id', restaurantId)
+    const map = {}
+    ;(data || []).forEach(m => { map[m.id] = m.sector_cocina_id })
+    setMenuItemSector(map)
   }
 
   function showNotif(msg) {
@@ -120,7 +148,7 @@ export default function Cocina() {
     if (!orderIds.length) return
     const { data } = await supabase
       .from('order_items')
-      .select('id, order_id, nombre_snapshot, cantidad, notas')
+      .select('id, order_id, nombre_snapshot, cantidad, notas, menu_item_id')
       .in('order_id', orderIds)
     if (data) {
       setOrderItems(prev => {
@@ -420,6 +448,38 @@ export default function Cocina() {
         ))}
       </div>
 
+      {sectoresCocinaActivo && sectores.length > 0 && (
+        <div style={{ padding: '10px 16px 0', display: 'flex', gap: 8, overflowX: 'auto' }}>
+          <button
+            style={{
+              background: activeSector === 'todos' ? '#e8c97a' : 'transparent',
+              color: activeSector === 'todos' ? '#111' : '#8a7560',
+              border: `0.5px solid ${activeSector === 'todos' ? '#e8c97a' : '#3a2e20'}`,
+              borderRadius: 20, padding: '6px 16px', fontSize: 13, fontWeight: 500,
+              cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'Inter', sans-serif",
+            }}
+            onClick={() => setActiveSector('todos')}
+          >
+            Todos
+          </button>
+          {sectores.map(s => (
+            <button
+              key={s.id}
+              style={{
+                background: activeSector === s.id ? '#e8c97a' : 'transparent',
+                color: activeSector === s.id ? '#111' : '#8a7560',
+                border: `0.5px solid ${activeSector === s.id ? '#e8c97a' : '#3a2e20'}`,
+                borderRadius: 20, padding: '6px 16px', fontSize: 13, fontWeight: 500,
+                cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'Inter', sans-serif",
+              }}
+              onClick={() => setActiveSector(s.id)}
+            >
+              {s.nombre}
+            </button>
+          ))}
+        </div>
+      )}
+
       {waiterCalls.length > 0 && (
         <div style={{ padding: '10px 16px 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {waiterCalls.map(call => {
@@ -492,19 +552,33 @@ export default function Cocina() {
               <div style={S.divider} />
 
               <div style={S.itemsList}>
-                {items.length > 0 ? items.map((item, i) => (
-                  <div key={i}>
-                    <div style={S.itemRow}>
-                      <span style={S.itemName}>{item.nombre_snapshot}</span>
-                      <span style={S.itemQty}>× {item.cantidad}</span>
-                    </div>
-                    {item.notas && (
-                      <div style={{ fontSize: 12, color: '#f1c40f', background: '#2a2010', borderRadius: 6, padding: '4px 8px', marginTop: 4, marginBottom: 2 }}>
-                        📝 {item.notas}
+                {items.length > 0 ? items.map((item, i) => {
+                  const itemSectorId = item.menu_item_id ? menuItemSector[item.menu_item_id] : null
+                  const filtroActivo = sectoresCocinaActivo && activeSector !== 'todos'
+                  const perteneceAlSector = !itemSectorId || itemSectorId === activeSector
+                  const atenuado = filtroActivo && !perteneceAlSector
+                  const sectorNombre = itemSectorId ? sectores.find(s => s.id === itemSectorId)?.nombre : null
+                  return (
+                    <div key={i} style={{ opacity: atenuado ? 0.35 : 1 }}>
+                      <div style={S.itemRow}>
+                        <span style={S.itemName}>{item.nombre_snapshot}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {sectoresCocinaActivo && sectorNombre && (
+                            <span style={{ fontSize: 11, background: '#3a2010', color: '#f0a870', padding: '2px 8px', borderRadius: 10 }}>
+                              {sectorNombre}
+                            </span>
+                          )}
+                          <span style={S.itemQty}>× {item.cantidad}</span>
+                        </div>
                       </div>
-                    )}
-                  </div>
-                )) : (
+                      {item.notas && (
+                        <div style={{ fontSize: 12, color: '#f1c40f', background: '#2a2010', borderRadius: 6, padding: '4px 8px', marginTop: 4, marginBottom: 2 }}>
+                          📝 {item.notas}
+                        </div>
+                      )}
+                    </div>
+                  )
+                }) : (
                   <div style={{ fontSize: 12, color: '#555' }}>Cargando items...</div>
                 )}
               </div>
