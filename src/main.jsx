@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import Mesa from './pages/Mesa'
+import Camarero from './pages/Camarero'
 import Cocina from './pages/Cocina'
 import AdminLogin from './pages/AdminLogin'
 import AdminMesas from './pages/AdminMesas'
@@ -17,6 +18,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <BrowserRouter>
       <Routes>
         <Route path="/mesa/:token" element={<Mesa />} />
+        <Route path="/camarero/:restaurantId" element={<Camarero />} />
         <Route path="/cocina/:restaurantId" element={<Cocina />} />
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/admin/mesas/:restaurantId" element={<AdminMesas />} />

@@ -117,7 +117,7 @@ export default function Mesa() {
 
         const { data: rest } = await supabase
           .from('restaurants')
-          .select('nombre, moneda')
+          .select('nombre, moneda, config')
           .eq('id', tableData.restaurant_id)
           .single()
         setRestaurant(rest)
@@ -189,6 +189,11 @@ export default function Mesa() {
 
   const cartCount = Object.values(cart).reduce((a, b) => a + b.qty, 0)
   const cartTotal = Object.values(cart).reduce((s, i) => s + i.precio * i.qty, 0)
+
+  // Si el restaurante eligió modo 'camarero', el cliente sigue viendo la
+  // carta, "Mis pedidos" y puede llamar al camarero, pero no puede agregar
+  // ítems él mismo — eso lo hace el camarero desde su propia pantalla.
+  const esModoCamarero = restaurant?.config?.modo_pedidos === 'camarero'
 
   const filteredCats = activeCat === 'todos' ? categories : categories.filter(c => c.id === activeCat)
 
@@ -414,11 +419,13 @@ export default function Mesa() {
                       {item.descripcion && <div style={S.desc}>{item.descripcion}</div>}
                       <div style={S.price}>{formatMoney(item.precio, restaurant?.moneda)}</div>
                     </div>
-                    <div style={S.qty}>
-                      <button style={S.btn} onClick={() => change(item, -1)}>−</button>
-                      <span style={S.qnum}>{cart[item.id]?.qty || 0}</span>
-                      <button style={S.btn} onClick={() => change(item, 1)}>+</button>
-                    </div>
+                    {!esModoCamarero && (
+                      <div style={S.qty}>
+                        <button style={S.btn} onClick={() => change(item, -1)}>−</button>
+                        <span style={S.qnum}>{cart[item.id]?.qty || 0}</span>
+                        <button style={S.btn} onClick={() => change(item, 1)}>+</button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -435,13 +442,15 @@ export default function Mesa() {
         </div>
       </div>
 
-      <div style={S.cartBar(cartCount > 0)} onClick={() => setOverlay('cart')}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={S.cartBadge}>{cartCount}</div>
-          <span style={{ fontSize: 14, fontWeight: 500, color: '#1a1410' }}>Ver pedido</span>
+      {!esModoCamarero && (
+        <div style={S.cartBar(cartCount > 0)} onClick={() => setOverlay('cart')}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={S.cartBadge}>{cartCount}</div>
+            <span style={{ fontSize: 14, fontWeight: 500, color: '#1a1410' }}>Ver pedido</span>
+          </div>
+          <span style={{ fontSize: 15, fontWeight: 500, color: '#1a1410' }}>{formatMoney(cartTotal, restaurant?.moneda)}</span>
         </div>
-        <span style={{ fontSize: 15, fontWeight: 500, color: '#1a1410' }}>{formatMoney(cartTotal, restaurant?.moneda)}</span>
-      </div>
+      )}
 
       <div style={S.overlay(overlay !== null)} onClick={e => { if (e.target === e.currentTarget) setOverlay(null) }}>
         <div style={S.sheet}>
