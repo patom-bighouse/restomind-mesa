@@ -105,6 +105,7 @@ export default function Cocina() {
   const [sectores, setSectores] = useState([])
   const [menuItemSector, setMenuItemSector] = useState({}) // menu_item_id -> sector_cocina_id
   const [activeSector, setActiveSector] = useState('todos')
+  const [sectorConfirmaciones, setSectorConfirmaciones] = useState({}) // order_id -> [{sector_cocina_id, confirmado_preparando, confirmado_listo}]
 
   async function loadRestaurant() {
     const { data } = await supabase
@@ -137,6 +138,35 @@ export default function Cocina() {
     const map = {}
     ;(data || []).forEach(m => { map[m.id] = m.sector_cocina_id })
     setMenuItemSector(map)
+  }
+
+  async function loadSectorConfirmaciones(orderIds) {
+    if (!orderIds.length) return
+    const { data } = await supabase
+      .from('order_sector_confirmaciones')
+      .select('order_id, sector_cocina_id, confirmado_preparando, confirmado_listo')
+      .in('order_id', orderIds)
+    if (data) {
+      setSectorConfirmaciones(prev => {
+        const next = { ...prev }
+        orderIds.forEach(id => { next[id] = [] }) // limpiamos y reponemos, evita duplicados
+        data.forEach(row => { next[row.order_id] = [...(next[row.order_id] || []), row] })
+        return next
+      })
+    }
+  }
+
+  // Sectores distintos involucrados en una comanda (según los ítems que
+  // ya llegaron). Si es 1 o menos, la comanda se comporta como siempre
+  // (avance directo, sin coordinación entre sectores).
+  function sectoresDeOrden(orderId) {
+    const its = orderItems[orderId] || []
+    const ids = new Set()
+    its.forEach(it => {
+      const sid = it.menu_item_id ? menuItemSector[it.menu_item_id] : null
+      if (sid) ids.add(sid)
+    })
+    return [...ids]
   }
 
   function showNotif(msg) {
@@ -257,6 +287,7 @@ export default function Cocina() {
     if (err) { setError(err.message); return }
     setOrders(data || [])
     await loadOrderItems((data || []).map(o => o.id))
+    if (sectoresCocinaActivo) await loadSectorConfirmaciones((data || []).map(o => o.id))
     if (tieneModulo('takeaway_delivery')) {
       await loadOrderDeliveries((data || []).filter(o => o.tipo === 'takeaway').map(o => o.id))
     }
@@ -301,6 +332,7 @@ export default function Cocina() {
         const newOrder = payload.new
         setOrders(prev => [...prev, newOrder])
         await loadOrderItems([newOrder.id])
+        if (sectoresCocinaActivo) await loadSectorConfirmaciones([newOrder.id])
         setActiveTab('pendiente')
         showNotif('🍽 Nuevo pedido recibido')
         playNewOrderChime()
@@ -326,6 +358,18 @@ export default function Cocina() {
         // total se actualizaba pero el ítem nuevo nunca se pedía ni se
         // mostraba en la tarjeta.
         await loadOrderItems([payload.new.order_id])
+        if (sectoresCocinaActivo) await loadSectorConfirmaciones([payload.new.order_id])
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'order_sector_confirmaciones',
+      }, async (payload) => {
+        // No filtramos por restaurant_id porque esta tabla no tiene esa
+        // columna directamente — RLS ya restringe qué filas puede ver
+        // esta conexión, igual que en el resto de las suscripciones.
+        const orderId = payload.new?.order_id || payload.old?.order_id
+        if (orderId) await loadSectorConfirmaciones([orderId])
       })
       .on('postgres_changes', {
         event: '*',
@@ -384,14 +428,58 @@ export default function Cocina() {
     return () => { supabase.removeChannel(channel) }
   }, [restaurantId])
 
+  // Campo de confirmación relevante según la transición que se está
+  // intentando hacer (pendiente→preparando usa confirmado_preparando,
+  // preparando→listo usa confirmado_listo). listo→entregado no requiere
+  // coordinación entre sectores (es un paso de servicio, no de cocina).
+  function campoConfirmacion(estadoActual) {
+    if (estadoActual === 'pendiente') return 'confirmado_preparando'
+    if (estadoActual === 'preparando') return 'confirmado_listo'
+    return null
+  }
+
   async function advanceEstado(order) {
     const cfg = ESTADO_CFG[order.estado]
     if (!cfg.next) return
+
+    const sectoresInvolucrados = sectoresDeOrden(order.id)
+    const campo = campoConfirmacion(order.estado)
+
+    // Comanda de un solo sector (o sin sector), o transición que no
+    // requiere coordinación: avance directo, como siempre.
+    if (!sectoresCocinaActivo || sectoresInvolucrados.length <= 1 || !campo) {
+      const { error: err } = await supabase.from('orders').update({ estado: cfg.next }).eq('id', order.id)
+      if (err) console.error(err)
+      return
+    }
+
+    // Comanda multi-sector: hace falta estar parado en un sector
+    // específico para poder confirmar en su nombre.
+    if (activeSector === 'todos') return
+
     const { error: err } = await supabase
-      .from('orders')
-      .update({ estado: cfg.next })
-      .eq('id', order.id)
-    if (err) console.error(err)
+      .from('order_sector_confirmaciones')
+      .update({ [campo]: true })
+      .eq('order_id', order.id)
+      .eq('sector_cocina_id', activeSector)
+    if (err) { console.error(err); return }
+
+    // Releemos el estado fresco de confirmaciones de esta comanda para
+    // decidir si ya confirmaron TODOS los sectores involucrados.
+    const { data: confirmaciones } = await supabase
+      .from('order_sector_confirmaciones')
+      .select('sector_cocina_id, confirmado_preparando, confirmado_listo')
+      .eq('order_id', order.id)
+    setSectorConfirmaciones(prev => ({ ...prev, [order.id]: confirmaciones || [] }))
+
+    const todosConfirmaron = sectoresInvolucrados.every(sid => {
+      const row = (confirmaciones || []).find(c => c.sector_cocina_id === sid)
+      return row?.[campo]
+    })
+    if (todosConfirmaron) {
+      const { error: err2 } = await supabase.from('orders').update({ estado: cfg.next }).eq('id', order.id)
+      if (err2) console.error(err2)
+    }
   }
 
   async function confirmRevertEstado() {
@@ -403,6 +491,18 @@ export default function Cocina() {
       .update({ estado: cfg.prev })
       .eq('id', revertTarget.id)
     if (err) console.error(err)
+
+    // Si se retrocede, hay que volver a pedir confirmación a los
+    // sectores para esa transición (si no, quedaría "ya confirmado" sin
+    // que nadie haya vuelto a revisar el paso).
+    const campo = campoConfirmacion(cfg.prev)
+    if (sectoresCocinaActivo && campo) {
+      await supabase
+        .from('order_sector_confirmaciones')
+        .update({ [campo]: false })
+        .eq('order_id', revertTarget.id)
+      await loadSectorConfirmaciones([revertTarget.id])
+    }
     setRevertTarget(null)
   }
 
@@ -516,6 +616,13 @@ export default function Cocina() {
           const table = tables[order.table_id]
           const items = orderItems[order.id] || []
           const cfg = ESTADO_CFG[order.estado]
+          const sectoresInvolucrados = sectoresCocinaActivo ? sectoresDeOrden(order.id) : []
+          const esMultiSector = sectoresInvolucrados.length > 1
+          const campoActual = campoConfirmacion(order.estado)
+          const confirmacionesOrden = sectorConfirmaciones[order.id] || []
+          const miSectorYaConfirmo = activeSector !== 'todos' && campoActual
+            ? confirmacionesOrden.find(c => c.sector_cocina_id === activeSector)?.[campoActual]
+            : false
           return (
             <div key={order.id} style={S.card(order.estado)}>
               <div style={S.cardHeader}>
@@ -606,6 +713,28 @@ export default function Cocina() {
                 </div>
               )}
 
+              {esMultiSector && campoActual && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
+                  {sectoresInvolucrados.map(sid => {
+                    const sector = sectores.find(s => s.id === sid)
+                    const confirmado = confirmacionesOrden.find(c => c.sector_cocina_id === sid)?.[campoActual]
+                    return (
+                      <span
+                        key={sid}
+                        style={{
+                          fontSize: 11, padding: '3px 10px', borderRadius: 10,
+                          background: confirmado ? '#1a3a20' : '#1a1a1a',
+                          color: confirmado ? '#2ecc71' : '#6a6a6a',
+                          border: `0.5px solid ${confirmado ? '#27ae60' : '#3a3a3a'}`,
+                        }}
+                      >
+                        {confirmado ? '✓ ' : '○ '}{sector?.nombre || '?'}
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
+
               <div style={{ fontSize: 12, color: '#8a7560', display: 'flex', justifyContent: 'space-between' }}>
                 <span>Ref: {order.id.slice(0, 8).toUpperCase()}</span>
                 <span style={{ color: '#e8c97a', fontWeight: 500 }}>{formatMoney(order.total, moneda)}</span>
@@ -617,11 +746,24 @@ export default function Cocina() {
                     ↩ Revertir
                   </button>
                 )}
-                {cfg.next && (
-                  <button style={{ ...S.nextBtn(order.estado), flex: 1 }} onClick={() => advanceEstado(order)}>
-                    {cfg.nextLabel}
-                  </button>
-                )}
+                {cfg.next && (() => {
+                  const bloqueadoSinSector = esMultiSector && campoActual && activeSector === 'todos'
+                  let label = cfg.nextLabel
+                  if (esMultiSector && campoActual) {
+                    label = bloqueadoSinSector
+                      ? 'Elegí tu sector para confirmar'
+                      : miSectorYaConfirmo ? '✓ Confirmado, esperando otros sectores' : `Confirmar mi parte (${cfg.label.toLowerCase()})`
+                  }
+                  return (
+                    <button
+                      style={{ ...S.nextBtn(order.estado), flex: 1, opacity: (bloqueadoSinSector || miSectorYaConfirmo) ? 0.5 : 1, cursor: (bloqueadoSinSector || miSectorYaConfirmo) ? 'not-allowed' : 'pointer' }}
+                      onClick={() => { if (!bloqueadoSinSector && !miSectorYaConfirmo) advanceEstado(order) }}
+                      disabled={bloqueadoSinSector || miSectorYaConfirmo}
+                    >
+                      {label}
+                    </button>
+                  )
+                })()}
               </div>
             </div>
           )
