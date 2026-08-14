@@ -438,6 +438,15 @@ export default function Cocina() {
     return null
   }
 
+  // Actualiza el estado local de inmediato (además de la base), para que
+  // la propia pantalla que hizo la acción no dependa exclusivamente de
+  // que llegue el evento de Realtime para reflejar el cambio. Realtime
+  // sigue siendo necesario para que se enteren las DEMÁS pantallas.
+  function aplicarAvanceLocal(orderId, nuevoEstado) {
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, estado: nuevoEstado } : o)
+      .filter(o => ['pendiente', 'preparando', 'listo'].includes(o.estado)))
+  }
+
   async function advanceEstado(order) {
     const cfg = ESTADO_CFG[order.estado]
     if (!cfg.next) return
@@ -449,7 +458,8 @@ export default function Cocina() {
     // requiere coordinación: avance directo, como siempre.
     if (!sectoresCocinaActivo || sectoresInvolucrados.length <= 1 || !campo) {
       const { error: err } = await supabase.from('orders').update({ estado: cfg.next }).eq('id', order.id)
-      if (err) console.error(err)
+      if (err) { console.error(err); return }
+      aplicarAvanceLocal(order.id, cfg.next)
       return
     }
 
@@ -478,7 +488,8 @@ export default function Cocina() {
     })
     if (todosConfirmaron) {
       const { error: err2 } = await supabase.from('orders').update({ estado: cfg.next }).eq('id', order.id)
-      if (err2) console.error(err2)
+      if (err2) { console.error(err2); return }
+      aplicarAvanceLocal(order.id, cfg.next)
     }
   }
 
@@ -491,6 +502,7 @@ export default function Cocina() {
       .update({ estado: cfg.prev })
       .eq('id', revertTarget.id)
     if (err) console.error(err)
+    else aplicarAvanceLocal(revertTarget.id, cfg.prev)
 
     // Si se retrocede, hay que volver a pedir confirmación a los
     // sectores para esa transición (si no, quedaría "ya confirmado" sin
