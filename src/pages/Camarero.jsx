@@ -3,6 +3,24 @@ import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/money'
 
+// Mismo catálogo fijo que AdminCarta.jsx y Mesa.jsx (Reglamento UE 1169/2011).
+const ALERGENOS = [
+  { key: 'gluten', label: 'Gluten', emoji: '🌾' },
+  { key: 'crustaceos', label: 'Crustáceos', emoji: '🦐' },
+  { key: 'huevos', label: 'Huevos', emoji: '🥚' },
+  { key: 'pescado', label: 'Pescado', emoji: '🐟' },
+  { key: 'cacahuetes', label: 'Cacahuetes', emoji: '🥜' },
+  { key: 'soja', label: 'Soja', emoji: '🫘' },
+  { key: 'lacteos', label: 'Lácteos', emoji: '🥛' },
+  { key: 'frutos_cascara', label: 'Frutos de cáscara', emoji: '🌰' },
+  { key: 'apio', label: 'Apio', emoji: '🥬' },
+  { key: 'mostaza', label: 'Mostaza', emoji: '🟡' },
+  { key: 'sesamo', label: 'Sésamo', emoji: '◯' },
+  { key: 'sulfitos', label: 'Sulfitos', emoji: '🍷' },
+  { key: 'altramuces', label: 'Altramuces', emoji: '🫛' },
+  { key: 'moluscos', label: 'Moluscos', emoji: '🐚' },
+]
+
 const S = {
   app: { minHeight: '100vh', background: '#111', color: '#f0e8d8', fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column' },
   header: { background: '#0a0a0a', padding: '14px 20px', borderBottom: '0.5px solid #2a2a2a', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 10 },
@@ -68,6 +86,8 @@ export default function Camarero() {
   const [categories, setCategories] = useState([])
   const [items, setItems] = useState([])
   const [activeCat, setActiveCat] = useState('todos')
+  const [alergenosExcluidos, setAlergenosExcluidos] = useState([])
+  const [showAlergenosPanel, setShowAlergenosPanel] = useState(false)
   const [cart, setCart] = useState({})
   const [showCart, setShowCart] = useState(false)
   const [sending, setSending] = useState(false)
@@ -211,7 +231,7 @@ export default function Camarero() {
     setCategories(cats || [])
     const { data: menuItems } = await supabase
       .from('menu_items')
-      .select('id, nombre, descripcion, precio, emoji, foto_url, category_id, disponible')
+      .select('id, nombre, descripcion, precio, emoji, foto_url, category_id, disponible, alergenos')
       .eq('restaurant_id', restaurantId)
       .eq('disponible', true)
       .order('orden')
@@ -370,6 +390,12 @@ export default function Camarero() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {sendSuccess && <span style={{ fontSize: 12, color: '#7ae8a0' }}>✓ Pedido enviado</span>}
+          <button
+            onClick={() => setShowAlergenosPanel(true)}
+            style={{ background: alergenosExcluidos.length > 0 ? '#3a2010' : 'transparent', border: `0.5px solid ${alergenosExcluidos.length > 0 ? '#e8c97a' : '#3a2e20'}`, borderRadius: 8, padding: '6px 14px', fontSize: 12, color: '#c4a85a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+          >
+            🌾 Alérgenos{alergenosExcluidos.length > 0 ? ` (${alergenosExcluidos.length})` : ''}
+          </button>
           <button style={S.logoutBtn} onClick={volverAMesas}>Cambiar de mesa</button>
         </div>
       </div>
@@ -383,7 +409,9 @@ export default function Camarero() {
 
       <div style={S.scroll}>
         {filteredCats.map(cat => {
-          const catItems = items.filter(i => i.category_id === cat.id)
+          const catItems = items
+            .filter(i => i.category_id === cat.id)
+            .filter(i => !alergenosExcluidos.some(k => (i.alergenos || []).includes(k)))
           if (!catItems.length) return null
           return (
             <div key={cat.id}>
@@ -399,6 +427,11 @@ export default function Camarero() {
                     <div style={S.name}>{item.nombre}</div>
                     {item.descripcion && <div style={S.desc}>{item.descripcion}</div>}
                     <div style={S.price}>{formatMoney(item.precio, restaurant?.moneda)}</div>
+                    {item.alergenos && item.alergenos.length > 0 && (
+                      <div style={{ fontSize: 13, marginTop: 3 }} title={item.alergenos.map(k => ALERGENOS.find(a => a.key === k)?.label).join(', ')}>
+                        {item.alergenos.map(k => ALERGENOS.find(a => a.key === k)?.emoji).join(' ')}
+                      </div>
+                    )}
                   </div>
                   <div style={S.qty}>
                     <button style={S.btn} onClick={() => change(item, -1)}>−</button>
@@ -419,6 +452,48 @@ export default function Camarero() {
         </div>
         <span style={{ fontSize: 15, fontWeight: 500, color: '#1a1410' }}>{formatMoney(cartTotal, restaurant?.moneda)}</span>
       </div>
+
+      {showAlergenosPanel && (
+        <div style={S.overlay} onClick={() => setShowAlergenosPanel(false)}>
+          <div style={S.sheet} onClick={e => e.stopPropagation()}>
+            <div style={S.sheetTitle}>Alérgenos a evitar</div>
+            <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 14 }}>
+              Marcá los que el comensal quiere evitar — se ocultan de la carta los platos que los contengan.
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px 12px', marginBottom: 16 }}>
+              {ALERGENOS.map(a => {
+                const checked = alergenosExcluidos.includes(a.key)
+                return (
+                  <label key={a.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#f0e8d8', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={e => {
+                        setAlergenosExcluidos(prev => e.target.checked ? [...prev, a.key] : prev.filter(k => k !== a.key))
+                      }}
+                    />
+                    <span>{a.emoji} {a.label}</span>
+                  </label>
+                )
+              })}
+            </div>
+            {alergenosExcluidos.length > 0 && (
+              <button
+                onClick={() => setAlergenosExcluidos([])}
+                style={{ background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 10, padding: '10px', width: '100%', color: '#c4a85a', fontSize: 13, cursor: 'pointer', fontFamily: "'Inter', sans-serif", marginBottom: 10 }}
+              >
+                Quitar todos los filtros
+              </button>
+            )}
+            <button
+              onClick={() => setShowAlergenosPanel(false)}
+              style={{ background: '#e8c97a', border: 'none', borderRadius: 10, padding: '12px', width: '100%', color: '#1a1410', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+            >
+              Listo
+            </button>
+          </div>
+        </div>
+      )}
 
       {showCart && (
         <div style={S.overlay} onClick={() => setShowCart(false)}>
