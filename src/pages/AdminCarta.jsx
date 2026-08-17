@@ -4,6 +4,26 @@ import { supabase } from '../lib/supabase'
 import { formatMoney, getCurrencySymbol } from '../lib/money'
 import { useRestaurantModulos } from '../lib/modulos'
 
+// Los 14 alérgenos del Anexo II del Reglamento UE 1169/2011. Es un
+// catálogo fijo por ley, no configurable por restaurante — por eso vive
+// acá en código y no en una tabla editable como sectores_cocina.
+const ALERGENOS = [
+  { key: 'gluten', label: 'Gluten', emoji: '🌾' },
+  { key: 'crustaceos', label: 'Crustáceos', emoji: '🦐' },
+  { key: 'huevos', label: 'Huevos', emoji: '🥚' },
+  { key: 'pescado', label: 'Pescado', emoji: '🐟' },
+  { key: 'cacahuetes', label: 'Cacahuetes', emoji: '🥜' },
+  { key: 'soja', label: 'Soja', emoji: '🫘' },
+  { key: 'lacteos', label: 'Lácteos', emoji: '🥛' },
+  { key: 'frutos_cascara', label: 'Frutos de cáscara', emoji: '🌰' },
+  { key: 'apio', label: 'Apio', emoji: '🥬' },
+  { key: 'mostaza', label: 'Mostaza', emoji: '🟡' },
+  { key: 'sesamo', label: 'Sésamo', emoji: '◯' },
+  { key: 'sulfitos', label: 'Sulfitos', emoji: '🍷' },
+  { key: 'altramuces', label: 'Altramuces', emoji: '🫛' },
+  { key: 'moluscos', label: 'Moluscos', emoji: '🐚' },
+]
+
 const S = {
   app: { minHeight: '100vh', background: '#111', color: '#f0e8d8', fontFamily: "'Inter', sans-serif" },
   header: { background: '#0a0a0a', padding: '14px 24px', borderBottom: '0.5px solid #2a2a2a', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 10 },
@@ -97,7 +117,7 @@ export default function AdminCarta() {
     setCategories(cats || [])
 
     const { data: menuItems, error: itemErr } = await supabase
-      .from('menu_items').select('id, nombre, descripcion, precio, precio_costo, emoji, foto_url, category_id, disponible, orden, sector_cocina_id')
+      .from('menu_items').select('id, nombre, descripcion, precio, precio_costo, emoji, foto_url, category_id, disponible, orden, sector_cocina_id, alergenos')
       .eq('restaurant_id', restaurantId).order('orden')
     if (itemErr) { setError(itemErr.message); setLoading(false); return }
     setItems(menuItems || [])
@@ -170,7 +190,7 @@ export default function AdminCarta() {
   function openNewItem(categoryId) {
     setEditingCatId(categoryId)
     setEditingItem('new')
-    setFormData({ nombre: '', descripcion: '', precio: '', precio_costo: '', emoji: '🍽', foto_url: '', disponible: true, sector_cocina_id: '' })
+    setFormData({ nombre: '', descripcion: '', precio: '', precio_costo: '', emoji: '🍽', foto_url: '', disponible: true, sector_cocina_id: '', alergenos: [] })
   }
 
   function openEditItem(item) {
@@ -218,6 +238,7 @@ export default function AdminCarta() {
       precio: parseFloat(formData.precio),
       precio_costo: formData.precio_costo !== '' && formData.precio_costo != null ? parseFloat(formData.precio_costo) : null,
       sector_cocina_id: formData.sector_cocina_id || null,
+      alergenos: formData.alergenos || [],
       emoji: formData.emoji || '🍽',
       foto_url: formData.foto_url || null,
       disponible: formData.disponible !== false,
@@ -346,6 +367,11 @@ export default function AdminCarta() {
                             {sectores.find(s => s.id === item.sector_cocina_id)?.nombre || ''}
                           </div>
                         )}
+                        {item.alergenos && item.alergenos.length > 0 && (
+                          <div style={{ fontSize: 14, marginTop: 3 }} title={item.alergenos.map(k => ALERGENOS.find(a => a.key === k)?.label).join(', ')}>
+                            {item.alergenos.map(k => ALERGENOS.find(a => a.key === k)?.emoji).join(' ')}
+                          </div>
+                        )}
                         <div style={S.itemActions}>
                           <div style={S.toggleSwitch(item.disponible)} onClick={() => toggleDisponible(item)} title={item.disponible ? 'Disponible' : 'No disponible'}>
                             <div style={S.toggleDot(item.disponible)}></div>
@@ -402,6 +428,32 @@ export default function AdminCarta() {
                 </select>
               </>
             )}
+
+            <label style={S.label}>Alérgenos</label>
+            <div style={{ fontSize: 11, color: '#7a6a50', marginBottom: 8, marginTop: -4 }}>
+              Marcá los que contenga este plato (Reglamento UE 1169/2011). El cliente los va a ver en la carta y podrá filtrar por ellos.
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px 12px', marginBottom: 16 }}>
+              {ALERGENOS.map(a => {
+                const checked = (formData.alergenos || []).includes(a.key)
+                return (
+                  <label key={a.key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#f0e8d8', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={e => {
+                        setFormData(prev => {
+                          const current = prev.alergenos || []
+                          const next = e.target.checked ? [...current, a.key] : current.filter(k => k !== a.key)
+                          return { ...prev, alergenos: next }
+                        })
+                      }}
+                    />
+                    <span>{a.emoji} {a.label}</span>
+                  </label>
+                )
+              })}
+            </div>
 
             <label style={S.label}>Categoría</label>
             <select
