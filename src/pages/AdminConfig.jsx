@@ -72,6 +72,7 @@ export default function AdminConfig() {
   const [nuevoCamareroPin, setNuevoCamareroPin] = useState('')
   const [camareroError, setCamareroError] = useState(null)
   const [sectoresCocinaActivo, setSectoresCocinaActivo] = useState(false)
+  const [envasesSostenibles, setEnvasesSostenibles] = useState(false)
   const [sectores, setSectores] = useState([])
   const [nuevoSectorNombre, setNuevoSectorNombre] = useState('')
   const [sectorError, setSectorError] = useState(null)
@@ -103,6 +104,7 @@ export default function AdminConfig() {
       setUmbralMargenAlerta(rest.config?.umbral_margen_alerta ?? 20)
       setModoPedidos(rest.config?.modo_pedidos || 'cliente')
       setSectoresCocinaActivo(rest.config?.sectores_cocina_activo || false)
+      setEnvasesSostenibles(rest.config?.envases_sostenibles_takeaway || false)
       // Init horario with defaults for any missing days
       const h = rest.config?.horario || {}
       const horarioCompleto = {}
@@ -231,7 +233,7 @@ export default function AdminConfig() {
         .update({
           nombre: nombre.trim(),
           whatsapp: whatsapp.trim(),
-          config: { ...restaurant?.config, horario, umbral_margen_alerta: umbral, modo_pedidos: modoPedidos, sectores_cocina_activo: sectoresCocinaActivo },
+          config: { ...restaurant?.config, horario, umbral_margen_alerta: umbral, modo_pedidos: modoPedidos, sectores_cocina_activo: sectoresCocinaActivo, envases_sostenibles_takeaway: envasesSostenibles },
           modo_cocina: modoCocina,
           minutos_limite_agrupado: minutos,
         })
@@ -455,6 +457,25 @@ export default function AdminConfig() {
                 Los platos sin sector asignado se consideran "generales" y aparecen siempre visibles en Cocina, sin importar el filtro activo.
               </div>
             </>
+          )}
+        </div>
+
+        {/* Envases (take away) */}
+        <div style={S.infoCard}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 4 }}>Envases (take away)</div>
+          <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 12 }}>
+            La Ley 7/2022 obliga a cobrar por separado el envase si es de plástico de un solo uso. Si usás envases compostables, reciclables o reutilizables, la ley prohíbe cobrarlos aparte — deben ser gratuitos.
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={S.toggleSwitch(envasesSostenibles)} onClick={() => setEnvasesSostenibles(!envasesSostenibles)}>
+              <div style={S.toggleDot(envasesSostenibles)}></div>
+            </div>
+            <span style={{ fontSize: 13, color: '#8a7560' }}>Usamos envases sostenibles (no plástico de un solo uso)</span>
+          </div>
+          {envasesSostenibles && (
+            <div style={{ fontSize: 11, color: '#555', marginTop: 10 }}>
+              El agente de WhatsApp avisará automáticamente al cliente que no se cobra recargo por el envase en sus pedidos para llevar.
+            </div>
           )}
         </div>
 
