@@ -181,6 +181,19 @@ export default function Cocina() {
       .select('id, order_id, nombre_snapshot, cantidad, notas, menu_item_id')
       .in('order_id', orderIds)
     if (data) {
+      const itemIds = data.map(i => i.id)
+      const { data: mods } = itemIds.length
+        ? await supabase
+            .from('order_item_modificadores')
+            .select('order_item_id, grupo_nombre, opcion_nombre')
+            .in('order_item_id', itemIds)
+        : { data: [] }
+      const modsPorItem = {}
+      ;(mods || []).forEach(m => {
+        if (!modsPorItem[m.order_item_id]) modsPorItem[m.order_item_id] = []
+        modsPorItem[m.order_item_id].push(m)
+      })
+
       setOrderItems(prev => {
         const next = { ...prev }
         data.forEach(item => {
@@ -190,7 +203,7 @@ export default function Cocina() {
           // agrupado con "Croquetas de jamón" dos veces) son ítems
           // distintos y deben mostrarse las dos.
           if (!next[item.order_id].find(i => i.id === item.id)) {
-            next[item.order_id] = [...next[item.order_id], item]
+            next[item.order_id] = [...next[item.order_id], { ...item, modificadores: modsPorItem[item.id] || [] }]
           }
         })
         return next
@@ -711,6 +724,13 @@ export default function Cocina() {
                           <span style={S.itemQty}>× {item.cantidad}</span>
                         </div>
                       </div>
+                      {item.modificadores && item.modificadores.length > 0 && (
+                        <div style={{ fontSize: 12, color: '#c4a85a', marginTop: 2, marginBottom: 2 }}>
+                          {item.modificadores.map((m, mi) => (
+                            <div key={mi}>{m.grupo_nombre}: <strong>{m.opcion_nombre}</strong></div>
+                          ))}
+                        </div>
+                      )}
                       {item.notas && (
                         <div style={{ fontSize: 12, color: '#f1c40f', background: '#2a2010', borderRadius: 6, padding: '4px 8px', marginTop: 4, marginBottom: 2 }}>
                           📝 {item.notas}
