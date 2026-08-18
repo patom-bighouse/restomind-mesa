@@ -132,7 +132,7 @@ export default function AdminDashboard() {
     const { from, to } = getRangeDates(range, customFrom, customTo)
     const { data, error: err } = await supabase
       .from('table_sessions')
-      .select('id, table_id, estado, abierta_at, cerrada_at, total, estado_pago, motivo_exencion, comensales')
+      .select('id, table_id, estado, abierta_at, cerrada_at, total, estado_pago, metodo_pago, motivo_exencion, comensales')
       .eq('restaurant_id', restaurantId)
       .gte('abierta_at', from.toISOString())
       .lt('abierta_at', to.toISOString())
@@ -326,10 +326,70 @@ export default function AdminDashboard() {
     return `Mesa ${t.numero} (${zonaCapitalizada})`
   }
 
+  // Para un pedido de mesa, busca la sesión a la que pertenece (para
+  // saber si ya está cobrado y con qué método) — un pedido de take away
+  // no tiene table_session_id, queda sin esa información.
+  const sessionsById = {}
+  sessions.forEach(s => { sessionsById[s.id] = s })
+
+  function csvEscape(val) {
+    const s = String(val ?? '')
+    if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+      return '"' + s.replace(/"/g, '""') + '"'
+    }
+    return s
+  }
+
+  function exportarCSV() {
+    const headers = ['Fecha', 'Hora', 'Mesa / Tipo', 'Items', 'Total', 'Estado pedido', 'Estado pago', 'Método de pago']
+    const filas = orders
+      .filter(o => o.estado !== 'cancelado')
+      .map(o => {
+        const fecha = new Date(o.created_at)
+        const session = o.table_session_id ? sessionsById[o.table_session_id] : null
+        const items = (orderItemsMap[o.id] || []).map(i => `${i.cantidad}x ${i.nombre_snapshot}`).join('; ')
+        return [
+          fecha.toLocaleDateString('es-ES'),
+          fecha.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
+          o.tipo === 'mesa' ? mesaLabel(o.table_id) : 'Takeaway',
+          items,
+          o.total,
+          o.estado,
+          session?.estado_pago || (o.tipo === 'takeaway' ? '—' : 'sin sesión'),
+          session?.metodo_pago || '—',
+        ]
+      })
+    const csvContent = [headers, ...filas]
+      .map(fila => fila.map(csvEscape).join(','))
+      .join('\n')
+    // BOM para que Excel abra los acentos correctamente
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const { from } = getRangeDates(range, customFrom, customTo)
+    a.href = url
+    a.download = `pedidos_${restaurant?.nombre?.replace(/\s+/g, '_') || 'restomind'}_${from.toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  function imprimirCierre() {
+    window.print()
+  }
+
   return (
     <div style={S.app}>
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
-      <div style={S.header}>
+      <style>{`
+        @media print {
+          .no-print { display: none !important; }
+          .print-only { display: block !important; }
+        }
+        .print-only { display: none; }
+      `}</style>
+      <div className="no-print" style={S.header}>
         <div>
           <div style={S.logo}>Restomind Admin</div>
           <div style={S.restName}>{restaurant?.nombre}</div>
@@ -343,7 +403,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      <div style={S.content}>
+      <div className="no-print" style={S.content}>
         <div style={S.sectionTitle}>Dashboard</div>
         {error && <div style={S.error}>{error}</div>}
 
@@ -359,6 +419,14 @@ export default function AdminDashboard() {
               <input type="date" style={S.dateInput} value={customTo} onChange={e => setCustomTo(e.target.value)} />
             </>
           )}
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }} className="no-print">
+            <button onClick={exportarCSV} style={{ background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '7px 14px', fontSize: 13, color: '#c4a85a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+              ⬇ Exportar CSV
+            </button>
+            <button onClick={imprimirCierre} style={{ background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '7px 14px', fontSize: 13, color: '#c4a85a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+              🖨 Imprimir cierre
+            </button>
+          </div>
         </div>
 
         {/* KPIs */}
@@ -616,6 +684,57 @@ export default function AdminDashboard() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Bloque imprimible: fondo blanco, texto negro, pensado para papel.
+          Oculto en pantalla, visible solo al imprimir (ver <style> arriba). */}
+      <div className="print-only" style={{ background: '#fff', color: '#111', padding: 24, fontFamily: 'Arial, sans-serif' }}>
+        <h1 style={{ fontSize: 20, marginBottom: 2 }}>{restaurant?.nombre}</h1>
+        <div style={{ fontSize: 13, color: '#444', marginBottom: 4 }}>Cierre de caja — Restomind</div>
+        <div style={{ fontSize: 12, color: '#666', marginBottom: 16 }}>
+          Rango: {RANGES[range]}{range === 'custom' ? ` (${customFrom} → ${customTo})` : ''} · Impreso el {new Date().toLocaleString('es-ES')}
+        </div>
+
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 20 }}>
+          <tbody>
+            <tr>
+              <td style={{ border: '1px solid #ccc', padding: '6px 10px', fontWeight: 'bold' }}>Ingresos</td>
+              <td style={{ border: '1px solid #ccc', padding: '6px 10px' }}>{formatMoney(ingresos, restaurant?.moneda)}</td>
+              <td style={{ border: '1px solid #ccc', padding: '6px 10px', fontWeight: 'bold' }}>Pedidos</td>
+              <td style={{ border: '1px solid #ccc', padding: '6px 10px' }}>{validOrders.length}</td>
+            </tr>
+            <tr>
+              <td style={{ border: '1px solid #ccc', padding: '6px 10px', fontWeight: 'bold' }}>Ticket medio</td>
+              <td style={{ border: '1px solid #ccc', padding: '6px 10px' }}>{formatMoney(ticketMedio, restaurant?.moneda)}</td>
+              <td style={{ border: '1px solid #ccc', padding: '6px 10px', fontWeight: 'bold' }}>Cancelados</td>
+              <td style={{ border: '1px solid #ccc', padding: '6px 10px' }}>{orders.filter(o => o.estado === 'cancelado').length}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2 style={{ fontSize: 15, marginBottom: 8 }}>Detalle de pedidos</h2>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+          <thead>
+            <tr>
+              <th style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'left' }}>Fecha / Hora</th>
+              <th style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'left' }}>Mesa / Tipo</th>
+              <th style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'left' }}>Items</th>
+              <th style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>Total</th>
+              <th style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'left' }}>Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {orders.map(o => (
+              <tr key={o.id}>
+                <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{new Date(o.created_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+                <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{o.tipo === 'mesa' ? mesaLabel(o.table_id) : 'Takeaway'}</td>
+                <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{(orderItemsMap[o.id] || []).map(i => `${i.cantidad}x ${i.nombre_snapshot}`).join(', ') || '—'}</td>
+                <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>{formatMoney(o.total, restaurant?.moneda)}</td>
+                <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{o.estado}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   )
