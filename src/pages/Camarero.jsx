@@ -85,6 +85,9 @@ export default function Camarero() {
 
   const [categories, setCategories] = useState([])
   const [items, setItems] = useState([])
+  const [itemModifiers, setItemModifiers] = useState({})
+  const [modSelectorItem, setModSelectorItem] = useState(null)
+  const [modSelectorChoices, setModSelectorChoices] = useState({})
   const [activeCat, setActiveCat] = useState('todos')
   const [alergenosExcluidos, setAlergenosExcluidos] = useState([])
   const [showAlergenosPanel, setShowAlergenosPanel] = useState(false)
@@ -236,9 +239,59 @@ export default function Camarero() {
       .eq('disponible', true)
       .order('orden')
     setItems(menuItems || [])
+    await loadModificadores((menuItems || []).map(i => i.id))
+  }
+
+  async function loadModificadores(itemIds) {
+    if (!itemIds.length) { setItemModifiers({}); return }
+    const { data: asignados } = await supabase
+      .from('menu_item_modificador_grupos')
+      .select('menu_item_id, grupo_id, obligatorio, tipo_seleccion')
+      .in('menu_item_id', itemIds)
+    if (!asignados || !asignados.length) { setItemModifiers({}); return }
+
+    const grupoIds = [...new Set(asignados.map(a => a.grupo_id))]
+    const { data: grupos } = await supabase
+      .from('modificador_grupos').select('id, nombre').in('id', grupoIds)
+    const { data: opciones } = await supabase
+      .from('modificador_opciones').select('id, grupo_id, nombre, orden').in('grupo_id', grupoIds).order('orden')
+    const { data: precios } = await supabase
+      .from('menu_item_modificador_precios').select('menu_item_id, opcion_id, precio_extra').in('menu_item_id', itemIds)
+
+    const nombreGrupo = {}
+    ;(grupos || []).forEach(g => { nombreGrupo[g.id] = g.nombre })
+    const opcionesPorGrupo = {}
+    ;(opciones || []).forEach(o => {
+      if (!opcionesPorGrupo[o.grupo_id]) opcionesPorGrupo[o.grupo_id] = []
+      opcionesPorGrupo[o.grupo_id].push(o)
+    })
+    const precioPorItemOpcion = {}
+    ;(precios || []).forEach(p => { precioPorItemOpcion[`${p.menu_item_id}::${p.opcion_id}`] = parseFloat(p.precio_extra) || 0 })
+
+    const map = {}
+    asignados.forEach(a => {
+      if (!map[a.menu_item_id]) map[a.menu_item_id] = []
+      map[a.menu_item_id].push({
+        grupo_id: a.grupo_id,
+        grupo_nombre: nombreGrupo[a.grupo_id] || '',
+        obligatorio: a.obligatorio,
+        tipo_seleccion: a.tipo_seleccion,
+        opciones: (opcionesPorGrupo[a.grupo_id] || []).map(o => ({
+          id: o.id,
+          nombre: o.nombre,
+          precio_extra: precioPorItemOpcion[`${a.menu_item_id}::${o.id}`] ?? 0,
+        })),
+      })
+    })
+    setItemModifiers(map)
   }
 
   function change(item, delta) {
+    if (delta > 0 && itemModifiers[item.id]?.length > 0) {
+      setModSelectorItem(item)
+      setModSelectorChoices({})
+      return
+    }
     setCart(prev => {
       const current = prev[item.id]?.qty || 0
       const next = Math.max(0, current + delta)
@@ -246,8 +299,79 @@ export default function Camarero() {
         const { [item.id]: _, ...rest } = prev
         return rest
       }
-      return { ...prev, [item.id]: { qty: next, precio: item.precio, nombre: item.nombre } }
+      return { ...prev, [item.id]: { qty: next, precio: item.precio, nombre: item.nombre, menuItemId: item.id } }
     })
+  }
+
+  function changeQtyByKey(key, delta) {
+    setCart(prev => {
+      const line = prev[key]
+      if (!line) return prev
+      const next = Math.max(0, line.qty + delta)
+      if (next === 0) {
+        const { [key]: _, ...rest } = prev
+        return rest
+      }
+      return { ...prev, [key]: { ...line, qty: next } }
+    })
+  }
+
+  function toggleModChoice(grupo, opcionId) {
+    setModSelectorChoices(prev => {
+      if (grupo.tipo_seleccion === 'multiple') {
+        const actuales = prev[grupo.grupo_id] || []
+        const next = actuales.includes(opcionId) ? actuales.filter(id => id !== opcionId) : [...actuales, opcionId]
+        return { ...prev, [grupo.grupo_id]: next }
+      }
+      return { ...prev, [grupo.grupo_id]: opcionId }
+    })
+  }
+
+  function confirmarModSelector() {
+    const item = modSelectorItem
+    const grupos = itemModifiers[item.id] || []
+    const faltante = grupos.find(g => g.obligatorio && (
+      g.tipo_seleccion === 'multiple'
+        ? !(modSelectorChoices[g.grupo_id]?.length > 0)
+        : !modSelectorChoices[g.grupo_id]
+    ))
+    if (faltante) return
+
+    const detalle = []
+    let extra = 0
+    grupos.forEach(g => {
+      const elegido = modSelectorChoices[g.grupo_id]
+      const opcionIds = g.tipo_seleccion === 'multiple' ? (elegido || []) : (elegido ? [elegido] : [])
+      opcionIds.forEach(opId => {
+        const op = g.opciones.find(o => o.id === opId)
+        if (!op) return
+        detalle.push({ grupo_id: g.grupo_id, grupo_nombre: g.grupo_nombre, opcion_id: op.id, opcion_nombre: op.nombre, precio_extra: op.precio_extra })
+        extra += op.precio_extra
+      })
+    })
+
+    const comboKey = detalle
+      .slice()
+      .sort((a, b) => (a.grupo_id + a.opcion_id).localeCompare(b.grupo_id + b.opcion_id))
+      .map(d => `${d.grupo_id}:${d.opcion_id}`)
+      .join('|')
+    const cartKey = `${item.id}::${comboKey}`
+
+    setCart(prev => {
+      const curr = prev[cartKey]?.qty || 0
+      return {
+        ...prev,
+        [cartKey]: {
+          qty: curr + 1,
+          nombre: item.nombre,
+          precio: parseFloat(item.precio) + extra,
+          menuItemId: item.id,
+          modificadoresDetalle: detalle,
+        },
+      }
+    })
+    setModSelectorItem(null)
+    setModSelectorChoices({})
   }
 
   const cartCount = Object.values(cart).reduce((a, b) => a + b.qty, 0)
@@ -259,9 +383,10 @@ export default function Camarero() {
     setSendError(null)
     try {
       const itemsPayload = Object.entries(cart).map(([id, v]) => ({
-        menu_item_id: id,
+        menu_item_id: v.menuItemId || id,
         cantidad: v.qty,
         notas: null,
+        modificadores: (v.modificadoresDetalle || []).map(m => ({ grupo_id: m.grupo_id, opcion_id: m.opcion_id })),
       }))
       const { error: err } = await supabase.rpc('fn_registrar_pedido', {
         p_table_session_id: selectedTable.session.id,
@@ -433,11 +558,17 @@ export default function Camarero() {
                       </div>
                     )}
                   </div>
-                  <div style={S.qty}>
-                    <button style={S.btn} onClick={() => change(item, -1)}>−</button>
-                    <span style={S.qnum}>{cart[item.id]?.qty || 0}</span>
-                    <button style={S.btn} onClick={() => change(item, 1)}>+</button>
-                  </div>
+                  {itemModifiers[item.id]?.length > 0 ? (
+                    <button style={{ ...S.btn, width: 'auto', padding: '0 14px', borderRadius: 16, fontSize: 12 }} onClick={() => change(item, 1)}>
+                      Elegir
+                    </button>
+                  ) : (
+                    <div style={S.qty}>
+                      <button style={S.btn} onClick={() => change(item, -1)}>−</button>
+                      <span style={S.qnum}>{cart[item.id]?.qty || 0}</span>
+                      <button style={S.btn} onClick={() => change(item, 1)}>+</button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -495,14 +626,81 @@ export default function Camarero() {
         </div>
       )}
 
+      {modSelectorItem && (
+        <div style={S.overlay} onClick={() => setModSelectorItem(null)}>
+          <div style={S.sheet} onClick={e => e.stopPropagation()}>
+            <div style={S.sheetTitle}>{modSelectorItem.nombre}</div>
+            {(itemModifiers[modSelectorItem.id] || []).map(grupo => (
+              <div key={grupo.grupo_id} style={{ marginBottom: 18 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: '#c4a85a', marginBottom: 8 }}>
+                  {grupo.grupo_nombre}
+                  {grupo.obligatorio && <span style={{ color: '#e87a7a', fontSize: 11 }}> · obligatorio</span>}
+                  {grupo.tipo_seleccion === 'multiple' && <span style={{ color: '#7a6a50', fontSize: 11 }}> · elegí una o más</span>}
+                </div>
+                {grupo.opciones.map(op => {
+                  const elegido = grupo.tipo_seleccion === 'multiple'
+                    ? (modSelectorChoices[grupo.grupo_id] || []).includes(op.id)
+                    : modSelectorChoices[grupo.grupo_id] === op.id
+                  return (
+                    <label key={op.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: '0.5px solid #2a2a2a', cursor: 'pointer' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#f0e8d8' }}>
+                        <input
+                          type={grupo.tipo_seleccion === 'multiple' ? 'checkbox' : 'radio'}
+                          name={`grupo-${grupo.grupo_id}`}
+                          checked={elegido}
+                          onChange={() => toggleModChoice(grupo, op.id)}
+                        />
+                        {op.nombre}
+                      </span>
+                      {op.precio_extra > 0 && <span style={{ fontSize: 13, color: '#c4a85a' }}>+{formatMoney(op.precio_extra, restaurant?.moneda)}</span>}
+                    </label>
+                  )
+                })}
+              </div>
+            ))}
+            {(() => {
+              const grupos = itemModifiers[modSelectorItem.id] || []
+              const faltaObligatorio = grupos.some(g => g.obligatorio && (
+                g.tipo_seleccion === 'multiple'
+                  ? !(modSelectorChoices[g.grupo_id]?.length > 0)
+                  : !modSelectorChoices[g.grupo_id]
+              ))
+              return (
+                <button
+                  onClick={confirmarModSelector}
+                  disabled={faltaObligatorio}
+                  style={{ background: faltaObligatorio ? '#5a4a2a' : '#e8c97a', color: faltaObligatorio ? '#8a7560' : '#1a1410', border: 'none', borderRadius: 10, padding: '12px', width: '100%', fontSize: 14, fontWeight: 500, cursor: faltaObligatorio ? 'not-allowed' : 'pointer', fontFamily: "'Inter', sans-serif" }}
+                >
+                  {faltaObligatorio ? 'Elegí las opciones obligatorias' : 'Agregar al pedido'}
+                </button>
+              )
+            })()}
+          </div>
+        </div>
+      )}
+
       {showCart && (
         <div style={S.overlay} onClick={() => setShowCart(false)}>
           <div style={S.sheet} onClick={e => e.stopPropagation()}>
             <div style={S.sheetTitle}>Pedido — Mesa {selectedTable.numero}</div>
             {Object.entries(cart).map(([id, v]) => (
-              <div key={id} style={S.cartLine}>
-                <span style={{ fontSize: 14 }}>{v.qty}× {v.nombre}</span>
-                <span style={{ fontSize: 14, color: '#c4a85a' }}>{formatMoney(v.precio * v.qty, restaurant?.moneda)}</span>
+              <div key={id} style={{ ...S.cartLine, flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontSize: 14 }}>{v.nombre}</div>
+                    {v.modificadoresDetalle?.length > 0 && (
+                      <div style={{ fontSize: 12, color: '#8a7560', marginTop: 2 }}>
+                        {v.modificadoresDetalle.map(m => m.opcion_nombre).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 14, color: '#c4a85a' }}>{formatMoney(v.precio * v.qty, restaurant?.moneda)}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <button style={{ ...S.btn, width: 26, height: 26 }} onClick={() => changeQtyByKey(id, -1)}>−</button>
+                  <span style={S.qnum}>{v.qty}</span>
+                  <button style={{ ...S.btn, width: 26, height: 26 }} onClick={() => changeQtyByKey(id, 1)}>+</button>
+                </div>
               </div>
             ))}
             <div style={{ ...S.cartLine, borderBottom: 'none', marginTop: 6 }}>
