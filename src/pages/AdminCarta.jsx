@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Fragment } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatMoney, getCurrencySymbol } from '../lib/money'
@@ -89,6 +89,9 @@ export default function AdminCarta() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [newCatName, setNewCatName] = useState('')
+  const [modGrupos, setModGrupos] = useState([]) // [{id, nombre, orden, opciones: [{id, nombre, orden}]}]
+  const [showModGestion, setShowModGestion] = useState(false)
+  const [nuevoGrupoNombre, setNuevoGrupoNombre] = useState('')
 
   // Item modal
   const [editingItem, setEditingItem] = useState(null) // null | 'new' | item object
@@ -128,7 +131,23 @@ export default function AdminCarta() {
         .eq('restaurant_id', restaurantId).order('orden')
       setSectores(secs || [])
     }
+
+    await loadModGrupos()
     setLoading(false)
+  }
+
+  async function loadModGrupos() {
+    const { data: grupos } = await supabase
+      .from('modificador_grupos').select('id, nombre, orden')
+      .eq('restaurant_id', restaurantId).order('orden')
+    const gruposConOpciones = []
+    for (const g of (grupos || [])) {
+      const { data: opciones } = await supabase
+        .from('modificador_opciones').select('id, nombre, orden')
+        .eq('grupo_id', g.id).order('orden')
+      gruposConOpciones.push({ ...g, opciones: opciones || [] })
+    }
+    setModGrupos(gruposConOpciones)
   }
 
   // ---------- Categorías ----------
@@ -186,17 +205,95 @@ export default function AdminCarta() {
     }))
   }
 
-  // ---------- Items ----------
+  // ---------- Modificadores: catálogo (grupos y opciones) ----------
+  async function addModGrupo() {
+    if (!nuevoGrupoNombre.trim()) return
+    const orden = modGrupos.length ? Math.max(...modGrupos.map(g => g.orden)) + 1 : 1
+    const { data, error: err } = await supabase
+      .from('modificador_grupos')
+      .insert({ restaurant_id: restaurantId, nombre: nuevoGrupoNombre.trim(), orden })
+      .select().single()
+    if (err) { setError(err.message); return }
+    setModGrupos(prev => [...prev, { ...data, opciones: [] }])
+    setNuevoGrupoNombre('')
+  }
+
+  async function renameModGrupo(grupo, nuevoNombre) {
+    if (!nuevoNombre.trim() || nuevoNombre === grupo.nombre) return
+    await supabase.from('modificador_grupos').update({ nombre: nuevoNombre.trim() }).eq('id', grupo.id)
+    setModGrupos(prev => prev.map(g => g.id === grupo.id ? { ...g, nombre: nuevoNombre.trim() } : g))
+  }
+
+  async function deleteModGrupo(grupo) {
+    if (!window.confirm(`¿Eliminar el grupo "${grupo.nombre}"? Se quitará de todos los platos que lo tengan asignado.`)) return
+    const { error: err } = await supabase.from('modificador_grupos').delete().eq('id', grupo.id)
+    if (err) { setError(err.message); return }
+    setModGrupos(prev => prev.filter(g => g.id !== grupo.id))
+  }
+
+  async function addModOpcion(grupo, nombre) {
+    if (!nombre.trim()) return
+    const orden = grupo.opciones.length ? Math.max(...grupo.opciones.map(o => o.orden)) + 1 : 1
+    const { data, error: err } = await supabase
+      .from('modificador_opciones')
+      .insert({ grupo_id: grupo.id, nombre: nombre.trim(), orden })
+      .select().single()
+    if (err) { setError(err.message); return }
+    setModGrupos(prev => prev.map(g => g.id === grupo.id ? { ...g, opciones: [...g.opciones, data] } : g))
+  }
+
+  async function renameModOpcion(grupo, opcion, nuevoNombre) {
+    if (!nuevoNombre.trim() || nuevoNombre === opcion.nombre) return
+    await supabase.from('modificador_opciones').update({ nombre: nuevoNombre.trim() }).eq('id', opcion.id)
+    setModGrupos(prev => prev.map(g => g.id === grupo.id
+      ? { ...g, opciones: g.opciones.map(o => o.id === opcion.id ? { ...o, nombre: nuevoNombre.trim() } : o) }
+      : g))
+  }
+
+  async function deleteModOpcion(grupo, opcion) {
+    if (!window.confirm(`¿Eliminar la opción "${opcion.nombre}"?`)) return
+    const { error: err } = await supabase.from('modificador_opciones').delete().eq('id', opcion.id)
+    if (err) { setError(err.message); return }
+    setModGrupos(prev => prev.map(g => g.id === grupo.id
+      ? { ...g, opciones: g.opciones.filter(o => o.id !== opcion.id) }
+      : g))
+  }
+
+  // ---------- Modificadores: asignación a un plato ----------
+  // formData.modSeleccion: { [grupo_id]: { activo, obligatorio, tipo_seleccion, precios: { [opcion_id]: '3.50' } } }
+  async function loadModsDelItem(item) {
+    const { data: asignados } = await supabase
+      .from('menu_item_modificador_grupos')
+      .select('grupo_id, obligatorio, tipo_seleccion')
+      .eq('menu_item_id', item.id)
+    const { data: precios } = await supabase
+      .from('menu_item_modificador_precios')
+      .select('opcion_id, precio_extra')
+      .eq('menu_item_id', item.id)
+    const modSeleccion = {}
+    ;(asignados || []).forEach(a => {
+      modSeleccion[a.grupo_id] = { activo: true, obligatorio: a.obligatorio, tipo_seleccion: a.tipo_seleccion, precios: {} }
+    })
+    ;(precios || []).forEach(p => {
+      const grupo = modGrupos.find(g => g.opciones.some(o => o.id === p.opcion_id))
+      if (grupo && modSeleccion[grupo.id]) {
+        modSeleccion[grupo.id].precios[p.opcion_id] = String(p.precio_extra)
+      }
+    })
+    return modSeleccion
+  }
   function openNewItem(categoryId) {
     setEditingCatId(categoryId)
     setEditingItem('new')
-    setFormData({ nombre: '', descripcion: '', precio: '', precio_costo: '', emoji: '🍽', foto_url: '', disponible: true, sector_cocina_id: '', alergenos: [] })
+    setFormData({ nombre: '', descripcion: '', precio: '', precio_costo: '', emoji: '🍽', foto_url: '', disponible: true, sector_cocina_id: '', alergenos: [], modSeleccion: {} })
   }
 
-  function openEditItem(item) {
+  async function openEditItem(item) {
     setEditingCatId(item.category_id)
     setEditingItem(item)
-    setFormData({ ...item })
+    setFormData({ ...item, modSeleccion: {} })
+    const modSeleccion = await loadModsDelItem(item)
+    setFormData(prev => ({ ...prev, modSeleccion }))
   }
 
   function closeModal() {
@@ -245,6 +342,7 @@ export default function AdminCarta() {
       category_id: targetCatId,
     }
 
+    let menuItemId = null
     if (editingItem === 'new') {
       const itemsInCat = items.filter(i => i.category_id === targetCatId)
       const orden = itemsInCat.length ? Math.max(...itemsInCat.map(i => i.orden)) + 1 : 1
@@ -254,11 +352,40 @@ export default function AdminCarta() {
         .select().single()
       if (err) { setError(err.message); setSaving(false); return }
       setItems(prev => [...prev, data])
+      menuItemId = data.id
     } else {
       const { error: err } = await supabase.from('menu_items').update(payload).eq('id', editingItem.id)
       if (err) { setError(err.message); setSaving(false); return }
       setItems(prev => prev.map(i => i.id === editingItem.id ? { ...i, ...payload } : i))
+      menuItemId = editingItem.id
     }
+
+    // Reemplazar por completo la asignación de modificadores de este
+    // plato (más simple y menos propenso a errores que ir comparando
+    // qué cambió puntualmente).
+    await supabase.from('menu_item_modificador_grupos').delete().eq('menu_item_id', menuItemId)
+    await supabase.from('menu_item_modificador_precios').delete().eq('menu_item_id', menuItemId)
+    const gruposActivos = Object.entries(formData.modSeleccion || {}).filter(([, v]) => v.activo)
+    for (const [grupoId, sel] of gruposActivos) {
+      await supabase.from('menu_item_modificador_grupos').insert({
+        menu_item_id: menuItemId,
+        grupo_id: grupoId,
+        obligatorio: !!sel.obligatorio,
+        tipo_seleccion: sel.tipo_seleccion || 'unica',
+      })
+      const grupo = modGrupos.find(g => g.id === grupoId)
+      if (grupo) {
+        const filasPrecios = grupo.opciones.map(o => ({
+          menu_item_id: menuItemId,
+          opcion_id: o.id,
+          precio_extra: parseFloat(sel.precios?.[o.id] || 0) || 0,
+        }))
+        if (filasPrecios.length) {
+          await supabase.from('menu_item_modificador_precios').insert(filasPrecios)
+        }
+      }
+    }
+
     setSaving(false)
     closeModal()
   }
@@ -319,6 +446,59 @@ export default function AdminCarta() {
             onKeyDown={e => e.key === 'Enter' && addCategory()}
           />
           <button style={S.addBtn} onClick={addCategory}>+ Añadir categoría</button>
+        </div>
+
+        {/* Gestión de modificadores (catálogo reutilizable de grupos y opciones) */}
+        <div style={{ background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 12, padding: '14px 18px', marginBottom: 20 }}>
+          <div
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+            onClick={() => setShowModGestion(!showModGestion)}
+          >
+            <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a' }}>Modificadores de plato ({modGrupos.length})</div>
+            <span style={{ color: '#8a7560', fontSize: 12 }}>{showModGestion ? '▲ ocultar' : '▼ gestionar'}</span>
+          </div>
+          {showModGestion && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 12 }}>
+                Grupos reutilizables (ej: "Punto de cocción", "Tamaño"). El precio extra de cada opción se define por plato, dentro de la ficha de cada uno.
+              </div>
+              {modGrupos.map(grupo => (
+                <div key={grupo.id} style={{ background: '#141414', border: '0.5px solid #2a2a2a', borderRadius: 10, padding: '10px 14px', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <input
+                      style={{ ...S.catInput, flex: 1, padding: '6px 10px', fontSize: 13 }}
+                      defaultValue={grupo.nombre}
+                      onBlur={e => renameModGrupo(grupo, e.target.value)}
+                    />
+                    <button style={{ ...S.iconBtn, color: '#e87a7a' }} onClick={() => deleteModGrupo(grupo)}>🗑</button>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                    {grupo.opciones.map(op => (
+                      <span key={op.id} style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#2a2a2a', borderRadius: 14, padding: '3px 4px 3px 10px', fontSize: 12, color: '#f0e8d8' }}>
+                        <input
+                          defaultValue={op.nombre}
+                          onBlur={e => renameModOpcion(grupo, op, e.target.value)}
+                          style={{ background: 'transparent', border: 'none', color: '#f0e8d8', fontSize: 12, width: Math.max(40, op.nombre.length * 7) }}
+                        />
+                        <button onClick={() => deleteModOpcion(grupo, op)} style={{ background: 'transparent', border: 'none', color: '#8a7560', cursor: 'pointer', fontSize: 12 }}>×</button>
+                      </span>
+                    ))}
+                  </div>
+                  <NuevaOpcionInput onAdd={nombre => addModOpcion(grupo, nombre)} />
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <input
+                  style={{ ...S.catInput, flex: 1 }}
+                  placeholder="Nuevo grupo (ej. Punto de cocción)"
+                  value={nuevoGrupoNombre}
+                  onChange={e => setNuevoGrupoNombre(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && addModGrupo()}
+                />
+                <button style={S.addBtn} onClick={addModGrupo}>+ Añadir grupo</button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Categorías y platos */}
@@ -455,6 +635,74 @@ export default function AdminCarta() {
               })}
             </div>
 
+            {modGrupos.length > 0 && (
+              <>
+                <label style={S.label}>Modificadores</label>
+                <div style={{ fontSize: 11, color: '#7a6a50', marginBottom: 8, marginTop: -4 }}>
+                  Elegí qué grupos aplican a este plato. El precio extra de cada opción es propio de este plato.
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                  {modGrupos.map(grupo => {
+                    const sel = formData.modSeleccion?.[grupo.id] || { activo: false, obligatorio: false, tipo_seleccion: 'unica', precios: {} }
+                    function updateSel(cambios) {
+                      setFormData(prev => ({
+                        ...prev,
+                        modSeleccion: { ...prev.modSeleccion, [grupo.id]: { ...sel, ...cambios } },
+                      }))
+                    }
+                    return (
+                      <div key={grupo.id} style={{ background: '#141414', border: '0.5px solid #2a2a2a', borderRadius: 10, padding: '10px 14px', marginBottom: 10 }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#f0e8d8', cursor: 'pointer', marginBottom: sel.activo ? 10 : 0 }}>
+                          <input type="checkbox" checked={sel.activo} onChange={e => updateSel({ activo: e.target.checked })} />
+                          <strong>{grupo.nombre}</strong>
+                          <span style={{ color: '#7a6a50', fontSize: 11 }}>({grupo.opciones.length} opciones)</span>
+                        </label>
+                        {sel.activo && (
+                          <>
+                            <div style={{ display: 'flex', gap: 16, marginBottom: 10, flexWrap: 'wrap' }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#c4a85a', cursor: 'pointer' }}>
+                                <input type="checkbox" checked={!!sel.obligatorio} onChange={e => updateSel({ obligatorio: e.target.checked })} />
+                                Obligatorio elegir
+                              </label>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#c4a85a' }}>
+                                Selección:
+                                <select
+                                  value={sel.tipo_seleccion}
+                                  onChange={e => updateSel({ tipo_seleccion: e.target.value })}
+                                  style={{ background: '#0f0f0f', border: '0.5px solid #3a2e20', borderRadius: 6, padding: '3px 8px', fontSize: 12, color: '#f0e8d8', fontFamily: "'Inter', sans-serif" }}
+                                >
+                                  <option value="unica">Única (una opción)</option>
+                                  <option value="multiple">Múltiple (varias opciones)</option>
+                                </select>
+                              </label>
+                            </div>
+                            {grupo.opciones.length === 0 ? (
+                              <div style={{ fontSize: 11, color: '#7a6a50' }}>Este grupo todavía no tiene opciones — agregalas desde "Modificadores de plato" arriba.</div>
+                            ) : (
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px', gap: '6px 10px', alignItems: 'center' }}>
+                                {grupo.opciones.map(op => (
+                                  <Fragment key={op.id}>
+                                    <span style={{ fontSize: 12, color: '#f0e8d8' }}>{op.nombre}</span>
+                                    <input
+                                      type="number" step="0.01" min="0"
+                                      placeholder="0.00"
+                                      value={sel.precios?.[op.id] ?? ''}
+                                      onChange={e => updateSel({ precios: { ...sel.precios, [op.id]: e.target.value } })}
+                                      style={{ background: '#0f0f0f', border: '0.5px solid #3a2e20', borderRadius: 6, padding: '4px 8px', fontSize: 12, color: '#f0e8d8', fontFamily: "'Inter', sans-serif" }}
+                                    />
+                                  </Fragment>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+
             <label style={S.label}>Categoría</label>
             <select
               style={S.input}
@@ -510,6 +758,35 @@ export default function AdminCarta() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// Input local para agregar una opción nueva a un grupo de modificadores.
+// Vive como componente aparte para no necesitar un estado extra por
+// cada grupo en el componente principal.
+function NuevaOpcionInput({ onAdd }) {
+  const [valor, setValor] = useState('')
+  return (
+    <div style={{ display: 'flex', gap: 6 }}>
+      <input
+        placeholder="Nueva opción (ej. Poco hecho)"
+        value={valor}
+        onChange={e => setValor(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter' && valor.trim()) {
+            onAdd(valor.trim())
+            setValor('')
+          }
+        }}
+        style={{ background: '#0f0f0f', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '5px 10px', fontSize: 12, color: '#f0e8d8', flex: 1, fontFamily: "'Inter', sans-serif" }}
+      />
+      <button
+        onClick={() => { if (valor.trim()) { onAdd(valor.trim()); setValor('') } }}
+        style={{ background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '5px 12px', fontSize: 12, color: '#c4a85a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+      >
+        + opción
+      </button>
     </div>
   )
 }
