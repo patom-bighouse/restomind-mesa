@@ -73,6 +73,7 @@ export default function AdminConfig() {
   const [camareroError, setCamareroError] = useState(null)
   const [sectoresCocinaActivo, setSectoresCocinaActivo] = useState(false)
   const [envasesSostenibles, setEnvasesSostenibles] = useState(false)
+  const [puntosPorEuro, setPuntosPorEuro] = useState(1)
   const [sectores, setSectores] = useState([])
   const [nuevoSectorNombre, setNuevoSectorNombre] = useState('')
   const [sectorError, setSectorError] = useState(null)
@@ -105,6 +106,7 @@ export default function AdminConfig() {
       setModoPedidos(rest.config?.modo_pedidos || 'cliente')
       setSectoresCocinaActivo(rest.config?.sectores_cocina_activo || false)
       setEnvasesSostenibles(rest.config?.envases_sostenibles_takeaway || false)
+      setPuntosPorEuro(rest.config?.puntos_por_euro ?? 1)
       // Init horario with defaults for any missing days
       const h = rest.config?.horario || {}
       const horarioCompleto = {}
@@ -233,7 +235,7 @@ export default function AdminConfig() {
         .update({
           nombre: nombre.trim(),
           whatsapp: whatsapp.trim(),
-          config: { ...restaurant?.config, horario, umbral_margen_alerta: umbral, modo_pedidos: modoPedidos, sectores_cocina_activo: sectoresCocinaActivo, envases_sostenibles_takeaway: envasesSostenibles },
+          config: { ...restaurant?.config, horario, umbral_margen_alerta: umbral, modo_pedidos: modoPedidos, sectores_cocina_activo: sectoresCocinaActivo, envases_sostenibles_takeaway: envasesSostenibles, puntos_por_euro: parseFloat(puntosPorEuro) || 1 },
           modo_cocina: modoCocina,
           minutos_limite_agrupado: minutos,
         })
@@ -477,6 +479,25 @@ export default function AdminConfig() {
               El agente de WhatsApp avisará automáticamente al cliente que no se cobra recargo por el envase en sus pedidos para llevar.
             </div>
           )}
+        </div>
+
+        {/* Fidelización */}
+        <div style={S.infoCard}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 4 }}>Fidelización (puntos)</div>
+          <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 12 }}>
+            Los puntos se otorgan automáticamente al marcar un pedido de take away como "Entregado". Por ahora solo aplica a pedidos por WhatsApp (take away), no a pedidos de mesa.
+          </div>
+          <div style={S.minutosRow}>
+            <span style={{ fontSize: 13, color: '#8a7560' }}>Puntos por cada 1€ gastado</span>
+            <input
+              style={S.minutosInput}
+              type="number"
+              min="0"
+              step="0.1"
+              value={puntosPorEuro}
+              onChange={e => setPuntosPorEuro(e.target.value)}
+            />
+          </div>
         </div>
 
         {/* Horarios */}
