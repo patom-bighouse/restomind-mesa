@@ -406,6 +406,7 @@ export default function AdminMesas() {
           {tieneModulo('reportes') && <a href={`/admin/dashboard/${restaurantId}`} style={S.navTab(false)}>Dashboard</a>}
           <a href={`/admin/mesas/${restaurantId}`} style={S.navTab(true)}>Mesas</a>
           <a href={`/admin/carta/${restaurantId}`} style={S.navTab(false)}>Carta</a>
+          <a href={`/admin/clientes/${restaurantId}`} style={S.navTab(false)}>Clientes</a>
           <a href={`/admin/config/${restaurantId}`} style={S.navTab(false)}>Configuración</a>
           {restaurant?.config?.modo_pedidos === 'camarero' && (
             <a href={`/camarero/${restaurantId}`} target="_blank" rel="noreferrer" style={S.navTab(false)}>Pantalla camarero ↗</a>
