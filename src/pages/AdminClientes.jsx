@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useRestaurantModulos } from '../lib/modulos'
@@ -45,6 +45,9 @@ export default function AdminClientes() {
   const [success, setSuccess] = useState(null)
   const [redeemCliente, setRedeemCliente] = useState(null) // cliente | null
   const [redeemCantidad, setRedeemCantidad] = useState('')
+  const [redeemMotivo, setRedeemMotivo] = useState('')
+  const [historialAbierto, setHistorialAbierto] = useState(null) // cliente_id | null
+  const [movimientos, setMovimientos] = useState({}) // cliente_id -> [movimientos]
   const [redeeming, setRedeeming] = useState(false)
 
   useEffect(() => { checkAuth() }, [])
@@ -68,6 +71,19 @@ export default function AdminClientes() {
     setClientes(data || [])
   }
 
+  async function toggleHistorial(clienteId) {
+    if (historialAbierto === clienteId) { setHistorialAbierto(null); return }
+    setHistorialAbierto(clienteId)
+    if (!movimientos[clienteId]) {
+      const { data } = await supabase
+        .from('clientes_movimientos')
+        .select('id, tipo, puntos, motivo, created_at')
+        .eq('cliente_id', clienteId)
+        .order('created_at', { ascending: false })
+      setMovimientos(prev => ({ ...prev, [clienteId]: data || [] }))
+    }
+  }
+
   const clientesFiltrados = clientes.filter(c => {
     const q = busqueda.trim().toLowerCase()
     if (!q) return true
@@ -77,6 +93,7 @@ export default function AdminClientes() {
   function openRedeem(cliente) {
     setRedeemCliente(cliente)
     setRedeemCantidad('')
+    setRedeemMotivo('')
     setError(null)
   }
 
@@ -95,10 +112,22 @@ export default function AdminClientes() {
       .from('clientes')
       .update({ puntos: redeemCliente.puntos - cantidad, updated_at: new Date().toISOString() })
       .eq('id', redeemCliente.id)
+    if (err) { setRedeeming(false); setError(err.message); return }
+
+    await supabase.from('clientes_movimientos').insert({
+      cliente_id: redeemCliente.id,
+      tipo: 'resta',
+      puntos: cantidad,
+      motivo: redeemMotivo.trim() || 'Canje en el local',
+    })
+
     setRedeeming(false)
-    if (err) { setError(err.message); return }
     setSuccess(`Canjeados ${cantidad} puntos de ${redeemCliente.nombre || redeemCliente.telefono}.`)
     setTimeout(() => setSuccess(null), 4000)
+    setMovimientos(prev => {
+      const { [redeemCliente.id]: _, ...rest } = prev
+      return rest
+    })
     setRedeemCliente(null)
     await loadClientes()
   }
@@ -163,17 +192,44 @@ export default function AdminClientes() {
             </thead>
             <tbody>
               {clientesFiltrados.map(c => (
-                <tr key={c.id} style={S.row}>
-                  <td style={S.td}>{c.nombre || '—'}</td>
-                  <td style={S.td}>{c.telefono}</td>
-                  <td style={{ ...S.td, ...S.puntos }}>{c.puntos}</td>
-                  <td style={S.td}>{new Date(c.updated_at).toLocaleDateString('es-ES')}</td>
-                  <td style={S.td}>
-                    <button style={S.redeemBtn} onClick={() => openRedeem(c)} disabled={c.puntos <= 0}>
-                      Canjear
-                    </button>
-                  </td>
-                </tr>
+                <Fragment key={c.id}>
+                  <tr style={S.row}>
+                    <td style={S.td}>{c.nombre || '—'}</td>
+                    <td style={S.td}>{c.telefono}</td>
+                    <td style={{ ...S.td, ...S.puntos }}>{c.puntos}</td>
+                    <td style={S.td}>{new Date(c.updated_at).toLocaleDateString('es-ES')}</td>
+                    <td style={{ ...S.td, display: 'flex', gap: 8 }}>
+                      <button style={S.redeemBtn} onClick={() => toggleHistorial(c.id)}>
+                        {historialAbierto === c.id ? 'Ocultar' : 'Historial'}
+                      </button>
+                      <button style={S.redeemBtn} onClick={() => openRedeem(c)} disabled={c.puntos <= 0}>
+                        Canjear
+                      </button>
+                    </td>
+                  </tr>
+                  {historialAbierto === c.id && (
+                    <tr style={S.row}>
+                      <td colSpan={5} style={{ ...S.td, paddingTop: 0 }}>
+                        {!movimientos[c.id] ? (
+                          <div style={{ fontSize: 12, color: '#555' }}>Cargando...</div>
+                        ) : movimientos[c.id].length === 0 ? (
+                          <div style={{ fontSize: 12, color: '#555' }}>Sin movimientos todavía.</div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {movimientos[c.id].map(m => (
+                              <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#8a7560' }}>
+                                <span>{new Date(m.created_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} — {m.motivo}</span>
+                                <span style={{ color: m.tipo === 'suma' ? '#7ae8a0' : '#e87a7a', fontWeight: 500 }}>
+                                  {m.tipo === 'suma' ? '+' : '−'}{m.puntos}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -195,6 +251,13 @@ export default function AdminClientes() {
               value={redeemCantidad}
               onChange={e => setRedeemCantidad(e.target.value)}
               autoFocus
+            />
+            <input
+              style={{ ...S.input, width: '100%', boxSizing: 'border-box', marginBottom: 16 }}
+              type="text"
+              placeholder="Motivo (opcional, ej: Cerveza gratis)"
+              value={redeemMotivo}
+              onChange={e => setRedeemMotivo(e.target.value)}
             />
             <div style={{ display: 'flex', gap: 10 }}>
               <button style={S.cancelBtn} onClick={() => setRedeemCliente(null)}>Cancelar</button>
