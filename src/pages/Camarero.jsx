@@ -97,6 +97,12 @@ export default function Camarero() {
   const [sendError, setSendError] = useState(null)
   const [sendSuccess, setSendSuccess] = useState(false)
 
+  const [showFidelizacion, setShowFidelizacion] = useState(false)
+  const [telefonoInput, setTelefonoInput] = useState('')
+  const [nombreInput, setNombreInput] = useState('')
+  const [guardandoCliente, setGuardandoCliente] = useState(false)
+  const [clienteError, setClienteError] = useState(null)
+
   useEffect(() => {
     loadRestaurant()
   }, [restaurantId])
@@ -156,7 +162,7 @@ export default function Camarero() {
 
     const { data: sess } = await supabase
       .from('table_sessions')
-      .select('id, table_id, comensales, camarero_id')
+      .select('id, table_id, comensales, camarero_id, cliente_telefono, cliente_nombre')
       .eq('restaurant_id', restaurantId)
       .eq('estado', 'abierta')
     const map = {}
@@ -187,7 +193,7 @@ export default function Camarero() {
         const { data, error: err } = await supabase
           .from('table_sessions')
           .insert({ table_id: table.id, restaurant_id: restaurantId, comensales: table.capacidad, camarero_id: camarero.id })
-          .select('id, table_id, comensales, camarero_id')
+          .select('id, table_id, comensales, camarero_id, cliente_telefono, cliente_nombre')
           .single()
         if (err) throw err
         setSelectedTable({ ...table, session: data })
@@ -222,6 +228,31 @@ export default function Camarero() {
     setSelectedTable(null)
     setCart({})
     loadTablas()
+  }
+
+  // ---------- Fidelización: el camarero carga el teléfono del cliente ----------
+  function abrirFidelizacion() {
+    setTelefonoInput(selectedTable?.session?.cliente_telefono || '')
+    setNombreInput(selectedTable?.session?.cliente_nombre || '')
+    setClienteError(null)
+    setShowFidelizacion(true)
+  }
+
+  async function guardarCliente() {
+    const telefono = telefonoInput.trim()
+    if (!telefono) { setClienteError('Introduce el teléfono del cliente.'); return }
+    setGuardandoCliente(true)
+    setClienteError(null)
+    const nuevoNombre = nombreInput.trim() || selectedTable.session.cliente_nombre || null
+    const { error: err } = await supabase
+      .from('table_sessions')
+      .update({ cliente_telefono: telefono, cliente_nombre: nuevoNombre })
+      .eq('id', selectedTable.session.id)
+    setGuardandoCliente(false)
+    if (err) { setClienteError(err.message); return }
+    setSelectedTable(prev => prev ? { ...prev, session: { ...prev.session, cliente_telefono: telefono, cliente_nombre: nuevoNombre } } : prev)
+    setSessions(prev => ({ ...prev, [selectedTable.id]: { ...prev[selectedTable.id], cliente_telefono: telefono, cliente_nombre: nuevoNombre } }))
+    setShowFidelizacion(false)
   }
 
   // ---------- Carta ----------
@@ -521,6 +552,12 @@ export default function Camarero() {
           >
             🌾 Alérgenos{alergenosExcluidos.length > 0 ? ` (${alergenosExcluidos.length})` : ''}
           </button>
+          <button
+            onClick={abrirFidelizacion}
+            style={{ background: selectedTable?.session?.cliente_telefono ? '#3a2010' : 'transparent', border: `0.5px solid ${selectedTable?.session?.cliente_telefono ? '#e8c97a' : '#3a2e20'}`, borderRadius: 8, padding: '6px 14px', fontSize: 12, color: '#c4a85a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+          >
+            🎁 {selectedTable?.session?.cliente_telefono ? 'Sumando puntos' : 'Sumar puntos'}
+          </button>
           <button style={S.logoutBtn} onClick={volverAMesas}>Cambiar de mesa</button>
         </div>
       </div>
@@ -710,6 +747,36 @@ export default function Camarero() {
             {sendError && <div style={{ fontSize: 13, color: '#e87a7a', marginTop: 8 }}>{sendError}</div>}
             <button style={S.confirmBtn(sending)} onClick={confirmarPedido} disabled={sending}>
               {sending ? 'Enviando...' : 'Confirmar y enviar a cocina'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showFidelizacion && (
+        <div style={S.overlay} onClick={() => setShowFidelizacion(false)}>
+          <div style={S.sheet} onClick={e => e.stopPropagation()}>
+            <div style={S.sheetTitle}>🎁 Fidelización — Mesa {selectedTable.numero}</div>
+            <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 14, lineHeight: 1.5 }}>
+              Cargá el teléfono del cliente para que sume puntos automáticamente cuando se cierre la mesa como pagada.
+            </div>
+            {clienteError && <div style={{ fontSize: 13, color: '#e87a7a', marginBottom: 10 }}>{clienteError}</div>}
+            <input
+              style={{ width: '100%', background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '10px 12px', fontSize: 14, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', boxSizing: 'border-box' }}
+              type="tel"
+              placeholder="Teléfono del cliente"
+              value={telefonoInput}
+              onChange={e => setTelefonoInput(e.target.value)}
+              autoFocus
+            />
+            <input
+              style={{ width: '100%', background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '10px 12px', fontSize: 14, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', boxSizing: 'border-box', marginTop: 8 }}
+              type="text"
+              placeholder="Nombre (opcional)"
+              value={nombreInput}
+              onChange={e => setNombreInput(e.target.value)}
+            />
+            <button style={S.confirmBtn(guardandoCliente)} onClick={guardarCliente} disabled={guardandoCliente}>
+              {guardandoCliente ? 'Guardando...' : (selectedTable?.session?.cliente_telefono ? 'Actualizar teléfono' : 'Guardar y sumar puntos')}
             </button>
           </div>
         </div>
