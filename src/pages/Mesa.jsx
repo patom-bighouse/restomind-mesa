@@ -198,13 +198,21 @@ export default function Mesa() {
           .single()
         setRestaurant(rest)
 
-        const { data: sessionData } = await supabase
+        // Antes usábamos .maybeSingle(), que lanza error si llegara a haber
+        // más de una fila 'abierta' para la misma mesa (p. ej. si quedó una
+        // sesión duplicada de una prueba anterior). Ese error no se estaba
+        // capturando, así que la mesa se veía como "sin sesión" aunque sí
+        // hubiera una abierta. Con order+limit(1) nos quedamos siempre con
+        // la más reciente y no rompemos la carga si hay filas duplicadas.
+        const { data: sessionRows, error: sessErr } = await supabase
           .from('table_sessions')
           .select('id, estado, abierta_at, cliente_telefono, cliente_nombre')
           .eq('table_id', tableData.id)
           .eq('estado', 'abierta')
-          .maybeSingle()
-        setSession(sessionData || null)
+          .order('abierta_at', { ascending: false })
+          .limit(1)
+        if (sessErr) throw sessErr
+        setSession(sessionRows && sessionRows.length > 0 ? sessionRows[0] : null)
 
         await loadMenu(tableData.restaurant_id)
       } catch (e) {
@@ -403,13 +411,14 @@ export default function Mesa() {
       // cliente a la pantalla de espera correspondiente.
       const esMesaCerrada = /no existe o ya está cerrada/i.test(e.message || '')
       if (esMesaCerrada) {
-        const { data: sessionActual } = await supabase
+        const { data: sessionActualRows } = await supabase
           .from('table_sessions')
-          .select('id, estado, abierta_at')
+          .select('id, estado, abierta_at, cliente_telefono, cliente_nombre')
           .eq('table_id', table.id)
           .eq('estado', 'abierta')
-          .maybeSingle()
-        setSession(sessionActual || null)
+          .order('abierta_at', { ascending: false })
+          .limit(1)
+        setSession(sessionActualRows && sessionActualRows.length > 0 ? sessionActualRows[0] : null)
         setSendError(null)
         setOverlay(null)
       } else {
