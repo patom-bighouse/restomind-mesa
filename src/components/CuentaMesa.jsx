@@ -38,6 +38,12 @@ const S = {
   addPagoInput: { background: '#111', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '9px 10px', fontSize: 13, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', width: 90 },
   addPagoSelect: { background: '#111', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '9px 10px', fontSize: 13, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', flex: 1, minWidth: 100 },
   addPagoBtn: { background: '#c4a85a', border: 'none', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 500, color: '#111', cursor: 'pointer', fontFamily: "'Inter', sans-serif" },
+  clienteSection: { padding: '16px 24px', borderTop: '0.5px solid #2a2a2a' },
+  clienteTitle: { fontSize: 13, fontWeight: 500, color: '#c4a85a', marginBottom: 10 },
+  clienteRow: { display: 'flex', gap: 8, flexWrap: 'wrap' },
+  clienteInput: { background: '#111', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '9px 10px', fontSize: 13, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', flex: 1, minWidth: 140 },
+  clienteHint: { fontSize: 11, color: '#6a5a45', marginTop: 8, lineHeight: 1.4 },
+  clienteErrorText: { fontSize: 12, color: '#e87a7a', marginBottom: 8 },
   cierreBloqueado: { fontSize: 11, color: '#e8b84a', textAlign: 'center', width: '100%', marginTop: -4, marginBottom: 4 },
   exencionToggle: { fontSize: 11, color: '#6a5a45', textDecoration: 'underline', cursor: 'pointer', textAlign: 'center', width: '100%', marginTop: 2, background: 'none', border: 'none', fontFamily: "'Inter', sans-serif" },
   exencionBox: { padding: '0 24px 16px' },
@@ -59,7 +65,7 @@ const METODOS = [
  * como resumen final antes de cerrar la mesa ("cerrar mesa").
  *
  * Props:
- * - session: { id, abierta_at }
+ * - session: { id, abierta_at, cliente_telefono, cliente_nombre }
  * - table: { numero, zona }
  * - restaurantName: string
  * - restaurantId: string (necesario para registrar cobros)
@@ -82,6 +88,8 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
   const [addingPago, setAddingPago] = useState(false)
   const [showExencion, setShowExencion] = useState(false)
   const [motivoExencion, setMotivoExencion] = useState('')
+  const [savingCliente, setSavingCliente] = useState(false)
+  const [clienteError, setClienteError] = useState(null)
 
   useEffect(() => { loadCuenta() }, [session?.id])
 
@@ -177,6 +185,39 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
 
   function handlePrint() {
     window.print()
+  }
+
+  // El camarero puede cargar (o completar) el teléfono de fidelización
+  // directamente desde el cierre de cuenta — es el mismo dato que el
+  // cliente puede dejar desde su móvil en Mesa.jsx; cualquiera de los
+  // dos caminos que llegue primero completa la misma columna de la
+  // sesión, y el que llegue después la actualiza. Los puntos se
+  // otorgan recién al cerrar la mesa como pagada (trigger en la base),
+  // así que estos campos solo dejan el dato listo para ese momento.
+  async function updateClienteTelefono(nuevoValor) {
+    const valor = nuevoValor.trim()
+    if (valor === (session?.cliente_telefono || '')) return
+    setSavingCliente(true)
+    setClienteError(null)
+    const { error: err } = await supabase
+      .from('table_sessions')
+      .update({ cliente_telefono: valor || null })
+      .eq('id', session.id)
+    setSavingCliente(false)
+    if (err) setClienteError(err.message)
+  }
+
+  async function updateClienteNombre(nuevoValor) {
+    const valor = nuevoValor.trim()
+    if (valor === (session?.cliente_nombre || '')) return
+    setSavingCliente(true)
+    setClienteError(null)
+    const { error: err } = await supabase
+      .from('table_sessions')
+      .update({ cliente_nombre: valor || null })
+      .eq('id', session.id)
+    setSavingCliente(false)
+    if (err) setClienteError(err.message)
   }
 
   const ticket = (
@@ -275,6 +316,32 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
           <div style={S.totalRow}>
             <span style={S.totalLabel}>Total</span>
             <span style={S.totalValue}>{formatMoney(total, moneda)}</span>
+          </div>
+
+          <div style={S.clienteSection}>
+            <div style={S.clienteTitle}>🎁 Fidelización</div>
+            {clienteError && <div style={S.clienteErrorText}>{clienteError}</div>}
+            <div style={S.clienteRow}>
+              <input
+                key={`tel-${session?.id}`}
+                style={S.clienteInput}
+                type="tel"
+                placeholder="Teléfono del cliente"
+                defaultValue={session?.cliente_telefono || ''}
+                onBlur={e => updateClienteTelefono(e.target.value)}
+              />
+              <input
+                key={`nom-${session?.id}`}
+                style={S.clienteInput}
+                type="text"
+                placeholder="Nombre (opcional)"
+                defaultValue={session?.cliente_nombre || ''}
+                onBlur={e => updateClienteNombre(e.target.value)}
+              />
+            </div>
+            <div style={S.clienteHint}>
+              {savingCliente ? 'Guardando...' : 'Si el cliente ya lo dejó desde su móvil, aparece solo. Se usa para sumar puntos al cerrar la mesa como pagada.'}
+            </div>
           </div>
 
           <div style={S.cobroSection}>

@@ -85,13 +85,17 @@ export default function Mesa() {
   const [showAlergenosPanel, setShowAlergenosPanel] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [overlay, setOverlay] = useState(null) // 'cart' | 'success' | 'waiter' | 'sending'
+  const [overlay, setOverlay] = useState(null) // 'cart' | 'success' | 'waiter' | 'sending' | 'misPedidos' | 'fidelizacion'
   const [orderId, setOrderId] = useState(null)
   const [sendError, setSendError] = useState(null)
   const [orderNote, setOrderNote] = useState('')
   const [editingNoteFor, setEditingNoteFor] = useState(null)
   const [misPedidos, setMisPedidos] = useState([])
   const [loadingPedidos, setLoadingPedidos] = useState(false)
+  const [telefonoInput, setTelefonoInput] = useState('')
+  const [nombreInput, setNombreInput] = useState('')
+  const [guardandoCliente, setGuardandoCliente] = useState(false)
+  const [clienteError, setClienteError] = useState(null)
   const prevSessionIdRef = useRef(undefined)
 
   // Cada vez que la sesión de la mesa cambia (se cierra, se reabre,
@@ -194,13 +198,21 @@ export default function Mesa() {
           .single()
         setRestaurant(rest)
 
-        const { data: sessionData } = await supabase
+        // Antes usábamos .maybeSingle(), que lanza error si llegara a haber
+        // más de una fila 'abierta' para la misma mesa (p. ej. si quedó una
+        // sesión duplicada de una prueba anterior). Ese error no se estaba
+        // capturando, así que la mesa se veía como "sin sesión" aunque sí
+        // hubiera una abierta. Con order+limit(1) nos quedamos siempre con
+        // la más reciente y no rompemos la carga si hay filas duplicadas.
+        const { data: sessionRows, error: sessErr } = await supabase
           .from('table_sessions')
-          .select('id, estado, abierta_at')
+          .select('id, estado, abierta_at, cliente_telefono, cliente_nombre')
           .eq('table_id', tableData.id)
           .eq('estado', 'abierta')
-          .maybeSingle()
-        setSession(sessionData || null)
+          .order('abierta_at', { ascending: false })
+          .limit(1)
+        if (sessErr) throw sessErr
+        setSession(sessionRows && sessionRows.length > 0 ? sessionRows[0] : null)
 
         await loadMenu(tableData.restaurant_id)
       } catch (e) {
@@ -399,13 +411,14 @@ export default function Mesa() {
       // cliente a la pantalla de espera correspondiente.
       const esMesaCerrada = /no existe o ya está cerrada/i.test(e.message || '')
       if (esMesaCerrada) {
-        const { data: sessionActual } = await supabase
+        const { data: sessionActualRows } = await supabase
           .from('table_sessions')
-          .select('id, estado, abierta_at')
+          .select('id, estado, abierta_at, cliente_telefono, cliente_nombre')
           .eq('table_id', table.id)
           .eq('estado', 'abierta')
-          .maybeSingle()
-        setSession(sessionActual || null)
+          .order('abierta_at', { ascending: false })
+          .limit(1)
+        setSession(sessionActualRows && sessionActualRows.length > 0 ? sessionActualRows[0] : null)
         setSendError(null)
         setOverlay(null)
       } else {
@@ -423,6 +436,47 @@ export default function Mesa() {
       estado: 'pendiente'
     })
     setTimeout(() => setOverlay(null), 2500)
+  }
+
+  // Abre el formulario de fidelización precargado con lo que ya tenga
+  // guardado la sesión (si el camarero ya lo cargó desde su pantalla,
+  // o si el cliente ya lo había dejado antes en esta misma visita).
+  function abrirFidelizacion() {
+    setTelefonoInput(session?.cliente_telefono || '')
+    setNombreInput(session?.cliente_nombre || '')
+    setClienteError(null)
+    setOverlay('fidelizacion')
+  }
+
+  // fn_registrar_cliente_sesion valida, del lado del servidor, que la
+  // sesión realmente pertenece a la mesa de este QR y que sigue
+  // abierta — así ningún cliente puede escribir el teléfono de la
+  // sesión de otra mesa aunque conozca su session_id.
+  async function guardarCliente() {
+    const telefono = telefonoInput.trim()
+    if (!telefono) { setClienteError('Introduce tu número de teléfono.'); return }
+    setGuardandoCliente(true)
+    setClienteError(null)
+    const { error: err } = await supabase.rpc('fn_registrar_cliente_sesion', {
+      p_session_id: session.id,
+      p_qr_token: token,
+      p_telefono: telefono,
+      p_nombre: nombreInput.trim() || null,
+    })
+    setGuardandoCliente(false)
+    if (err) { setClienteError(err.message); return }
+    // Aplicamos el cambio en local de inmediato (igual que el resto de
+    // acciones de la app) en vez de esperar a que llegue el evento de
+    // Realtime — así el botón refleja "Sumando puntos" al instante,
+    // sin depender de la latencia de la suscripción. La misma lógica
+    // de coalesce que usa fn_registrar_cliente_sesion: si no se cargó
+    // nombre nuevo, se conserva el que ya hubiera.
+    setSession(prev => prev ? {
+      ...prev,
+      cliente_telefono: telefono,
+      cliente_nombre: nombreInput.trim() || prev.cliente_nombre || null,
+    } : prev)
+    setOverlay(null)
   }
 
   async function loadMisPedidos() {
@@ -555,6 +609,12 @@ export default function Mesa() {
             </button>
             <button onClick={abrirMisPedidos} style={{ background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 20, padding: '4px 12px', fontSize: 11, color: '#c4a85a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
               🧾 Mis pedidos
+            </button>
+            <button
+              onClick={abrirFidelizacion}
+              style={{ background: session?.cliente_telefono ? '#3a2010' : 'transparent', border: `0.5px solid ${session?.cliente_telefono ? '#e8c97a' : '#3a2e20'}`, borderRadius: 20, padding: '4px 12px', fontSize: 11, color: '#c4a85a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+            >
+              🎁 {session?.cliente_telefono ? 'Sumando puntos' : 'Sumar puntos'}
             </button>
           </div>
         </div>
@@ -859,6 +919,35 @@ export default function Mesa() {
               <div style={S.ctitle}>Camarero avisado</div>
               <div style={S.csub}>Enseguida estamos contigo<br />en la mesa {table?.numero}.</div>
             </div>
+          )}
+
+          {overlay === 'fidelizacion' && (
+            <>
+              <button style={S.closeBtn} onClick={() => setOverlay(null)}>×</button>
+              <div style={S.sheetTitle}>🎁 Sumá puntos por esta visita</div>
+              <div style={{ fontSize: 13, color: '#8a7560', marginBottom: 16, lineHeight: 1.5 }}>
+                Dejanos tu teléfono y, cuando el camarero cierre la mesa, sumamos puntos por tu consumo automáticamente a tu cuenta de fidelización.
+              </div>
+              {clienteError && <div style={{ ...S.error, margin: '0 0 12px' }}>{clienteError}</div>}
+              <input
+                style={S.noteInput}
+                type="tel"
+                placeholder="Tu teléfono"
+                value={telefonoInput}
+                onChange={e => setTelefonoInput(e.target.value)}
+                autoFocus
+              />
+              <input
+                style={{ ...S.noteInput, marginTop: 8 }}
+                type="text"
+                placeholder="Tu nombre (opcional)"
+                value={nombreInput}
+                onChange={e => setNombreInput(e.target.value)}
+              />
+              <button style={{ ...S.confirmBtn(guardandoCliente), marginTop: 16 }} onClick={guardarCliente} disabled={guardandoCliente}>
+                {guardandoCliente ? 'Guardando...' : (session?.cliente_telefono ? 'Actualizar teléfono' : 'Guardar y sumar puntos')}
+              </button>
+            </>
           )}
         </div>
       </div>
