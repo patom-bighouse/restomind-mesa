@@ -157,7 +157,7 @@ export default function AdminMesas() {
   async function loadSessions() {
     const { data: sess, error: err } = await supabase
       .from('table_sessions')
-      .select('id, table_id, abierta_at, comensales')
+      .select('id, table_id, abierta_at, comensales, cliente_telefono, cliente_nombre')
       .eq('restaurant_id', restaurantId)
       .eq('estado', 'abierta')
     if (err) { setError(err.message); return }
