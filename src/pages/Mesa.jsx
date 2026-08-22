@@ -456,6 +456,17 @@ export default function Mesa() {
     })
     setGuardandoCliente(false)
     if (err) { setClienteError(err.message); return }
+    // Aplicamos el cambio en local de inmediato (igual que el resto de
+    // acciones de la app) en vez de esperar a que llegue el evento de
+    // Realtime — así el botón refleja "Sumando puntos" al instante,
+    // sin depender de la latencia de la suscripción. La misma lógica
+    // de coalesce que usa fn_registrar_cliente_sesion: si no se cargó
+    // nombre nuevo, se conserva el que ya hubiera.
+    setSession(prev => prev ? {
+      ...prev,
+      cliente_telefono: telefono,
+      cliente_nombre: nombreInput.trim() || prev.cliente_nombre || null,
+    } : prev)
     setOverlay(null)
   }
 
