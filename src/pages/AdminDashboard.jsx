@@ -102,6 +102,7 @@ export default function AdminDashboard() {
   const [orderItemsMap, setOrderItemsMap] = useState({})
   const [tables, setTables] = useState({})
   const [sessions, setSessions] = useState([])
+  const [resenas, setResenas] = useState([])
 
   useEffect(() => { checkAuth() }, [])
 
@@ -112,6 +113,7 @@ export default function AdminDashboard() {
     if (!rest) { navigate('/admin/login'); return }
     setRestaurant(rest)
     await loadTables(rest.id)
+    await loadResenas(rest.id)
     setLoading(false)
   }
 
@@ -120,6 +122,19 @@ export default function AdminDashboard() {
     const map = {}
     ;(data || []).forEach(t => { map[t.id] = t })
     setTables(map)
+  }
+
+  // Resumen general de reseñas (no filtra por el rango de fechas del
+  // dashboard, es una foto del historial completo) — se limita a las
+  // últimas 200 para no traer un historial ilimitado.
+  async function loadResenas(restId) {
+    const { data } = await supabase
+      .from('resenas')
+      .select('id, puntuacion, comentario, created_at')
+      .eq('restaurant_id', restId)
+      .order('created_at', { ascending: false })
+      .limit(200)
+    setResenas(data || [])
   }
 
   useEffect(() => {
@@ -287,6 +302,15 @@ export default function AdminDashboard() {
     pedidos: pedidosPorSesion[s.id]?.count || 0,
     totalCalculado: pedidosPorSesion[s.id]?.total ?? parseFloat(s.total || 0),
   })).sort((a, b) => new Date(b.abierta_at) - new Date(a.abierta_at))
+
+  const promedioResenas = resenas.length > 0
+    ? resenas.reduce((sum, r) => sum + r.puntuacion, 0) / resenas.length
+    : null
+  const distribucionResenas = [5, 4, 3, 2, 1].map(n => ({
+    estrellas: n,
+    cantidad: resenas.filter(r => r.puntuacion === n).length,
+  }))
+  const resenasConComentario = resenas.filter(r => r.comentario).slice(0, 10)
 
   // Comensales: promedio real vs capacidad teórica, por mesa. Solo
   // cuentan las sesiones que tienen el dato cargado (comensales no nulo);
@@ -504,6 +528,50 @@ export default function AdminDashboard() {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Reseñas de clientes */}
+        <div style={S.section}>
+          <div style={{ ...S.chartCard, display: 'grid', gridTemplateColumns: '200px 1fr', gap: 24 }}>
+            <div>
+              <div style={S.cardTitle}>Reseñas</div>
+              {promedioResenas == null ? (
+                <div style={{ fontSize: 13, color: '#555' }}>Todavía no hay reseñas.</div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 32, fontWeight: 600, color: '#e8c97a', fontFamily: "'Playfair Display', serif" }}>
+                    {promedioResenas.toFixed(1)} <span style={{ fontSize: 18 }}>★</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 14 }}>{resenas.length} {resenas.length === 1 ? 'reseña' : 'reseñas'}</div>
+                  {distribucionResenas.map(d => (
+                    <div key={d.estrellas} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, color: '#7a6a50', width: 14 }}>{d.estrellas}★</span>
+                      <div style={{ flex: 1, height: 6, background: '#111', borderRadius: 3, overflow: 'hidden' }}>
+                        <div style={{ width: `${resenas.length ? (d.cantidad / resenas.length) * 100 : 0}%`, height: '100%', background: '#e8c97a' }} />
+                      </div>
+                      <span style={{ fontSize: 11, color: '#666', width: 18, textAlign: 'right' }}>{d.cantidad}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: '#666', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Comentarios recientes</div>
+              {resenasConComentario.length === 0 ? (
+                <div style={{ fontSize: 13, color: '#555' }}>Sin comentarios todavía.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 260, overflowY: 'auto' }}>
+                  {resenasConComentario.map(r => (
+                    <div key={r.id} style={{ borderBottom: '0.5px solid #222', paddingBottom: 8 }}>
+                      <div style={{ fontSize: 12, color: '#e8c97a', marginBottom: 2 }}>{'★'.repeat(r.puntuacion)}{'☆'.repeat(5 - r.puntuacion)}</div>
+                      <div style={{ fontSize: 13, color: '#f0e8d8' }}>{r.comentario}</div>
+                      <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>{new Date(r.created_at).toLocaleDateString('es-ES')}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

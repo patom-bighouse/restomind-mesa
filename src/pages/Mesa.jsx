@@ -70,6 +70,10 @@ const S = {
   upsellCard: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, background: '#221c14', border: '0.5px dashed #4a3c25', borderRadius: 10, padding: '10px 12px', marginBottom: 8 },
   upsellMsg: { fontSize: 13, color: '#f0e8d8' },
   upsellBtn: { flexShrink: 0, background: 'transparent', border: '0.5px solid #e8c97a', borderRadius: 8, padding: '7px 12px', fontSize: 12, fontWeight: 500, color: '#e8c97a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" },
+  starsRow: { display: 'flex', gap: 6, margin: '4px 0 8px' },
+  star: (activa) => ({ fontSize: 34, cursor: 'pointer', color: activa ? '#e8c97a' : '#3a2e20', lineHeight: 1 }),
+  resenaTextarea: { width: '100%', maxWidth: 320, background: '#221c14', border: '0.5px solid #3a2e20', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', resize: 'vertical', minHeight: 60, boxSizing: 'border-box' },
+  resenaSkip: { fontSize: 12, color: '#7a6a50', textDecoration: 'underline', cursor: 'pointer', marginTop: 4, background: 'none', border: 'none', fontFamily: "'Inter', sans-serif" },
 }
 
 export default function Mesa() {
@@ -80,7 +84,7 @@ export default function Mesa() {
   const [categories, setCategories] = useState([])
   const [items, setItems] = useState([])
   const [itemModifiers, setItemModifiers] = useState({}) // menu_item_id -> [{grupo_id, grupo_nombre, obligatorio, tipo_seleccion, opciones}]
-  const [upsellRules, setUpsellRules] = useState([]) // [{id, trigger_categoria_id, sugerido_item_id, mensaje}]
+  const [upsellRules, setUpsellRules] = useState([]) // [{id, trigger_item_id, sugerida_categoria_id, mensaje}]
   const [modSelectorItem, setModSelectorItem] = useState(null) // el plato que se está configurando, o null
   const [modSelectorChoices, setModSelectorChoices] = useState({}) // { [grupo_id]: opcion_id | [opcion_id, ...] }
   const [cart, setCart] = useState({})
@@ -100,6 +104,12 @@ export default function Mesa() {
   const [nombreInput, setNombreInput] = useState('')
   const [guardandoCliente, setGuardandoCliente] = useState(false)
   const [clienteError, setClienteError] = useState(null)
+  const [lastClosedSessionId, setLastClosedSessionId] = useState(null)
+  const [resenaEstado, setResenaEstado] = useState('pendiente') // 'pendiente' | 'enviada' | 'omitida'
+  const [resenaPuntuacion, setResenaPuntuacion] = useState(0)
+  const [resenaComentario, setResenaComentario] = useState('')
+  const [enviandoResena, setEnviandoResena] = useState(false)
+  const [resenaError, setResenaError] = useState(null)
   const prevSessionIdRef = useRef(undefined)
 
   // Cada vez que la sesión de la mesa cambia (se cierra, se reabre,
@@ -110,14 +120,41 @@ export default function Mesa() {
   // grupo de comensales.
   useEffect(() => {
     const currentId = session?.id ?? null
-    if (prevSessionIdRef.current !== undefined && prevSessionIdRef.current !== currentId) {
+    const previousId = prevSessionIdRef.current
+    if (previousId !== undefined && previousId !== currentId) {
       setCart({})
       setOrderNote('')
       setEditingNoteFor(null)
       setSendError(null)
+      // Si había una sesión y ahora no hay ninguna (no es que se abrió
+      // otra para el siguiente grupo), es que la mesa se acaba de
+      // cerrar — ahí pedimos la reseña antes de volver a la pantalla
+      // de espera.
+      if (previousId && !currentId) {
+        setLastClosedSessionId(previousId)
+        setResenaEstado('pendiente')
+        setResenaPuntuacion(0)
+        setResenaComentario('')
+        setResenaError(null)
+      }
     }
     prevSessionIdRef.current = currentId
   }, [session?.id])
+
+  async function enviarResena() {
+    if (!resenaPuntuacion || !lastClosedSessionId) return
+    setEnviandoResena(true)
+    setResenaError(null)
+    const { error: err } = await supabase.rpc('fn_registrar_resena', {
+      p_session_id: lastClosedSessionId,
+      p_qr_token: token,
+      p_puntuacion: resenaPuntuacion,
+      p_comentario: resenaComentario.trim() || null,
+    })
+    setEnviandoResena(false)
+    if (err) { setResenaError(err.message); return }
+    setResenaEstado('enviada')
+  }
 
   async function loadMenu(restaurantId) {
     const { data: cats } = await supabase
@@ -592,6 +629,42 @@ export default function Mesa() {
     </div>
   )
 
+  if (table && table.activa && !session && lastClosedSessionId && resenaEstado === 'pendiente') return (
+    <div style={S.app}>
+      <div style={S.header}>
+        <div>
+          <div style={S.logo}>{restaurant?.nombre || 'Restomind'}</div>
+        </div>
+        <div style={S.badge}>Mesa {table?.numero}</div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, padding: 40, textAlign: 'center', gap: 10 }}>
+        <div style={{ fontSize: 40 }}>🙏</div>
+        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: '#e8c97a' }}>¡Gracias por tu visita!</div>
+        <div style={{ fontSize: 14, color: '#7a6a50', lineHeight: 1.6 }}>¿Cómo estuvo todo?</div>
+        <div style={S.starsRow}>
+          {[1, 2, 3, 4, 5].map(n => (
+            <span key={n} style={S.star(n <= resenaPuntuacion)} onClick={() => setResenaPuntuacion(n)}>★</span>
+          ))}
+        </div>
+        {resenaPuntuacion > 0 && (
+          <>
+            <textarea
+              style={S.resenaTextarea}
+              placeholder="Contanos algo más (opcional)"
+              value={resenaComentario}
+              onChange={e => setResenaComentario(e.target.value)}
+            />
+            {resenaError && <div style={{ ...S.error, margin: '4px 0 0' }}>{resenaError}</div>}
+            <button style={{ ...S.confirmBtn(false), maxWidth: 320 }} onClick={enviarResena} disabled={enviandoResena}>
+              {enviandoResena ? 'Enviando...' : 'Enviar reseña'}
+            </button>
+          </>
+        )}
+        <button style={S.resenaSkip} onClick={() => setResenaEstado('omitida')}>Omitir</button>
+      </div>
+    </div>
+  )
+
   if (table && table.activa && !session) return (
     <div style={S.app}>
       <div style={S.header}>
@@ -601,19 +674,27 @@ export default function Mesa() {
         <div style={S.badge}>Mesa {table?.numero}</div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, padding: 40, textAlign: 'center', gap: 16 }}>
-        <div style={{ fontSize: 40 }}>🕒</div>
-        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: '#e8c97a' }}>Espera a que te atiendan</div>
-        <div style={{ fontSize: 14, color: '#7a6a50', lineHeight: 1.6 }}>El camarero abrirá tu mesa en breve.<br />En cuanto lo haga, podrás ver la carta y pedir aquí mismo.</div>
-        {overlay === 'waiter' ? (
-          <div style={{ fontSize: 13, color: '#e8c97a', marginTop: 8 }}>🛎 Camarero avisado, ¡ya vamos!</div>
-        ) : (
-          <div style={{ ...S.callBtn, margin: '8px 0 0', width: '100%', boxSizing: 'border-box', justifyContent: 'center' }} onClick={callWaiter}>
-            <span style={{ fontSize: 20 }}>🛎</span>
-            <div>
-              <div style={S.callTitle}>Avisar que ya llegué</div>
-              <div style={S.callSub}>Toca aquí para llamar al camarero</div>
+        <div style={{ fontSize: 40 }}>{lastClosedSessionId ? '👋' : '🕒'}</div>
+        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: '#e8c97a' }}>
+          {lastClosedSessionId ? '¡Hasta la próxima!' : 'Espera a que te atiendan'}
+        </div>
+        <div style={{ fontSize: 14, color: '#7a6a50', lineHeight: 1.6 }}>
+          {lastClosedSessionId
+            ? (resenaEstado === 'enviada' ? '¡Gracias por tu reseña!' : 'Esperamos verte pronto de nuevo.')
+            : (<>El camarero abrirá tu mesa en breve.<br />En cuanto lo haga, podrás ver la carta y pedir aquí mismo.</>)}
+        </div>
+        {!lastClosedSessionId && (
+          overlay === 'waiter' ? (
+            <div style={{ fontSize: 13, color: '#e8c97a', marginTop: 8 }}>🛎 Camarero avisado, ¡ya vamos!</div>
+          ) : (
+            <div style={{ ...S.callBtn, margin: '8px 0 0', width: '100%', boxSizing: 'border-box', justifyContent: 'center' }} onClick={callWaiter}>
+              <span style={{ fontSize: 20 }}>🛎</span>
+              <div>
+                <div style={S.callTitle}>Avisar que ya llegué</div>
+                <div style={S.callSub}>Toca aquí para llamar al camarero</div>
+              </div>
             </div>
-          </div>
+          )
         )}
       </div>
     </div>
