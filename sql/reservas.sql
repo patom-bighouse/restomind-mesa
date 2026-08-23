@@ -60,3 +60,18 @@ end;
 $$;
 
 grant execute on function fn_crear_reserva_web(uuid, text, text, date, time, integer, text, text) to anon, authenticated;
+
+-- Sin esto, AdminReservas.jsx no recibe los eventos de Realtime al
+-- crearse o cambiar de estado una reserva (a diferencia de tables,
+-- orders, table_sessions, etc., reservations nunca se agregó a la
+-- publicación). El chequeo previo evita el error de "ya es miembro"
+-- si se vuelve a correr este archivo.
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'reservations'
+  ) then
+    alter publication supabase_realtime add table reservations;
+  end if;
+end $$;

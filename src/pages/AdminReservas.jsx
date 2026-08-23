@@ -90,6 +90,21 @@ export default function AdminReservas() {
     setReservas(data || [])
   }
 
+  // Realtime: refresca la lista cuando llega una reserva nueva desde
+  // el widget público, o cuando cambia el estado de alguna (incluso
+  // si se editó desde otra pestaña/dispositivo).
+  useEffect(() => {
+    if (!restaurantId) return
+    const channel = supabase
+      .channel('admin-reservas-' + restaurantId)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'reservations',
+        filter: `restaurant_id=eq.${restaurantId}`
+      }, () => loadReservas())
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [restaurantId])
+
   const hoy = new Date().toISOString().slice(0, 10)
   const reservasFiltradas = reservas.filter(r => {
     if (filtro === 'proximas') return r.fecha >= hoy && r.estado !== 'cancelada'
