@@ -8,6 +8,8 @@ import AdminLogin from './pages/AdminLogin'
 import AdminMesas from './pages/AdminMesas'
 import AdminClientes from './pages/AdminClientes'
 import AdminUpsell from './pages/AdminUpsell'
+import AdminReservas from './pages/AdminReservas'
+import Reservar from './pages/Reservar'
 import AdminCarta from './pages/AdminCarta'
 import AdminDashboard from './pages/AdminDashboard'
 import AdminConfig from './pages/AdminConfig'
@@ -26,6 +28,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/admin/mesas/:restaurantId" element={<AdminMesas />} />
         <Route path="/admin/clientes/:restaurantId" element={<AdminClientes />} />
         <Route path="/admin/upsell/:restaurantId" element={<AdminUpsell />} />
+        <Route path="/admin/reservas/:restaurantId" element={<AdminReservas />} />
+        <Route path="/reservar/:restaurantId" element={<Reservar />} />
         <Route path="/admin/carta/:restaurantId" element={<AdminCarta />} />
         <Route path="/admin/dashboard/:restaurantId" element={<AdminDashboard />} />
         <Route path="/admin/config/:restaurantId" element={<AdminConfig />} />
