@@ -1,6 +1,7 @@
 import { useState, useEffect, Fragment } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { formatMoney } from '../lib/money'
 import { useRestaurantModulos } from '../lib/modulos'
 
 const S = {
@@ -64,7 +65,7 @@ export default function AdminClientes() {
   async function loadClientes() {
     const { data, error: err } = await supabase
       .from('clientes')
-      .select('id, telefono, nombre, puntos, updated_at')
+      .select('id, telefono, nombre, puntos, gasto_acumulado, ultima_visita, updated_at')
       .eq('restaurant_id', restaurantId)
       .order('puntos', { ascending: false })
     if (err) { setError(err.message); return }
@@ -186,7 +187,8 @@ export default function AdminClientes() {
                 <th style={S.th}>Cliente</th>
                 <th style={S.th}>Teléfono</th>
                 <th style={S.th}>Puntos</th>
-                <th style={S.th}>Última actividad</th>
+                <th style={S.th}>Gasto acumulado</th>
+                <th style={S.th}>Última visita</th>
                 <th style={S.th}></th>
               </tr>
             </thead>
@@ -197,7 +199,8 @@ export default function AdminClientes() {
                     <td style={S.td}>{c.nombre || '—'}</td>
                     <td style={S.td}>{c.telefono}</td>
                     <td style={{ ...S.td, ...S.puntos }}>{c.puntos}</td>
-                    <td style={S.td}>{new Date(c.updated_at).toLocaleDateString('es-ES')}</td>
+                    <td style={S.td}>{formatMoney(c.gasto_acumulado, restaurant?.moneda)}</td>
+                    <td style={S.td}>{c.ultima_visita ? new Date(c.ultima_visita).toLocaleDateString('es-ES') : '—'}</td>
                     <td style={{ ...S.td, display: 'flex', gap: 8 }}>
                       <button style={S.redeemBtn} onClick={() => toggleHistorial(c.id)}>
                         {historialAbierto === c.id ? 'Ocultar' : 'Historial'}
@@ -209,7 +212,7 @@ export default function AdminClientes() {
                   </tr>
                   {historialAbierto === c.id && (
                     <tr style={S.row}>
-                      <td colSpan={5} style={{ ...S.td, paddingTop: 0 }}>
+                      <td colSpan={6} style={{ ...S.td, paddingTop: 0 }}>
                         {!movimientos[c.id] ? (
                           <div style={{ fontSize: 12, color: '#555' }}>Cargando...</div>
                         ) : movimientos[c.id].length === 0 ? (
