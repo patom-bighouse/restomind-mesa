@@ -303,25 +303,25 @@ export default function Mesa() {
     return () => { supabase.removeChannel(channel) }
   }, [table?.restaurant_id, table?.id])
 
-  // Respaldo del cierre de mesa por si el evento de Realtime de arriba
-  // no llega (ya nos pasó con las comandas de Cocina — ver f948e34):
-  // mientras haya una sesión que creemos abierta, la re-chequeamos cada
-  // 15s. Si ya se cerró, disparamos el mismo camino que el evento en
-  // vivo (activa la pantalla de reseña vía el efecto de prevSessionIdRef).
+  // Respaldo del cierre de mesa: el cliente anónimo no puede leer
+  // table_sessions una vez cerrada (la política RLS de anon solo
+  // permite estado = 'abierta'), así que ni el Realtime de arriba ni
+  // un select directo le avisan cuando eso pasa. Mientras haya una
+  // sesión que creemos abierta, la re-chequeamos cada 15s vía RPC
+  // (que sí puede ver el estado real, validando el qr_token).
   useEffect(() => {
     if (!session?.id) return
     const interval = setInterval(async () => {
-      const { data } = await supabase
-        .from('table_sessions')
-        .select('id, estado')
-        .eq('id', session.id)
-        .maybeSingle()
-      if (data && data.estado !== 'abierta') {
-        setSession(prev => (prev && prev.id === data.id) ? null : prev)
+      const { data: estado } = await supabase.rpc('fn_estado_sesion_mesa', {
+        p_session_id: session.id,
+        p_qr_token: token,
+      })
+      if (estado && estado !== 'abierta') {
+        setSession(prev => (prev && prev.id === session.id) ? null : prev)
       }
     }, 15000)
     return () => clearInterval(interval)
-  }, [session?.id])
+  }, [session?.id, token])
 
   const change = useCallback((item, delta) => {
     // Si el plato tiene modificadores, no se suma directo — hay que

@@ -65,3 +65,31 @@ end;
 $$;
 
 grant execute on function fn_registrar_resena(uuid, text, integer, text) to anon, authenticated;
+
+-- ============================================================================
+-- El cliente anónimo NO puede leer table_sessions una vez que se
+-- cierra (la política RLS de anon solo deja ver estado = 'abierta'),
+-- así que ni Realtime ni un select directo le avisan cuando la mesa
+-- se cierra. Esta función expone únicamente el estado, validando que
+-- el qr_token corresponda a la mesa de esa sesión — Mesa.jsx la usa
+-- para hacer polling y detectar el cierre sin ampliar el permiso de
+-- lectura general sobre sesiones cerradas.
+-- ============================================================================
+create or replace function fn_estado_sesion_mesa(p_session_id uuid, p_qr_token text)
+returns text
+language plpgsql
+security definer
+as $$
+declare
+  v_estado text;
+begin
+  select ts.estado into v_estado
+  from table_sessions ts
+  join tables t on t.id = ts.table_id
+  where ts.id = p_session_id
+    and t.qr_token = p_qr_token;
+  return v_estado;
+end;
+$$;
+
+grant execute on function fn_estado_sesion_mesa(uuid, text) to anon, authenticated;
