@@ -67,6 +67,10 @@ const S = {
   cartLine: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '0.5px solid #2a2a2a' },
   confirmBtn: (busy) => ({ width: '100%', background: busy ? '#5a4a2a' : '#e8c97a', color: busy ? '#8a7560' : '#111', border: 'none', borderRadius: 10, padding: '14px', fontSize: 15, fontWeight: 500, cursor: busy ? 'not-allowed' : 'pointer', fontFamily: "'Inter', sans-serif", marginTop: 16 }),
   backLink: { fontSize: 13, color: '#8a7560', cursor: 'pointer', marginBottom: 10 },
+  upsellCard: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, background: '#1a1a1a', border: '0.5px dashed #4a3c25', borderRadius: 10, padding: '10px 12px', marginBottom: 8 },
+  upsellMsg: { fontSize: 13, color: '#f0e8d8' },
+  upsellPrecio: { fontSize: 12, color: '#8a7560', marginTop: 2 },
+  upsellBtn: { flexShrink: 0, background: 'transparent', border: '0.5px solid #e8c97a', borderRadius: 8, padding: '7px 12px', fontSize: 12, fontWeight: 500, color: '#e8c97a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" },
 }
 
 export default function Camarero() {
@@ -86,6 +90,7 @@ export default function Camarero() {
   const [categories, setCategories] = useState([])
   const [items, setItems] = useState([])
   const [itemModifiers, setItemModifiers] = useState({})
+  const [upsellRules, setUpsellRules] = useState([])
   const [modSelectorItem, setModSelectorItem] = useState(null)
   const [modSelectorChoices, setModSelectorChoices] = useState({})
   const [activeCat, setActiveCat] = useState('todos')
@@ -271,6 +276,13 @@ export default function Camarero() {
       .order('orden')
     setItems(menuItems || [])
     await loadModificadores((menuItems || []).map(i => i.id))
+
+    const { data: reglas } = await supabase
+      .from('upsell_rules')
+      .select('id, trigger_categoria_id, sugerido_item_id, mensaje')
+      .eq('restaurant_id', restaurantId)
+      .eq('activa', true)
+    setUpsellRules(reglas || [])
   }
 
   async function loadModificadores(itemIds) {
@@ -407,6 +419,15 @@ export default function Camarero() {
 
   const cartCount = Object.values(cart).reduce((a, b) => a + b.qty, 0)
   const cartTotal = Object.values(cart).reduce((s, i) => s + i.precio * i.qty, 0)
+
+  const categoriasEnCarrito = new Set(
+    Object.values(cart).map(v => items.find(i => i.id === v.menuItemId)?.category_id).filter(Boolean)
+  )
+  const itemIdsEnCarrito = new Set(Object.values(cart).map(v => v.menuItemId))
+  const sugerencias = upsellRules
+    .filter(r => categoriasEnCarrito.has(r.trigger_categoria_id) && !itemIdsEnCarrito.has(r.sugerido_item_id))
+    .map(r => ({ ...r, item: items.find(i => i.id === r.sugerido_item_id) }))
+    .filter(r => r.item)
   const filteredCats = activeCat === 'todos' ? categories : categories.filter(c => c.id === activeCat)
 
   async function confirmarPedido() {
@@ -740,6 +761,20 @@ export default function Camarero() {
                 </div>
               </div>
             ))}
+            {sugerencias.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                {sugerencias.map(s => (
+                  <div key={s.id} style={S.upsellCard}>
+                    <div>
+                      <div style={S.upsellMsg}>{s.mensaje || `¿Agregás ${s.item.nombre}?`}</div>
+                      <div style={S.upsellPrecio}>{formatMoney(s.item.precio, restaurant?.moneda)}</div>
+                    </div>
+                    <button style={S.upsellBtn} onClick={() => change(s.item, 1)}>+ Añadir</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div style={{ ...S.cartLine, borderBottom: 'none', marginTop: 6 }}>
               <span style={{ fontSize: 15, fontWeight: 500 }}>Total</span>
               <span style={{ fontSize: 17, fontWeight: 500, color: '#e8c97a' }}>{formatMoney(cartTotal, restaurant?.moneda)}</span>

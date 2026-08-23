@@ -67,6 +67,10 @@ const S = {
   noteInput: { width: '100%', background: '#221c14', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '6px 10px', fontSize: 12, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', marginTop: 4, boxSizing: 'border-box' },
   noteLabel: { fontSize: 11, color: '#7a6a50', marginTop: 2, cursor: 'pointer' },
   notesTextarea: { width: '100%', background: '#221c14', border: '0.5px solid #3a2e20', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', resize: 'vertical', minHeight: 50, boxSizing: 'border-box', marginTop: 6 },
+  upsellCard: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, background: '#221c14', border: '0.5px dashed #4a3c25', borderRadius: 10, padding: '10px 12px', marginBottom: 8 },
+  upsellMsg: { fontSize: 13, color: '#f0e8d8' },
+  upsellPrecio: { fontSize: 12, color: '#8a7560', marginTop: 2 },
+  upsellBtn: { flexShrink: 0, background: 'transparent', border: '0.5px solid #e8c97a', borderRadius: 8, padding: '7px 12px', fontSize: 12, fontWeight: 500, color: '#e8c97a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" },
 }
 
 export default function Mesa() {
@@ -77,6 +81,7 @@ export default function Mesa() {
   const [categories, setCategories] = useState([])
   const [items, setItems] = useState([])
   const [itemModifiers, setItemModifiers] = useState({}) // menu_item_id -> [{grupo_id, grupo_nombre, obligatorio, tipo_seleccion, opciones}]
+  const [upsellRules, setUpsellRules] = useState([]) // [{id, trigger_categoria_id, sugerido_item_id, mensaje}]
   const [modSelectorItem, setModSelectorItem] = useState(null) // el plato que se está configurando, o null
   const [modSelectorChoices, setModSelectorChoices] = useState({}) // { [grupo_id]: opcion_id | [opcion_id, ...] }
   const [cart, setCart] = useState({})
@@ -132,6 +137,13 @@ export default function Mesa() {
       .order('orden')
     setItems(menuItems || [])
     await loadModificadores((menuItems || []).map(i => i.id))
+
+    const { data: reglas } = await supabase
+      .from('upsell_rules')
+      .select('id, trigger_categoria_id, sugerido_item_id, mensaje')
+      .eq('restaurant_id', restaurantId)
+      .eq('activa', true)
+    setUpsellRules(reglas || [])
   }
 
   // Trae los modificadores de TODOS los platos de una sola vez (4
@@ -359,6 +371,17 @@ export default function Mesa() {
 
   const cartCount = Object.values(cart).reduce((a, b) => a + b.qty, 0)
   const cartTotal = Object.values(cart).reduce((s, i) => s + i.precio * i.qty, 0)
+
+  // Sugerencias de upsell: reglas cuya categoría disparadora está
+  // representada en el carrito, excluyendo lo que ya se agregó.
+  const categoriasEnCarrito = new Set(
+    Object.values(cart).map(v => items.find(i => i.id === v.menuItemId)?.category_id).filter(Boolean)
+  )
+  const itemIdsEnCarrito = new Set(Object.values(cart).map(v => v.menuItemId))
+  const sugerencias = upsellRules
+    .filter(r => categoriasEnCarrito.has(r.trigger_categoria_id) && !itemIdsEnCarrito.has(r.sugerido_item_id))
+    .map(r => ({ ...r, item: items.find(i => i.id === r.sugerido_item_id) }))
+    .filter(r => r.item)
 
   // Si el restaurante eligió modo 'camarero', el cliente sigue viendo la
   // carta, "Mis pedidos" y puede llamar al camarero, pero no puede agregar
@@ -841,6 +864,20 @@ export default function Mesa() {
                   onChange={e => setOrderNote(e.target.value)}
                 />
               </div>
+
+              {sugerencias.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  {sugerencias.map(s => (
+                    <div key={s.id} style={S.upsellCard}>
+                      <div>
+                        <div style={S.upsellMsg}>{s.mensaje || `¿Agregás ${s.item.nombre}?`}</div>
+                        <div style={S.upsellPrecio}>{formatMoney(s.item.precio, restaurant?.moneda)}</div>
+                      </div>
+                      <button style={S.upsellBtn} onClick={() => change(s.item, 1)}>+ Añadir</button>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div style={S.totalRow}>
                 <span style={{ fontSize: 15, color: '#8a7560' }}>Total</span>
