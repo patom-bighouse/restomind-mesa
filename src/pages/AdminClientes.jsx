@@ -154,6 +154,7 @@ export default function AdminClientes() {
           <a href={`/admin/carta/${restaurantId}`} style={S.navTab(false)}>Carta</a>
           <a href={`/admin/clientes/${restaurantId}`} style={S.navTab(true)}>Clientes</a>
           <a href={`/admin/upsell/${restaurantId}`} style={S.navTab(false)}>Upsell</a>
+          <a href={`/admin/reservas/${restaurantId}`} style={S.navTab(false)}>Reservas</a>
           <a href={`/admin/config/${restaurantId}`} style={S.navTab(false)}>Configuración</a>
           <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
         </div>
