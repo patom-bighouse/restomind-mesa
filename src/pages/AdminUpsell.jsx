@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { formatMoney } from '../lib/money'
 import { useRestaurantModulos } from '../lib/modulos'
 
 const S = {
@@ -44,8 +43,8 @@ export default function AdminUpsell() {
   const [rules, setRules] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [triggerCat, setTriggerCat] = useState('')
-  const [sugeridoItem, setSugeridoItem] = useState('')
+  const [triggerItem, setTriggerItem] = useState('')
+  const [sugeridaCategoria, setSugeridaCategoria] = useState('')
   const [mensaje, setMensaje] = useState('')
   const [adding, setAdding] = useState(false)
 
@@ -73,7 +72,7 @@ export default function AdminUpsell() {
   async function loadRules() {
     const { data, error: err } = await supabase
       .from('upsell_rules')
-      .select('id, trigger_categoria_id, sugerido_item_id, mensaje, activa')
+      .select('id, trigger_item_id, sugerida_categoria_id, mensaje, activa')
       .eq('restaurant_id', restaurantId)
       .order('created_at', { ascending: false })
     if (err) { setError(err.message); return }
@@ -84,24 +83,24 @@ export default function AdminUpsell() {
   function nombreItem(id) { return items.find(i => i.id === id)?.nombre || '—' }
 
   async function addRule() {
-    if (!triggerCat || !sugeridoItem) return
+    if (!triggerItem || !sugeridaCategoria) return
     setError(null)
     setAdding(true)
     const { error: err } = await supabase
       .from('upsell_rules')
       .insert({
         restaurant_id: restaurantId,
-        trigger_categoria_id: triggerCat,
-        sugerido_item_id: sugeridoItem,
+        trigger_item_id: triggerItem,
+        sugerida_categoria_id: sugeridaCategoria,
         mensaje: mensaje.trim() || null,
       })
     setAdding(false)
     if (err) {
-      setError(err.code === '23505' ? 'Ya existe esa regla (misma categoría y plato sugerido).' : err.message)
+      setError(err.code === '23505' ? 'Ya existe esa regla (mismo plato y categoría sugerida).' : err.message)
       return
     }
-    setTriggerCat('')
-    setSugeridoItem('')
+    setTriggerItem('')
+    setSugeridaCategoria('')
     setMensaje('')
     await loadRules()
   }
@@ -113,7 +112,7 @@ export default function AdminUpsell() {
   }
 
   async function deleteRule(rule) {
-    if (!window.confirm(`¿Eliminar la regla "${nombreCategoria(rule.trigger_categoria_id)} → ${nombreItem(rule.sugerido_item_id)}"?`)) return
+    if (!window.confirm(`¿Eliminar la regla "${nombreItem(rule.trigger_item_id)} → ${nombreCategoria(rule.sugerida_categoria_id)}"?`)) return
     const { error: err } = await supabase.from('upsell_rules').delete().eq('id', rule.id)
     if (err) { setError(err.message); return }
     setRules(prev => prev.filter(r => r.id !== rule.id))
@@ -148,37 +147,44 @@ export default function AdminUpsell() {
       <div style={S.content}>
         <div style={S.sectionTitle}>Sugerencias automáticas</div>
         <div style={S.sectionHint}>
-          Cuando el cliente agrega un plato de la categoría disparadora a su pedido, le aparece una sugerencia
-          para sumar el plato elegido con un toque — en la carta de Mesa y en la pantalla del camarero.
+          Cuando el cliente agrega el plato disparador a su pedido, le aparece una sugerencia para explorar
+          la categoría elegida — en la carta de Mesa y en la pantalla del camarero. Podés crear varias reglas
+          con distintos platos disparadores apuntando a la misma categoría sugerida.
         </div>
 
         {error && <div style={S.error}>{error}</div>}
 
         <div style={S.addBar}>
           <div style={S.field}>
-            <span style={S.label}>Si agrega de...</span>
-            <select style={S.select} value={triggerCat} onChange={e => setTriggerCat(e.target.value)}>
-              <option value="">Elegí una categoría</option>
-              {categories.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            <span style={S.label}>Si agrega el plato...</span>
+            <select style={S.select} value={triggerItem} onChange={e => setTriggerItem(e.target.value)}>
+              <option value="">Elegí un plato</option>
+              {categories.map(cat => (
+                <optgroup key={cat.id} label={cat.nombre}>
+                  {items.filter(i => i.category_id === cat.id).map(i => (
+                    <option key={i.id} value={i.id}>{i.nombre}</option>
+                  ))}
+                </optgroup>
+              ))}
             </select>
           </div>
           <div style={S.field}>
-            <span style={S.label}>Sugerir</span>
-            <select style={S.select} value={sugeridoItem} onChange={e => setSugeridoItem(e.target.value)}>
-              <option value="">Elegí un plato</option>
-              {items.map(i => <option key={i.id} value={i.id}>{i.nombre}</option>)}
+            <span style={S.label}>Sugerir la categoría</span>
+            <select style={S.select} value={sugeridaCategoria} onChange={e => setSugeridaCategoria(e.target.value)}>
+              <option value="">Elegí una categoría</option>
+              {categories.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </select>
           </div>
           <div style={{ ...S.field, flex: 1 }}>
             <span style={S.label}>Mensaje (opcional)</span>
             <input
               style={S.input}
-              placeholder='Ej. "¿Le sumamos un café con el postre?"'
+              placeholder='Ej. "¿Le sumamos un postre con el café?"'
               value={mensaje}
               onChange={e => setMensaje(e.target.value)}
             />
           </div>
-          <button style={S.addBtn} onClick={addRule} disabled={adding || !triggerCat || !sugeridoItem}>
+          <button style={S.addBtn} onClick={addRule} disabled={adding || !triggerItem || !sugeridaCategoria}>
             {adding ? 'Añadiendo...' : '+ Añadir regla'}
           </button>
         </div>
@@ -198,13 +204,9 @@ export default function AdminUpsell() {
               {rules.map(r => (
                 <tr key={r.id} style={{ ...S.row, opacity: r.activa ? 1 : 0.5 }}>
                   <td style={S.td}>
-                    {nombreCategoria(r.trigger_categoria_id)}
+                    {nombreItem(r.trigger_item_id)}
                     <span style={S.arrow}>→</span>
-                    {nombreItem(r.sugerido_item_id)}
-                    {' '}
-                    <span style={{ color: '#7a6a50', fontSize: 12 }}>
-                      ({formatMoney(items.find(i => i.id === r.sugerido_item_id)?.precio, restaurant?.moneda)})
-                    </span>
+                    {nombreCategoria(r.sugerida_categoria_id)}
                   </td>
                   <td style={S.td}>
                     {r.mensaje ? <span style={S.mensajeText}>"{r.mensaje}"</span> : <span style={{ color: '#555' }}>—</span>}

@@ -1,20 +1,28 @@
 -- ============================================================================
 -- Reglas de upsell automáticas: el dueño define "si el cliente agrega
--- algo de la categoría X, sugerí el plato Y" (ej. Principales -> Flan
--- casero). Se evalúan en el carrito de Mesa.jsx y Camarero.jsx —
--- ambas pantallas leen las mismas reglas, sea cual sea el modo de
--- pedidos del restaurante.
+-- el plato X, sugerí explorar la categoría Y" (ej. Café -> Postres).
+-- El disparador es un plato puntual (no toda una categoría), y lo
+-- sugerido es una categoría entera (no un plato puntual) — así el
+-- cliente elige qué llevarse dentro de esa categoría en vez de que se
+-- le imponga un único producto. Varias reglas pueden apuntar a la
+-- misma categoría sugerida desde distintos platos disparadores.
+--
+-- Reemplaza la versión anterior (categoría disparadora -> plato
+-- sugerido), que todavía no llegó a producción — se dropea y recrea
+-- entera en vez de alterar columnas, no hay datos reales que preservar.
 -- ============================================================================
 
-create table if not exists upsell_rules (
+drop table if exists upsell_rules cascade;
+
+create table upsell_rules (
   id uuid primary key default gen_random_uuid(),
   restaurant_id uuid not null references restaurants(id) on delete cascade,
-  trigger_categoria_id uuid not null references categories(id) on delete cascade,
-  sugerido_item_id uuid not null references menu_items(id) on delete cascade,
+  trigger_item_id uuid not null references menu_items(id) on delete cascade,
+  sugerida_categoria_id uuid not null references categories(id) on delete cascade,
   mensaje text,
   activa boolean not null default true,
   created_at timestamp with time zone not null default now(),
-  unique (restaurant_id, trigger_categoria_id, sugerido_item_id)
+  unique (restaurant_id, trigger_item_id, sugerida_categoria_id)
 );
 
 alter table upsell_rules enable row level security;

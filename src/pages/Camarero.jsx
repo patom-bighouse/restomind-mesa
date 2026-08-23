@@ -69,7 +69,6 @@ const S = {
   backLink: { fontSize: 13, color: '#8a7560', cursor: 'pointer', marginBottom: 10 },
   upsellCard: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, background: '#1a1a1a', border: '0.5px dashed #4a3c25', borderRadius: 10, padding: '10px 12px', marginBottom: 8 },
   upsellMsg: { fontSize: 13, color: '#f0e8d8' },
-  upsellPrecio: { fontSize: 12, color: '#8a7560', marginTop: 2 },
   upsellBtn: { flexShrink: 0, background: 'transparent', border: '0.5px solid #e8c97a', borderRadius: 8, padding: '7px 12px', fontSize: 12, fontWeight: 500, color: '#e8c97a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" },
 }
 
@@ -279,7 +278,7 @@ export default function Camarero() {
 
     const { data: reglas } = await supabase
       .from('upsell_rules')
-      .select('id, trigger_categoria_id, sugerido_item_id, mensaje')
+      .select('id, trigger_item_id, sugerida_categoria_id, mensaje')
       .eq('restaurant_id', restaurantId)
       .eq('activa', true)
     setUpsellRules(reglas || [])
@@ -420,14 +419,19 @@ export default function Camarero() {
   const cartCount = Object.values(cart).reduce((a, b) => a + b.qty, 0)
   const cartTotal = Object.values(cart).reduce((s, i) => s + i.precio * i.qty, 0)
 
+  const itemIdsEnCarrito = new Set(Object.values(cart).map(v => v.menuItemId))
   const categoriasEnCarrito = new Set(
     Object.values(cart).map(v => items.find(i => i.id === v.menuItemId)?.category_id).filter(Boolean)
   )
-  const itemIdsEnCarrito = new Set(Object.values(cart).map(v => v.menuItemId))
-  const sugerencias = upsellRules
-    .filter(r => categoriasEnCarrito.has(r.trigger_categoria_id) && !itemIdsEnCarrito.has(r.sugerido_item_id))
-    .map(r => ({ ...r, item: items.find(i => i.id === r.sugerido_item_id) }))
-    .filter(r => r.item)
+  const categoriasSugeridas = new Map()
+  upsellRules.forEach(r => {
+    if (!itemIdsEnCarrito.has(r.trigger_item_id)) return
+    if (categoriasEnCarrito.has(r.sugerida_categoria_id)) return
+    if (!categoriasSugeridas.has(r.sugerida_categoria_id)) categoriasSugeridas.set(r.sugerida_categoria_id, r)
+  })
+  const sugerencias = [...categoriasSugeridas.values()]
+    .map(r => ({ ...r, categoria: categories.find(c => c.id === r.sugerida_categoria_id) }))
+    .filter(r => r.categoria)
   const filteredCats = activeCat === 'todos' ? categories : categories.filter(c => c.id === activeCat)
 
   async function confirmarPedido() {
@@ -764,12 +768,14 @@ export default function Camarero() {
             {sugerencias.length > 0 && (
               <div style={{ marginTop: 12 }}>
                 {sugerencias.map(s => (
-                  <div key={s.id} style={S.upsellCard}>
-                    <div>
-                      <div style={S.upsellMsg}>{s.mensaje || `¿Agregás ${s.item.nombre}?`}</div>
-                      <div style={S.upsellPrecio}>{formatMoney(s.item.precio, restaurant?.moneda)}</div>
-                    </div>
-                    <button style={S.upsellBtn} onClick={() => change(s.item, 1)}>+ Añadir</button>
+                  <div key={s.sugerida_categoria_id} style={S.upsellCard}>
+                    <div style={S.upsellMsg}>{s.mensaje || `¿Le sumamos algo de ${s.categoria.nombre}?`}</div>
+                    <button
+                      style={S.upsellBtn}
+                      onClick={() => { setActiveCat(s.sugerida_categoria_id); setShowCart(false) }}
+                    >
+                      Ver {s.categoria.nombre}
+                    </button>
                   </div>
                 ))}
               </div>
