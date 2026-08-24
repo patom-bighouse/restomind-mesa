@@ -339,6 +339,21 @@ export default function AdminMesas() {
 
     setError(null)
     setClosingSession(true)
+
+    // Mesa abierta por error o sin consumo real (0 pedidos y 0 pagos
+    // registrados): no queda nada que valga la pena conservar, así
+    // que se borra directo en vez de guardarla como "cerrada" — no
+    // ensucia estadísticas ni pide una reseña sobre una visita que
+    // nunca existió.
+    if ((pedidos || []).length === 0 && (pagos || []).length === 0) {
+      const { error: err } = await supabase.from('table_sessions').delete().eq('id', session.id)
+      setClosingSession(false)
+      if (err) { setError(err.message); return }
+      setSessions(prev => { const next = { ...prev }; delete next[table.id]; return next })
+      setCuentaModal(null)
+      return
+    }
+
     const { error: err } = await supabase
       .from('table_sessions')
       .update({
