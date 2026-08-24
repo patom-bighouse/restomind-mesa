@@ -10,3 +10,12 @@
 alter table tables
   add column if not exists pos_x numeric,
   add column if not exists pos_y numeric;
+
+-- Forma de la mesa en el plano — cada zona puede combinar libremente
+-- mesas redondas y rectangulares, no es una elección por zona sino
+-- por mesa individual.
+alter table tables
+  add column if not exists forma text not null default 'circular';
+
+alter table tables drop constraint if exists tables_forma_check;
+alter table tables add constraint tables_forma_check check (forma in ('circular', 'rectangular'));

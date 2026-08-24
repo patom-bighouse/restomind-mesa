@@ -70,8 +70,11 @@ const S = {
   reservaBanner: { fontSize: 12, color: '#e8c97a', background: '#2a2010', border: '0.5px solid #5a4515', borderRadius: 8, padding: '6px 12px', marginBottom: 10, display: 'inline-block' },
   planoCanvas: { position: 'relative', width: '100%', height: 420, background: '#161616', backgroundImage: 'radial-gradient(circle, #2a2a2a 1px, transparent 1px)', backgroundSize: '22px 22px', border: '0.5px solid #2a2a2a', borderRadius: 14, marginBottom: 12, overflow: 'hidden' },
   planoHint: { fontSize: 12, color: '#7a6a50', marginBottom: 10 },
-  mesaCirculo: (activa, ocupada, llamando, size) => ({
-    position: 'absolute', width: size, height: size, borderRadius: '50%',
+  mesaForma: (forma, activa, ocupada, llamando, size) => ({
+    position: 'absolute',
+    width: forma === 'rectangular' ? size * 1.5 : size,
+    height: forma === 'rectangular' ? size * 0.72 : size,
+    borderRadius: forma === 'rectangular' ? 10 : '50%',
     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
     background: !activa ? '#1a1a1a' : (ocupada ? '#e8c97a' : '#141414'),
     border: `2px solid ${!activa ? '#333' : (llamando ? '#d4a017' : (ocupada ? '#e8c97a' : '#3a7a4a'))}`,
@@ -82,6 +85,7 @@ const S = {
   }),
   mesaCirculoNum: { fontSize: 15, fontWeight: 600, lineHeight: 1 },
   mesaCirculoSub: { fontSize: 10, marginTop: 2, opacity: 0.85 },
+  formaToggleBtn: { position: 'absolute', top: -8, right: -8, width: 22, height: 22, borderRadius: '50%', background: '#1a1a1a', border: '0.5px solid #e8c97a', color: '#e8c97a', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 2 },
 }
 
 export default function AdminMesas() {
@@ -101,6 +105,7 @@ export default function AdminMesas() {
   const [newNumero, setNewNumero] = useState('')
   const [newZona, setNewZona] = useState('interior')
   const [newCapacidad, setNewCapacidad] = useState('4')
+  const [newForma, setNewForma] = useState('circular')
   const [adding, setAdding] = useState(false)
   const [vista, setVista] = useState('grilla') // 'grilla' | 'plano'
   const [editandoPlano, setEditandoPlano] = useState(false)
@@ -183,7 +188,7 @@ export default function AdminMesas() {
     const { data: rest } = await supabase.from('restaurants').select('nombre, moneda, config').eq('id', restaurantId).single()
     setRestaurant(rest)
     const { data: tabs, error: err } = await supabase
-      .from('tables').select('id, numero, zona, capacidad, qr_token, activa, pos_x, pos_y')
+      .from('tables').select('id, numero, zona, capacidad, qr_token, activa, pos_x, pos_y, forma')
       .eq('restaurant_id', restaurantId).order('numero')
     if (err) { setError(err.message); setLoading(false); return }
     setTables(tabs || [])
@@ -401,7 +406,7 @@ export default function AdminMesas() {
     const { x: pos_x, y: pos_y } = posicionPorDefecto(zonaCount)
     const { data, error: err } = await supabase
       .from('tables')
-      .insert({ restaurant_id: restaurantId, numero: parseInt(newNumero), zona: newZona, capacidad: parseInt(newCapacidad), pos_x, pos_y })
+      .insert({ restaurant_id: restaurantId, numero: parseInt(newNumero), zona: newZona, capacidad: parseInt(newCapacidad), pos_x, pos_y, forma: newForma })
       .select().single()
     if (err) { setError(err.message); setAdding(false); return }
     const url = `${BASE_URL}/mesa/${data.qr_token}`
@@ -420,6 +425,12 @@ export default function AdminMesas() {
       .eq('id', table.id)
     if (err) { setError(err.message); return }
     setTables(prev => prev.map(t => t.id === table.id ? { ...t, activa: newActiva } : t))
+  }
+
+  async function cambiarForma(table) {
+    const nuevaForma = table.forma === 'rectangular' ? 'circular' : 'rectangular'
+    setTables(prev => prev.map(t => t.id === table.id ? { ...t, forma: nuevaForma } : t))
+    await supabase.from('tables').update({ forma: nuevaForma }).eq('id', table.id)
   }
 
   async function regenerateQR(table) {
@@ -548,6 +559,10 @@ export default function AdminMesas() {
             {ZONAS.map(z => <option key={z} value={z}>{z.charAt(0).toUpperCase() + z.slice(1)}</option>)}
           </select>
           <input style={{ ...S.input, width: 80 }} type="number" placeholder="Cap." value={newCapacidad} onChange={e => setNewCapacidad(e.target.value)} min="1" max="20" />
+          <select style={S.select} value={newForma} onChange={e => setNewForma(e.target.value)}>
+            <option value="circular">Redonda</option>
+            <option value="rectangular">Rectangular</option>
+          </select>
           <button style={S.addBtn} onClick={addTable} disabled={adding}>
             {adding ? 'Añadiendo...' : '+ Añadir mesa'}
           </button>
@@ -696,7 +711,7 @@ export default function AdminMesas() {
                       return (
                         <div
                           key={table.id}
-                          style={{ ...S.mesaCirculo(table.activa, ocupada, llamando, size), left: `${pos.x}%`, top: `${pos.y}%`, cursor: editandoPlano ? 'grab' : (table.activa ? 'pointer' : 'default') }}
+                          style={{ ...S.mesaForma(table.forma, table.activa, ocupada, llamando, size), left: `${pos.x}%`, top: `${pos.y}%`, cursor: editandoPlano ? 'grab' : (table.activa ? 'pointer' : 'default') }}
                           onPointerDown={(e) => handleMesaPointerDown(table, e)}
                           onClick={() => {
                             if (editandoPlano || !table.activa) return
@@ -704,6 +719,16 @@ export default function AdminMesas() {
                           }}
                           title={`Mesa ${table.numero} · ${table.capacidad} personas${ocupada ? ' · en servicio' : ''}`}
                         >
+                          {editandoPlano && (
+                            <button
+                              style={S.formaToggleBtn}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => { e.stopPropagation(); cambiarForma(table) }}
+                              title="Cambiar forma"
+                            >
+                              {table.forma === 'rectangular' ? '●' : '▭'}
+                            </button>
+                          )}
                           <div style={S.mesaCirculoNum}>{table.numero}</div>
                           {ocupada && <div style={S.mesaCirculoSub}>{sessions[table.id].comensales || table.capacidad}p</div>}
                           {!table.activa && <div style={S.mesaCirculoSub}>off</div>}
