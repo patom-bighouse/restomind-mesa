@@ -111,6 +111,12 @@ export default function Mesa() {
   const [enviandoResena, setEnviandoResena] = useState(false)
   const [resenaError, setResenaError] = useState(null)
   const prevSessionIdRef = useRef(undefined)
+  // Se marca en true justo antes de vaciar `session` cuando la fila de
+  // table_sessions se borró directamente (mesa cerrada sin ningún
+  // pedido — ver AdminMesas.jsx), en vez de haberse actualizado a
+  // 'cerrada'. En ese caso no hay nada que calificar, así que el
+  // efecto de abajo no debe disparar la pantalla de reseña.
+  const sesionBorradaSinResenaRef = useRef(false)
 
   // Cada vez que la sesión de la mesa cambia (se cierra, se reabre,
   // o pasa a ser una sesión distinta), vaciamos cualquier carrito sin
@@ -129,13 +135,17 @@ export default function Mesa() {
       // Si había una sesión y ahora no hay ninguna (no es que se abrió
       // otra para el siguiente grupo), es que la mesa se acaba de
       // cerrar — ahí pedimos la reseña antes de volver a la pantalla
-      // de espera.
+      // de espera, salvo que se haya cerrado sin ningún pedido.
       if (previousId && !currentId) {
-        setLastClosedSessionId(previousId)
-        setResenaEstado('pendiente')
-        setResenaPuntuacion(0)
-        setResenaComentario('')
-        setResenaError(null)
+        if (sesionBorradaSinResenaRef.current) {
+          sesionBorradaSinResenaRef.current = false
+        } else {
+          setLastClosedSessionId(previousId)
+          setResenaEstado('pendiente')
+          setResenaPuntuacion(0)
+          setResenaComentario('')
+          setResenaError(null)
+        }
       }
     }
     prevSessionIdRef.current = currentId
@@ -293,7 +303,9 @@ export default function Mesa() {
         event: '*', schema: 'public', table: 'table_sessions',
         filter: `table_id=eq.${table.id}`
       }, (payload) => {
-        if (payload.eventType === 'DELETE') { setSession(null); return }
+        // Una sesión borrada (no actualizada a 'cerrada') significa
+        // que se cerró sin ningún pedido — no hay nada que calificar.
+        if (payload.eventType === 'DELETE') { sesionBorradaSinResenaRef.current = true; setSession(null); return }
         const row = payload.new
         if (row.estado === 'abierta') setSession(row)
         else setSession(prev => (prev && prev.id === row.id) ? null : prev)
@@ -316,7 +328,11 @@ export default function Mesa() {
         p_session_id: session.id,
         p_qr_token: token,
       })
-      if (estado && estado !== 'abierta') {
+      if (!estado) {
+        // La fila ya no existe: se cerró sin pedidos y se borró.
+        sesionBorradaSinResenaRef.current = true
+        setSession(prev => (prev && prev.id === session.id) ? null : prev)
+      } else if (estado !== 'abierta') {
         setSession(prev => (prev && prev.id === session.id) ? null : prev)
       }
     }, 15000)
