@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/money'
@@ -12,6 +12,22 @@ import QRCode from 'qrcode'
 // correcto, no queda fijo a un solo dominio.
 const BASE_URL = window.location.origin
 const ZONAS = ['interior', 'terraza', 'privado', 'barra']
+
+// Posición de arranque (en % del lienzo) para una mesa que todavía no
+// se posicionó a mano — la reparte en una grilla simple según cuántas
+// mesas ya hay en esa zona, para que no queden todas amontonadas en
+// el mismo punto hasta que el dueño las arrastre a su lugar real.
+function posicionPorDefecto(indice) {
+  const columnas = 5
+  const col = indice % columnas
+  const fila = Math.floor(indice / columnas)
+  return { x: 12 + col * 19, y: 18 + fila * 28 }
+}
+
+function posicionMesa(table, indice) {
+  if (table.pos_x != null && table.pos_y != null) return { x: table.pos_x, y: table.pos_y }
+  return posicionPorDefecto(indice)
+}
 
 const S = {
   app: { minHeight: '100vh', background: '#111', color: '#f0e8d8', fontFamily: "'Inter', sans-serif" },
@@ -48,6 +64,28 @@ const S = {
   statNum: (color) => ({ fontSize: 28, fontWeight: 600, color: color, fontFamily: "'Playfair Display', serif", lineHeight: 1 }),
   statLabel: { fontSize: 12, color: '#7a6a50' },
   loading: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: '#555', fontSize: 14 },
+  vistaToggle: { display: 'flex', gap: 6, background: '#1a1a1a', border: '0.5px solid #2a2a2a', borderRadius: 10, padding: 4 },
+  vistaBtn: (active) => ({ background: active ? '#e8c97a' : 'transparent', color: active ? '#111' : '#8a7560', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }),
+  editarPlanoBtn: (activo) => ({ background: activo ? '#e8c97a' : 'transparent', color: activo ? '#111' : '#c4a85a', border: `0.5px solid ${activo ? '#e8c97a' : '#3a2e20'}`, borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }),
+  reservaBanner: { fontSize: 12, color: '#e8c97a', background: '#2a2010', border: '0.5px solid #5a4515', borderRadius: 8, padding: '6px 12px', marginBottom: 10, display: 'inline-block' },
+  planoCanvas: { position: 'relative', width: '100%', height: 420, background: '#161616', backgroundImage: 'radial-gradient(circle, #2a2a2a 1px, transparent 1px)', backgroundSize: '22px 22px', border: '0.5px solid #2a2a2a', borderRadius: 14, marginBottom: 12, overflow: 'hidden' },
+  planoHint: { fontSize: 12, color: '#7a6a50', marginBottom: 10 },
+  mesaForma: (forma, activa, ocupada, llamando, size) => ({
+    position: 'absolute',
+    width: forma === 'rectangular' ? size * 1.5 : size,
+    height: forma === 'rectangular' ? size * 0.72 : size,
+    borderRadius: forma === 'rectangular' ? 10 : '50%',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+    background: !activa ? '#1a1a1a' : (ocupada ? '#e8c97a' : '#141414'),
+    border: `2px solid ${!activa ? '#333' : (llamando ? '#d4a017' : (ocupada ? '#e8c97a' : '#3a7a4a'))}`,
+    boxShadow: llamando ? '0 0 0 5px rgba(212,160,23,0.3)' : 'none',
+    color: !activa ? '#555' : (ocupada ? '#111' : '#f0e8d8'),
+    opacity: activa ? 1 : 0.6,
+    transform: 'translate(-50%, -50%)', userSelect: 'none', touchAction: 'none',
+  }),
+  mesaCirculoNum: { fontSize: 15, fontWeight: 600, lineHeight: 1 },
+  mesaCirculoSub: { fontSize: 10, marginTop: 2, opacity: 0.85 },
+  formaToggleBtn: { position: 'absolute', top: -8, right: -8, width: 22, height: 22, borderRadius: '50%', background: '#1a1a1a', border: '0.5px solid #e8c97a', color: '#e8c97a', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 2 },
 }
 
 export default function AdminMesas() {
@@ -67,7 +105,13 @@ export default function AdminMesas() {
   const [newNumero, setNewNumero] = useState('')
   const [newZona, setNewZona] = useState('interior')
   const [newCapacidad, setNewCapacidad] = useState('4')
+  const [newForma, setNewForma] = useState('circular')
   const [adding, setAdding] = useState(false)
+  const [vista, setVista] = useState('grilla') // 'grilla' | 'plano'
+  const [editandoPlano, setEditandoPlano] = useState(false)
+  const [reservasHoy, setReservasHoy] = useState([])
+  const [dragPos, setDragPos] = useState({}) // table_id -> {x, y} mientras se arrastra
+  const draggingRef = useRef(null) // { tableId, containerEl } de la mesa que se está moviendo
 
   useEffect(() => { checkAuth() }, [])
 
@@ -144,14 +188,29 @@ export default function AdminMesas() {
     const { data: rest } = await supabase.from('restaurants').select('nombre, moneda, config').eq('id', restaurantId).single()
     setRestaurant(rest)
     const { data: tabs, error: err } = await supabase
-      .from('tables').select('id, numero, zona, capacidad, qr_token, activa')
+      .from('tables').select('id, numero, zona, capacidad, qr_token, activa, pos_x, pos_y, forma')
       .eq('restaurant_id', restaurantId).order('numero')
     if (err) { setError(err.message); setLoading(false); return }
     setTables(tabs || [])
     generateQRs(tabs || [])
     await loadSessions()
     await loadWaiterCalls()
+    await loadReservasHoy()
     setLoading(false)
+  }
+
+  // Reservas confirmadas o pendientes de hoy, para avisar en el plano
+  // "hay N reservas hoy en esta zona" — no se puede mostrar por mesa
+  // puntual porque una reserva no queda atada a una mesa específica.
+  async function loadReservasHoy() {
+    const hoy = new Date().toISOString().slice(0, 10)
+    const { data } = await supabase
+      .from('reservations')
+      .select('zona, personas, hora')
+      .eq('restaurant_id', restaurantId)
+      .eq('fecha', hoy)
+      .in('estado', ['pendiente', 'confirmada'])
+    setReservasHoy(data || [])
   }
 
   async function loadSessions() {
@@ -210,6 +269,36 @@ export default function AdminMesas() {
       .eq('id', session.id)
     if (err) { setError(err.message); return }
     setSessions(prev => ({ ...prev, [table.id]: { ...prev[table.id], comensales: valor } }))
+  }
+
+  // Arrastre de mesas en el plano — usa pointer capture para que el
+  // movimiento se siga registrando aunque el puntero salga del
+  // círculo mientras se arrastra. La posición se guarda en la base
+  // recién al soltar, no en cada movimiento.
+  function handleMesaPointerDown(table, e) {
+    if (!editandoPlano) return
+    e.preventDefault()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    draggingRef.current = { tableId: table.id, containerEl: e.currentTarget.parentElement }
+  }
+
+  function handleMesaPointerMove(e) {
+    const drag = draggingRef.current
+    if (!drag || !drag.containerEl) return
+    const rect = drag.containerEl.getBoundingClientRect()
+    const x = Math.min(97, Math.max(3, ((e.clientX - rect.left) / rect.width) * 100))
+    const y = Math.min(95, Math.max(5, ((e.clientY - rect.top) / rect.height) * 100))
+    setDragPos(prev => ({ ...prev, [drag.tableId]: { x, y } }))
+  }
+
+  async function handleMesaPointerUp(e) {
+    const drag = draggingRef.current
+    if (!drag) return
+    draggingRef.current = null
+    const pos = dragPos[drag.tableId]
+    if (!pos) return
+    setTables(prev => prev.map(t => t.id === drag.tableId ? { ...t, pos_x: pos.x, pos_y: pos.y } : t))
+    await supabase.from('tables').update({ pos_x: pos.x, pos_y: pos.y }).eq('id', drag.tableId)
   }
 
   function openCuentaModal(table, mode) {
@@ -313,9 +402,11 @@ export default function AdminMesas() {
     if (duplicate) { setError(`Ya existe la Mesa ${newNumero} en ${newZona}.`); return }
     setError(null)
     setAdding(true)
+    const zonaCount = tables.filter(t => t.zona === newZona).length
+    const { x: pos_x, y: pos_y } = posicionPorDefecto(zonaCount)
     const { data, error: err } = await supabase
       .from('tables')
-      .insert({ restaurant_id: restaurantId, numero: parseInt(newNumero), zona: newZona, capacidad: parseInt(newCapacidad) })
+      .insert({ restaurant_id: restaurantId, numero: parseInt(newNumero), zona: newZona, capacidad: parseInt(newCapacidad), pos_x, pos_y, forma: newForma })
       .select().single()
     if (err) { setError(err.message); setAdding(false); return }
     const url = `${BASE_URL}/mesa/${data.qr_token}`
@@ -334,6 +425,12 @@ export default function AdminMesas() {
       .eq('id', table.id)
     if (err) { setError(err.message); return }
     setTables(prev => prev.map(t => t.id === table.id ? { ...t, activa: newActiva } : t))
+  }
+
+  async function cambiarForma(table) {
+    const nuevaForma = table.forma === 'rectangular' ? 'circular' : 'rectangular'
+    setTables(prev => prev.map(t => t.id === table.id ? { ...t, forma: nuevaForma } : t))
+    await supabase.from('tables').update({ forma: nuevaForma }).eq('id', table.id)
   }
 
   async function regenerateQR(table) {
@@ -418,7 +515,20 @@ export default function AdminMesas() {
       </div>
 
       <div style={S.content}>
-        <div style={S.sectionTitle}>Gestión de mesas</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
+          <div style={{ ...S.sectionTitle, marginBottom: 0 }}>Gestión de mesas</div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            {vista === 'plano' && (
+              <button style={S.editarPlanoBtn(editandoPlano)} onClick={() => setEditandoPlano(v => !v)}>
+                {editandoPlano ? '✓ Listo' : '✏ Editar plano'}
+              </button>
+            )}
+            <div style={S.vistaToggle}>
+              <button style={S.vistaBtn(vista === 'grilla')} onClick={() => { setVista('grilla'); setEditandoPlano(false) }}>Grilla</button>
+              <button style={S.vistaBtn(vista === 'plano')} onClick={() => setVista('plano')}>Plano</button>
+            </div>
+          </div>
+        </div>
         {error && <div style={S.error}>{error}</div>}
 
         {waiterCalls.length > 0 && (
@@ -449,6 +559,10 @@ export default function AdminMesas() {
             {ZONAS.map(z => <option key={z} value={z}>{z.charAt(0).toUpperCase() + z.slice(1)}</option>)}
           </select>
           <input style={{ ...S.input, width: 80 }} type="number" placeholder="Cap." value={newCapacidad} onChange={e => setNewCapacidad(e.target.value)} min="1" max="20" />
+          <select style={S.select} value={newForma} onChange={e => setNewForma(e.target.value)}>
+            <option value="circular">Redonda</option>
+            <option value="rectangular">Rectangular</option>
+          </select>
           <button style={S.addBtn} onClick={addTable} disabled={adding}>
             {adding ? 'Añadiendo...' : '+ Añadir mesa'}
           </button>
@@ -477,7 +591,7 @@ export default function AdminMesas() {
         </div>
 
         {/* Mesas agrupadas por zona */}
-        {ZONAS.map(zona => {
+        {vista === 'grilla' && ZONAS.map(zona => {
           const zonaTablas = tables.filter(t => t.zona === zona).sort((a, b) => a.numero - b.numero)
           if (!zonaTablas.length) return null
           return (
@@ -559,6 +673,74 @@ export default function AdminMesas() {
             </div>
           )
         })}
+
+        {/* Plano visual por zona */}
+        {vista === 'plano' && (
+          <>
+            <div style={S.planoHint}>
+              {editandoPlano
+                ? 'Arrastrá las mesas hasta que el plano se parezca a tu salón real — se guarda solo al soltar.'
+                : 'Tocá una mesa para abrirla o ver su cuenta, igual que en la grilla.'}
+            </div>
+            {ZONAS.map(zona => {
+              const zonaTablas = tables.filter(t => t.zona === zona).sort((a, b) => a.numero - b.numero)
+              if (!zonaTablas.length) return null
+              const reservasZona = reservasHoy.filter(r => r.zona === zona)
+              const personasReservadas = reservasZona.reduce((s, r) => s + (r.personas || 0), 0)
+              return (
+                <div key={zona} style={S.zonaSection}>
+                  <div style={S.zonaHeader}>
+                    {zona.charAt(0).toUpperCase() + zona.slice(1)}
+                    <span style={S.zonaCount}>{zonaTablas.length} {zonaTablas.length === 1 ? 'mesa' : 'mesas'}</span>
+                  </div>
+                  {reservasZona.length > 0 && (
+                    <div style={S.reservaBanner}>
+                      📅 {reservasZona.length} {reservasZona.length === 1 ? 'reserva' : 'reservas'} hoy en {zona} · {personasReservadas} personas
+                    </div>
+                  )}
+                  <div
+                    style={S.planoCanvas}
+                    onPointerMove={handleMesaPointerMove}
+                    onPointerUp={handleMesaPointerUp}
+                  >
+                    {zonaTablas.map((table, idx) => {
+                      const llamando = waiterCalls.some(c => c.table_id === table.id)
+                      const ocupada = !!sessions[table.id]
+                      const size = Math.min(110, 46 + table.capacidad * 6)
+                      const pos = dragPos[table.id] || posicionMesa(table, idx)
+                      return (
+                        <div
+                          key={table.id}
+                          style={{ ...S.mesaForma(table.forma, table.activa, ocupada, llamando, size), left: `${pos.x}%`, top: `${pos.y}%`, cursor: editandoPlano ? 'grab' : (table.activa ? 'pointer' : 'default') }}
+                          onPointerDown={(e) => handleMesaPointerDown(table, e)}
+                          onClick={() => {
+                            if (editandoPlano || !table.activa) return
+                            ocupada ? openCuentaModal(table, 'cerrar') : openTable(table)
+                          }}
+                          title={`Mesa ${table.numero} · ${table.capacidad} personas${ocupada ? ' · en servicio' : ''}`}
+                        >
+                          {editandoPlano && (
+                            <button
+                              style={S.formaToggleBtn}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => { e.stopPropagation(); cambiarForma(table) }}
+                              title="Cambiar forma"
+                            >
+                              {table.forma === 'rectangular' ? '●' : '▭'}
+                            </button>
+                          )}
+                          <div style={S.mesaCirculoNum}>{table.numero}</div>
+                          {ocupada && <div style={S.mesaCirculoSub}>{sessions[table.id].comensales || table.capacidad}p</div>}
+                          {!table.activa && <div style={S.mesaCirculoSub}>off</div>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </>
+        )}
       </div>
 
       {cuentaModal && (

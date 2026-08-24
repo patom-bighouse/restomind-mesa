@@ -301,7 +301,12 @@ export default function AdminDashboard() {
     ...s,
     pedidos: pedidosPorSesion[s.id]?.count || 0,
     totalCalculado: pedidosPorSesion[s.id]?.total ?? parseFloat(s.total || 0),
-  })).sort((a, b) => new Date(b.abierta_at) - new Date(a.abierta_at))
+  }))
+    // Mesas abiertas y cerradas sin ningún pedido (se abrieron por error,
+    // o solo se probó el flujo) no son visitas reales — no aportan nada
+    // al panel y ensucian la lista.
+    .filter(s => s.pedidos > 0)
+    .sort((a, b) => new Date(b.abierta_at) - new Date(a.abierta_at))
 
   const promedioResenas = resenas.length > 0
     ? resenas.reduce((sum, r) => sum + r.puntuacion, 0) / resenas.length
