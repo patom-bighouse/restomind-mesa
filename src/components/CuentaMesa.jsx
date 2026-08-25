@@ -426,7 +426,7 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
             )}
           </div>
           {onConfirmCerrar && !cubierto && (
-            <div style={S.cierreBloqueado}>Registrá el cobro completo para poder cerrar la mesa</div>
+            <div style={S.cierreBloqueado}>Registra el cobro completo para poder cerrar la mesa</div>
           )}
 
           {onConfirmExencion && !cubierto && (

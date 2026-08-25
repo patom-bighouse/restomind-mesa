@@ -70,22 +70,30 @@ const S = {
   reservaBanner: { fontSize: 12, color: '#e8c97a', background: '#2a2010', border: '0.5px solid #5a4515', borderRadius: 8, padding: '6px 12px', marginBottom: 10, display: 'inline-block' },
   planoCanvas: { position: 'relative', width: '100%', height: 420, background: '#161616', backgroundImage: 'radial-gradient(circle, #2a2a2a 1px, transparent 1px)', backgroundSize: '22px 22px', border: '0.5px solid #2a2a2a', borderRadius: 14, marginBottom: 12, overflow: 'hidden' },
   planoHint: { fontSize: 12, color: '#7a6a50', marginBottom: 10 },
-  mesaForma: (forma, activa, ocupada, llamando, size) => ({
+  mesaForma: (forma, activa, ocupada, llamando, size, sucia) => ({
     position: 'absolute',
     width: forma === 'rectangular' ? size * 1.5 : size,
     height: forma === 'rectangular' ? size * 0.72 : size,
     borderRadius: forma === 'rectangular' ? 10 : '50%',
     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-    background: !activa ? '#1a1a1a' : (ocupada ? '#e8c97a' : '#141414'),
-    border: `2px solid ${!activa ? '#333' : (llamando ? '#d4a017' : (ocupada ? '#e8c97a' : '#3a7a4a'))}`,
+    background: !activa ? '#1a1a1a' : (ocupada ? '#e8c97a' : (sucia ? '#2a1c05' : '#141414')),
+    border: `2px solid ${!activa ? '#333' : (llamando ? '#d4a017' : (ocupada ? '#e8c97a' : (sucia ? '#d4a017' : '#3a7a4a')))}`,
     boxShadow: llamando ? '0 0 0 5px rgba(212,160,23,0.3)' : 'none',
-    color: !activa ? '#555' : (ocupada ? '#111' : '#f0e8d8'),
+    color: !activa ? '#555' : (ocupada ? '#111' : (sucia ? '#e8c97a' : '#f0e8d8')),
     opacity: activa ? 1 : 0.6,
     transform: 'translate(-50%, -50%)', userSelect: 'none', touchAction: 'none',
   }),
   mesaCirculoNum: { fontSize: 15, fontWeight: 600, lineHeight: 1 },
   mesaCirculoSub: { fontSize: 10, marginTop: 2, opacity: 0.85 },
   formaToggleBtn: { position: 'absolute', top: -8, right: -8, width: 22, height: 22, borderRadius: '50%', background: '#1a1a1a', border: '0.5px solid #e8c97a', color: '#e8c97a', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 2 },
+  limpiezaOverlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 },
+  limpiezaBox: { background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 16, padding: 24, width: '100%', maxWidth: 380 },
+  limpiezaTitle: { fontFamily: "'Playfair Display', serif", fontSize: 17, color: '#e8c97a', marginBottom: 4 },
+  limpiezaSub: { fontSize: 13, color: '#8a7560', marginBottom: 18 },
+  limpiezaPasoRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '0.5px solid #2a2a2a', cursor: 'pointer' },
+  limpiezaCheck: (marcado) => ({ width: 22, height: 22, borderRadius: 6, border: `1.5px solid ${marcado ? '#2ecc71' : '#3a2e20'}`, background: marcado ? '#2ecc71' : 'transparent', color: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }),
+  limpiezaTexto: (marcado) => ({ fontSize: 14, color: marcado ? '#7a6a50' : '#f0e8d8', textDecoration: marcado ? 'line-through' : 'none' }),
+  limpiezaCloseBtn: { width: '100%', background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 10, padding: 12, fontSize: 14, color: '#8a7560', cursor: 'pointer', fontFamily: "'Inter', sans-serif", marginTop: 16 },
 }
 
 export default function AdminMesas() {
@@ -112,6 +120,8 @@ export default function AdminMesas() {
   const [reservasHoy, setReservasHoy] = useState([])
   const [dragPos, setDragPos] = useState({}) // table_id -> {x, y} mientras se arrastra
   const draggingRef = useRef(null) // { tableId, containerEl } de la mesa que se está moviendo
+  const [limpiezaPasos, setLimpiezaPasos] = useState([])
+  const [limpiezaModal, setLimpiezaModal] = useState(null) // table | null
 
   useEffect(() => { checkAuth() }, [])
 
@@ -174,6 +184,21 @@ export default function AdminMesas() {
           return { ...prev, session: row }
         })
       })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'tables',
+        filter: `restaurant_id=eq.${restaurantId}`
+      }, (payload) => {
+        // Mantiene sincronizado el progreso del checklist de limpieza
+        // (y cualquier otro cambio de la mesa) entre pestañas/dispositivos
+        // distintos — ej. el camarero tilda un paso desde su teléfono.
+        setTables(prev => prev.map(t => t.id === payload.new.id ? { ...t, ...payload.new } : t))
+        setLimpiezaModal(prev => {
+          if (!prev || prev.id !== payload.new.id) return prev
+          return payload.new.necesita_limpieza ? { ...prev, ...payload.new } : null
+        })
+      })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [restaurantId])
@@ -188,7 +213,7 @@ export default function AdminMesas() {
     const { data: rest } = await supabase.from('restaurants').select('nombre, moneda, config').eq('id', restaurantId).single()
     setRestaurant(rest)
     const { data: tabs, error: err } = await supabase
-      .from('tables').select('id, numero, zona, capacidad, qr_token, activa, pos_x, pos_y, forma')
+      .from('tables').select('id, numero, zona, capacidad, qr_token, activa, pos_x, pos_y, forma, necesita_limpieza, limpieza_progreso')
       .eq('restaurant_id', restaurantId).order('numero')
     if (err) { setError(err.message); setLoading(false); return }
     setTables(tabs || [])
@@ -196,7 +221,18 @@ export default function AdminMesas() {
     await loadSessions()
     await loadWaiterCalls()
     await loadReservasHoy()
+    await loadLimpiezaPasos()
     setLoading(false)
+  }
+
+  async function loadLimpiezaPasos() {
+    const { data } = await supabase
+      .from('limpieza_pasos')
+      .select('id, texto, orden')
+      .eq('restaurant_id', restaurantId)
+      .eq('activo', true)
+      .order('orden')
+    setLimpiezaPasos(data || [])
   }
 
   // Reservas confirmadas o pendientes de hoy, para avisar en el plano
@@ -241,6 +277,7 @@ export default function AdminMesas() {
   }
 
   async function openTable(table) {
+    if (table.necesita_limpieza) { setLimpiezaModal(table); return }
     setError(null)
     setSessionBusy(table.id)
     const { data, error: err } = await supabase
@@ -368,7 +405,17 @@ export default function AdminMesas() {
     setClosingSession(false)
     if (err) { setError(err.message); return }
     setSessions(prev => { const next = { ...prev }; delete next[table.id]; return next })
+    await marcarNecesitaLimpieza(table.id)
     setCuentaModal(null)
+  }
+
+  // Mesa recién cerrada con consumo real: si hay un checklist
+  // configurado, queda marcada "necesita limpieza" hasta que se
+  // tilden todos los pasos, en vez de estar libre al instante.
+  async function marcarNecesitaLimpieza(tableId) {
+    if (limpiezaPasos.length === 0) return
+    setTables(prev => prev.map(t => t.id === tableId ? { ...t, necesita_limpieza: true, limpieza_progreso: [] } : t))
+    await supabase.from('tables').update({ necesita_limpieza: true, limpieza_progreso: [] }).eq('id', tableId)
   }
 
   async function confirmCerrarExencion(motivo) {
@@ -399,6 +446,7 @@ export default function AdminMesas() {
     setClosingSession(false)
     if (err) { setError(err.message); return }
     setSessions(prev => { const next = { ...prev }; delete next[table.id]; return next })
+    await marcarNecesitaLimpieza(table.id)
     setCuentaModal(null)
   }
 
@@ -446,6 +494,22 @@ export default function AdminMesas() {
     const nuevaForma = table.forma === 'rectangular' ? 'circular' : 'rectangular'
     setTables(prev => prev.map(t => t.id === table.id ? { ...t, forma: nuevaForma } : t))
     await supabase.from('tables').update({ forma: nuevaForma }).eq('id', table.id)
+  }
+
+  // Tilda/destilda un paso del checklist de la mesa que se está
+  // limpiando. Cuando quedan todos los pasos activos tildados, la
+  // mesa vuelve a estar libre sola.
+  async function toggleLimpiezaPaso(table, pasoId) {
+    const actual = table.limpieza_progreso || []
+    const nuevo = actual.includes(pasoId) ? actual.filter(id => id !== pasoId) : [...actual, pasoId]
+    const completo = limpiezaPasos.every(p => nuevo.includes(p.id))
+    const patch = { limpieza_progreso: nuevo, necesita_limpieza: !completo }
+    setTables(prev => prev.map(t => t.id === table.id ? { ...t, ...patch } : t))
+    setLimpiezaModal(prev => {
+      if (!prev || prev.id !== table.id) return prev
+      return completo ? null : { ...prev, ...patch }
+    })
+    await supabase.from('tables').update(patch).eq('id', table.id)
   }
 
   async function regenerateQR(table) {
@@ -521,6 +585,7 @@ export default function AdminMesas() {
           <a href={`/admin/clientes/${restaurantId}`} style={S.navTab(false)}>Clientes</a>
           <a href={`/admin/upsell/${restaurantId}`} style={S.navTab(false)}>Upsell</a>
           <a href={`/admin/reservas/${restaurantId}`} style={S.navTab(false)}>Reservas</a>
+          <a href={`/admin/limpieza/${restaurantId}`} style={S.navTab(false)}>Limpieza</a>
           <a href={`/admin/config/${restaurantId}`} style={S.navTab(false)}>Configuración</a>
           {restaurant?.config?.modo_pedidos === 'camarero' && (
             <a href={`/camarero/${restaurantId}`} target="_blank" rel="noreferrer" style={S.navTab(false)}>Pantalla camarero ↗</a>
@@ -649,15 +714,17 @@ export default function AdminMesas() {
                     <div style={S.sessionBadge(!!sessions[table.id])}>
                       {sessions[table.id]
                         ? `🟢 Abierta desde ${new Date(sessions[table.id].abierta_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`
-                        : '⚪ Sin sesión activa'}
+                        : (table.necesita_limpieza ? '🧹 Necesita limpieza' : '⚪ Sin sesión activa')}
                     </div>
                     <button
-                      style={S.sessionBtn(!!sessions[table.id], sessionBusy === table.id || !table.activa)}
+                      style={table.necesita_limpieza && !sessions[table.id]
+                        ? { ...S.sessionBtn(false, false), background: '#d4a017', color: '#111' }
+                        : S.sessionBtn(!!sessions[table.id], sessionBusy === table.id || !table.activa)}
                       onClick={() => sessions[table.id] ? openCuentaModal(table, 'cerrar') : openTable(table)}
                       disabled={sessionBusy === table.id || !table.activa}
                       title={!table.activa ? 'Activa la mesa primero para poder abrirla' : ''}
                     >
-                      {sessionBusy === table.id ? 'Procesando...' : (sessions[table.id] ? 'Cerrar mesa' : 'Abrir mesa')}
+                      {sessionBusy === table.id ? 'Procesando...' : sessions[table.id] ? 'Cerrar mesa' : table.necesita_limpieza ? '🧹 Ver checklist' : 'Abrir mesa'}
                     </button>
                     {sessions[table.id] && (
                       <button
@@ -694,8 +761,8 @@ export default function AdminMesas() {
           <>
             <div style={S.planoHint}>
               {editandoPlano
-                ? 'Arrastrá las mesas hasta que el plano se parezca a tu salón real — se guarda solo al soltar.'
-                : 'Tocá una mesa para abrirla o ver su cuenta, igual que en la grilla.'}
+                ? 'Arrastra las mesas hasta que el plano se parezca a tu salón real — se guarda solo al soltar.'
+                : 'Toca una mesa para abrirla o ver su cuenta, igual que en la grilla.'}
             </div>
             {ZONAS.map(zona => {
               const zonaTablas = tables.filter(t => t.zona === zona).sort((a, b) => a.numero - b.numero)
@@ -726,13 +793,13 @@ export default function AdminMesas() {
                       return (
                         <div
                           key={table.id}
-                          style={{ ...S.mesaForma(table.forma, table.activa, ocupada, llamando, size), left: `${pos.x}%`, top: `${pos.y}%`, cursor: editandoPlano ? 'grab' : (table.activa ? 'pointer' : 'default') }}
+                          style={{ ...S.mesaForma(table.forma, table.activa, ocupada, llamando, size, table.necesita_limpieza), left: `${pos.x}%`, top: `${pos.y}%`, cursor: editandoPlano ? 'grab' : (table.activa ? 'pointer' : 'default') }}
                           onPointerDown={(e) => handleMesaPointerDown(table, e)}
                           onClick={() => {
                             if (editandoPlano || !table.activa) return
                             ocupada ? openCuentaModal(table, 'cerrar') : openTable(table)
                           }}
-                          title={`Mesa ${table.numero} · ${table.capacidad} personas${ocupada ? ' · en servicio' : ''}`}
+                          title={`Mesa ${table.numero} · ${table.capacidad} personas${ocupada ? ' · en servicio' : table.necesita_limpieza ? ' · necesita limpieza' : ''}`}
                         >
                           {editandoPlano && (
                             <button
@@ -746,6 +813,7 @@ export default function AdminMesas() {
                           )}
                           <div style={S.mesaCirculoNum}>{table.numero}</div>
                           {ocupada && <div style={S.mesaCirculoSub}>{sessions[table.id].comensales || table.capacidad}p</div>}
+                          {!ocupada && table.necesita_limpieza && <div style={S.mesaCirculoSub}>🧹</div>}
                           {!table.activa && <div style={S.mesaCirculoSub}>off</div>}
                         </div>
                       )
@@ -770,6 +838,25 @@ export default function AdminMesas() {
           onConfirmExencion={cuentaModal.mode === 'cerrar' ? confirmCerrarExencion : null}
           closing={closingSession}
         />
+      )}
+
+      {limpiezaModal && (
+        <div style={S.limpiezaOverlay} onClick={() => setLimpiezaModal(null)}>
+          <div style={S.limpiezaBox} onClick={e => e.stopPropagation()}>
+            <div style={S.limpiezaTitle}>🧹 Mesa {limpiezaModal.numero}</div>
+            <div style={S.limpiezaSub}>Marca cada paso a medida que lo completas — la mesa vuelve a estar libre sola.</div>
+            {limpiezaPasos.map(paso => {
+              const marcado = (limpiezaModal.limpieza_progreso || []).includes(paso.id)
+              return (
+                <div key={paso.id} style={S.limpiezaPasoRow} onClick={() => toggleLimpiezaPaso(limpiezaModal, paso.id)}>
+                  <div style={S.limpiezaCheck(marcado)}>{marcado ? '✓' : ''}</div>
+                  <div style={S.limpiezaTexto(marcado)}>{paso.texto}</div>
+                </div>
+              )
+            })}
+            <button style={S.limpiezaCloseBtn} onClick={() => setLimpiezaModal(null)}>Cerrar</button>
+          </div>
+        </div>
       )}
     </div>
   )

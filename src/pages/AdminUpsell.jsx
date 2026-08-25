@@ -140,6 +140,7 @@ export default function AdminUpsell() {
           <a href={`/admin/clientes/${restaurantId}`} style={S.navTab(false)}>Clientes</a>
           <a href={`/admin/upsell/${restaurantId}`} style={S.navTab(true)}>Upsell</a>
           <a href={`/admin/reservas/${restaurantId}`} style={S.navTab(false)}>Reservas</a>
+          <a href={`/admin/limpieza/${restaurantId}`} style={S.navTab(false)}>Limpieza</a>
           <a href={`/admin/config/${restaurantId}`} style={S.navTab(false)}>Configuración</a>
           <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
         </div>
@@ -149,7 +150,7 @@ export default function AdminUpsell() {
         <div style={S.sectionTitle}>Sugerencias automáticas</div>
         <div style={S.sectionHint}>
           Cuando el cliente agrega el plato disparador a su pedido, le aparece una sugerencia para explorar
-          la categoría elegida — en la carta de Mesa y en la pantalla del camarero. Podés crear varias reglas
+          la categoría elegida — en la carta de Mesa y en la pantalla del camarero. Puedes crear varias reglas
           con distintos platos disparadores apuntando a la misma categoría sugerida.
         </div>
 
@@ -159,7 +160,7 @@ export default function AdminUpsell() {
           <div style={S.field}>
             <span style={S.label}>Si agrega el plato...</span>
             <select style={S.select} value={triggerItem} onChange={e => setTriggerItem(e.target.value)}>
-              <option value="">Elegí un plato</option>
+              <option value="">Elige un plato</option>
               {categories.map(cat => (
                 <optgroup key={cat.id} label={cat.nombre}>
                   {items.filter(i => i.category_id === cat.id).map(i => (
@@ -172,7 +173,7 @@ export default function AdminUpsell() {
           <div style={S.field}>
             <span style={S.label}>Sugerir la categoría</span>
             <select style={S.select} value={sugeridaCategoria} onChange={e => setSugeridaCategoria(e.target.value)}>
-              <option value="">Elegí una categoría</option>
+              <option value="">Elige una categoría</option>
               {categories.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </select>
           </div>

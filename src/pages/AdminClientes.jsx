@@ -101,7 +101,7 @@ export default function AdminClientes() {
   async function confirmarCanje() {
     const cantidad = parseInt(redeemCantidad, 10)
     if (!Number.isInteger(cantidad) || cantidad <= 0) {
-      setError('Ingresá una cantidad de puntos válida.')
+      setError('Introduce una cantidad de puntos válida.')
       return
     }
     if (cantidad > redeemCliente.puntos) {
@@ -155,6 +155,7 @@ export default function AdminClientes() {
           <a href={`/admin/clientes/${restaurantId}`} style={S.navTab(true)}>Clientes</a>
           <a href={`/admin/upsell/${restaurantId}`} style={S.navTab(false)}>Upsell</a>
           <a href={`/admin/reservas/${restaurantId}`} style={S.navTab(false)}>Reservas</a>
+          <a href={`/admin/limpieza/${restaurantId}`} style={S.navTab(false)}>Limpieza</a>
           <a href={`/admin/config/${restaurantId}`} style={S.navTab(false)}>Configuración</a>
           <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
         </div>

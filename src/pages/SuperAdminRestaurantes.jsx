@@ -50,7 +50,7 @@ function slugify(text) {
 }
 
 // Mismos países/monedas habilitados en el check constraint de la base
-// (restaurants_moneda_check). Si agregás una moneda nueva ahí, sumala acá
+// (restaurants_moneda_check). Si añades una moneda nueva ahí, súmala aquí
 // también para que aparezca en el selector.
 const PAISES = [
   { code: 'ES', label: 'España', moneda: 'EUR' },
@@ -203,7 +203,7 @@ export default function SuperAdminRestaurantes() {
       return
     }
     if (form.iban.trim() && !isValidIban(form.iban)) {
-      setError('El IBAN no parece válido. Revisalo (o dejalo vacío y lo cargás más adelante).')
+      setError('El IBAN no parece válido. Revísalo (o déjalo vacío y lo añades más adelante).')
       return
     }
     setCreating(true)
@@ -311,7 +311,7 @@ export default function SuperAdminRestaurantes() {
       return
     }
     if (form.iban.trim() && !isValidIban(form.iban)) {
-      setError('El IBAN no parece válido. Revisalo (o dejalo vacío).')
+      setError('El IBAN no parece válido. Revísalo (o déjalo vacío).')
       return
     }
     setCreating(true)
@@ -472,7 +472,7 @@ export default function SuperAdminRestaurantes() {
                   <>
                     <label style={S.label}>Email del dueño (acceso al panel)</label>
                     <input style={S.input} type="email" value={form.email} onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))} placeholder="dueno@restaurante.com" />
-                    <div style={S.hint}>Esto NO cambia el login real — es solo una copia de referencia. Para cambiar el acceso de verdad, hacelo desde Authentication → Users en Supabase, y después actualizá este campo para que coincida.</div>
+                    <div style={S.hint}>Esto NO cambia el login real — es solo una copia de referencia. Para cambiar el acceso de verdad, hazlo desde Authentication → Users en Supabase, y después actualiza este campo para que coincida.</div>
                   </>
                 )}
 
@@ -493,7 +493,7 @@ export default function SuperAdminRestaurantes() {
                     </select>
                   </div>
                 </div>
-                <div style={S.hint}>La moneda se ajusta sola según el país, pero podés cambiarla si el restaurante factura en otra.</div>
+                <div style={S.hint}>La moneda se ajusta sola según el país, pero puedes cambiarla si el restaurante factura en otra.</div>
 
                 <label style={S.label}>Dirección (opcional)</label>
                 <input style={S.input} value={form.direccion} onChange={e => setForm(prev => ({ ...prev, direccion: e.target.value }))} placeholder="Calle, número, ciudad" />
@@ -511,7 +511,7 @@ export default function SuperAdminRestaurantes() {
                   placeholder="ES91 2100 0418 4502 0005 1332"
                 />
                 {ibanTouched && form.iban.trim() && !isValidIban(form.iban) && (
-                  <div style={{ ...S.hint, color: '#e87a7a' }}>Ese IBAN no parece válido — revisalo.</div>
+                  <div style={{ ...S.hint, color: '#e87a7a' }}>Ese IBAN no parece válido — revísalo.</div>
                 )}
                 {form.iban.trim() && isValidIban(form.iban) && (
                   <div style={S.hint}>{formatIbanDisplay(form.iban)} ✓</div>

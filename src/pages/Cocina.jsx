@@ -807,7 +807,7 @@ export default function Cocina() {
                     label = 'No corresponde a tu sector'
                   } else if (esMultiSector && campoActual) {
                     label = bloqueadoSinSector
-                      ? 'Elegí tu sector para confirmar'
+                      ? 'Elige tu sector para confirmar'
                       : miSectorYaConfirmo ? '✓ Confirmado, esperando otros sectores' : `Confirmar mi parte (${cfg.label.toLowerCase()})`
                   } else if (campoActual && sectoresInvolucrados.length === 1) {
                     label = `Confirmar (${cfg.label.toLowerCase()})`
