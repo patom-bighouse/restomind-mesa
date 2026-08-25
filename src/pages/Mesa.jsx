@@ -29,6 +29,9 @@ const S = {
   badge: { fontSize: 11, color: '#8a7560', background: '#1a1410', border: '0.5px solid #3a2e20', padding: '4px 10px', borderRadius: 20 },
   catsBar: { display: 'flex', gap: 8, padding: '14px 20px 0', overflowX: 'auto', scrollbarWidth: 'none', flexShrink: 0 },
   cat: (active) => ({ fontSize: 13, fontWeight: 500, padding: '6px 14px', borderRadius: 20, border: `0.5px solid ${active ? '#e8c97a' : '#3a2e20'}`, background: active ? '#e8c97a' : 'transparent', color: active ? '#1a1410' : '#8a7560', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.15s' }),
+  comensalBar: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px 0', overflowX: 'auto', scrollbarWidth: 'none', flexShrink: 0 },
+  comensalLabel: { fontSize: 11, color: '#7a6a50', whiteSpace: 'nowrap' },
+  comensalChip: (active) => ({ fontSize: 12, fontWeight: 500, padding: '5px 12px', borderRadius: 20, border: `0.5px solid ${active ? '#e8c97a' : '#3a2e20'}`, background: active ? '#e8c97a' : '#221c14', color: active ? '#1a1410' : '#c4a85a', cursor: 'pointer', whiteSpace: 'nowrap' }),
   scroll: { flex: 1, overflowY: 'auto', paddingBottom: 100 },
   secTitle: { fontFamily: "'Playfair Display', serif", fontSize: 15, color: '#c4a85a', padding: '18px 20px 10px', letterSpacing: '0.03em' },
   itemsWrap: { padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 10 },
@@ -89,6 +92,7 @@ export default function Mesa() {
   const [modSelectorChoices, setModSelectorChoices] = useState({}) // { [grupo_id]: opcion_id | [opcion_id, ...] }
   const [cart, setCart] = useState({})
   const [activeCat, setActiveCat] = useState('todos')
+  const [selectedComensal, setSelectedComensal] = useState(1) // número de comensal | null ("Compartido")
   const [alergenosExcluidos, setAlergenosExcluidos] = useState([])
   const [showAlergenosPanel, setShowAlergenosPanel] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -339,6 +343,11 @@ export default function Mesa() {
     return () => clearInterval(interval)
   }, [session?.id, token])
 
+  // Cada línea del carrito queda atada a un comensal — dos unidades
+  // del mismo plato para personas distintas son líneas separadas, no
+  // se suman entre sí. "x" identifica lo compartido (sin comensal).
+  const comensalTag = (c) => (c == null ? 'x' : `c${c}`)
+
   const change = useCallback((item, delta) => {
     // Si el plato tiene modificadores, no se suma directo — hay que
     // elegir las opciones primero (abre el selector).
@@ -347,16 +356,17 @@ export default function Mesa() {
       setModSelectorChoices({})
       return
     }
+    const cartKey = `${item.id}::${comensalTag(selectedComensal)}`
     setCart(prev => {
-      const curr = prev[item.id]?.qty || 0
+      const curr = prev[cartKey]?.qty || 0
       const next = Math.max(0, curr + delta)
       if (next === 0) {
-        const { [item.id]: _, ...rest } = prev
+        const { [cartKey]: _, ...rest } = prev
         return rest
       }
-      return { ...prev, [item.id]: { qty: next, nombre: item.nombre, precio: parseFloat(item.precio), nota: prev[item.id]?.nota || '', menuItemId: item.id } }
+      return { ...prev, [cartKey]: { qty: next, nombre: item.nombre, precio: parseFloat(item.precio), nota: prev[cartKey]?.nota || '', menuItemId: item.id, comensal: selectedComensal } }
     })
-  }, [itemModifiers])
+  }, [itemModifiers, selectedComensal])
 
   // Ajusta cantidad directamente por la key del carrito (sirve tanto
   // para platos simples como para combinaciones con modificadores,
@@ -417,7 +427,7 @@ export default function Mesa() {
       .sort((a, b) => (a.grupo_id + a.opcion_id).localeCompare(b.grupo_id + b.opcion_id))
       .map(d => `${d.grupo_id}:${d.opcion_id}`)
       .join('|')
-    const cartKey = `${item.id}::${comboKey}`
+    const cartKey = `${item.id}::${comboKey}::${comensalTag(selectedComensal)}`
 
     setCart(prev => {
       const curr = prev[cartKey]?.qty || 0
@@ -430,6 +440,7 @@ export default function Mesa() {
           nota: prev[cartKey]?.nota || '',
           menuItemId: item.id,
           modificadoresDetalle: detalle,
+          comensal: selectedComensal,
         },
       }
     })
@@ -482,6 +493,7 @@ export default function Mesa() {
         menu_item_id: i.menuItemId || i.id,
         cantidad: i.qty,
         notas: i.nota?.trim() || null,
+        comensal: i.comensal ?? null,
         modificadores: (i.modificadoresDetalle || []).map(m => ({ grupo_id: m.grupo_id, opcion_id: m.opcion_id })),
       }))
 
@@ -772,6 +784,16 @@ export default function Mesa() {
         ))}
       </div>
 
+      {!esModoCamarero && session?.comensales > 1 && (
+        <div style={S.comensalBar}>
+          <span style={S.comensalLabel}>¿Para quién?</span>
+          {Array.from({ length: session.comensales }, (_, i) => i + 1).map(n => (
+            <button key={n} style={S.comensalChip(selectedComensal === n)} onClick={() => setSelectedComensal(n)}>{n}</button>
+          ))}
+          <button style={S.comensalChip(selectedComensal == null)} onClick={() => setSelectedComensal(null)}>Compartido</button>
+        </div>
+      )}
+
       <div style={S.scroll}>
         {filteredCats.map(cat => {
           const catItems = items
@@ -807,7 +829,7 @@ export default function Mesa() {
                       ) : (
                         <div style={S.qty}>
                           <button style={S.btn} onClick={() => change(item, -1)}>−</button>
-                          <span style={S.qnum}>{cart[item.id]?.qty || 0}</span>
+                          <span style={S.qnum}>{cart[`${item.id}::${comensalTag(selectedComensal)}`]?.qty || 0}</span>
                           <button style={S.btn} onClick={() => change(item, 1)}>+</button>
                         </div>
                       )
@@ -945,7 +967,12 @@ export default function Mesa() {
                 <div key={id} style={{ ...S.oItem, flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                      <div style={S.oName}>{v.nombre}</div>
+                      <div style={S.oName}>
+                        {v.nombre}
+                        {session?.comensales > 1 && (
+                          <span style={{ fontSize: 11, color: '#7a6a50', fontWeight: 400 }}> · {v.comensal == null ? 'Compartido' : `Comensal ${v.comensal}`}</span>
+                        )}
+                      </div>
                       {v.modificadoresDetalle?.length > 0 && (
                         <div style={{ fontSize: 12, color: '#8a7560', marginTop: 2 }}>
                           {v.modificadoresDetalle.map(m => m.opcion_nombre).join(', ')}

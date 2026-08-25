@@ -17,6 +17,9 @@ const S = {
   itemNota: { fontSize: 12, color: '#7a6a50', fontStyle: 'italic', marginTop: 2 },
   itemPrecio: { color: '#c4a85a', whiteSpace: 'nowrap' },
   pedidoSubtotal: { display: 'flex', justifyContent: 'flex-end', fontSize: 13, color: '#8a7560', marginTop: 6, paddingTop: 6, borderTop: '0.5px dashed #2a2a2a' },
+  comensalSection: { padding: '0 24px 16px' },
+  comensalTitle: { fontSize: 13, fontWeight: 500, color: '#c4a85a', marginBottom: 10 },
+  comensalRow: { display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#f0e8d8', padding: '5px 0', borderBottom: '0.5px solid #222' },
   totalRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '16px 24px', borderTop: '0.5px solid #3a2e20', background: '#141414' },
   totalLabel: { fontSize: 15, color: '#f0e8d8', fontWeight: 500 },
   totalValue: { fontFamily: "'Playfair Display', serif", fontSize: 26, color: '#e8c97a' },
@@ -135,7 +138,7 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
       if (orderIds.length > 0) {
         const { data: itemsData, error: iErr } = await supabase
           .from('order_items')
-          .select('id, order_id, nombre_snapshot, precio_snapshot, cantidad, notas')
+          .select('id, order_id, nombre_snapshot, precio_snapshot, cantidad, notas, comensal')
           .in('order_id', orderIds)
         if (iErr) throw iErr
         items = itemsData || []
@@ -158,6 +161,20 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
   const totalPagado = pagos.reduce((sum, p) => sum + parseFloat(p.monto || 0), 0)
   const falta = Math.max(0, total - totalPagado)
   const cubierto = falta <= 0.01
+
+  // Desglose por comensal — solo informativo, guía para que el
+  // camarero sepa cuánto le corresponde a cada uno. No condiciona el
+  // cobro en sí, que sigue siendo de monto libre como siempre.
+  const porComensalMap = {}
+  pedidos.forEach(p => (p.items || []).forEach(item => {
+    const key = item.comensal == null ? 'compartido' : item.comensal
+    porComensalMap[key] = (porComensalMap[key] || 0) + parseFloat(item.precio_snapshot) * item.cantidad
+  }))
+  const porComensal = Object.entries(porComensalMap).sort(([a], [b]) => {
+    if (a === 'compartido') return 1
+    if (b === 'compartido') return -1
+    return Number(a) - Number(b)
+  })
 
   async function addPago() {
     const monto = parseFloat(montoInput.replace(',', '.'))
@@ -236,7 +253,7 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
             </div>
             {pedido.items.map(item => (
               <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>{item.cantidad}× {item.nombre_snapshot}</span>
+                <span>{item.cantidad}× {item.nombre_snapshot}{item.comensal != null ? ` (C${item.comensal})` : ''}</span>
                 <span>{formatMoney(parseFloat(item.precio_snapshot) * item.cantidad, moneda)}</span>
               </div>
             ))}
@@ -300,6 +317,7 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
                   <div key={item.id} style={S.itemRow}>
                     <div style={S.itemNombre}>
                       {item.cantidad}× {item.nombre_snapshot}
+                      {item.comensal != null && <span style={{ fontSize: 11, color: '#7a6a50' }}> · Comensal {item.comensal}</span>}
                       {item.notas && <div style={S.itemNota}>{item.notas}</div>}
                     </div>
                     <div style={S.itemPrecio}>
@@ -312,6 +330,18 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
               </div>
             ))}
           </div>
+
+          {porComensal.length > 1 && (
+            <div style={S.comensalSection}>
+              <div style={S.comensalTitle}>Desglose por comensal</div>
+              {porComensal.map(([key, monto]) => (
+                <div key={key} style={S.comensalRow}>
+                  <span>{key === 'compartido' ? 'Compartido' : `Comensal ${key}`}</span>
+                  <span>{formatMoney(monto, moneda)}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div style={S.totalRow}>
             <span style={S.totalLabel}>Total</span>
