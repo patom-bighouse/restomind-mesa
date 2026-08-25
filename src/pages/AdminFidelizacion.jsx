@@ -41,6 +41,7 @@ export default function AdminFidelizacion() {
   const [restaurant, setRestaurant] = useState(null)
   const [niveles, setNiveles] = useState([])
   const [premios, setPremios] = useState([])
+  const [menuItems, setMenuItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -52,6 +53,9 @@ export default function AdminFidelizacion() {
   const [descripcionPremio, setDescripcionPremio] = useState('')
   const [costoPremio, setCostoPremio] = useState('')
   const [nivelMinimoPremio, setNivelMinimoPremio] = useState('')
+  const [tipoPremio, setTipoPremio] = useState('plato_gratis')
+  const [menuItemPremio, setMenuItemPremio] = useState('')
+  const [descuentoImportePremio, setDescuentoImportePremio] = useState('')
   const [addingPremio, setAddingPremio] = useState(false)
 
   useEffect(() => { checkAuth() }, [])
@@ -63,7 +67,17 @@ export default function AdminFidelizacion() {
     setRestaurant(rest)
     await loadNiveles()
     await loadPremios()
+    await loadMenuItems()
     setLoading(false)
+  }
+
+  async function loadMenuItems() {
+    const { data } = await supabase
+      .from('menu_items')
+      .select('id, nombre')
+      .eq('restaurant_id', restaurantId)
+      .order('nombre')
+    setMenuItems(data || [])
   }
 
   async function loadNiveles() {
@@ -79,7 +93,7 @@ export default function AdminFidelizacion() {
   async function loadPremios() {
     const { data, error: err } = await supabase
       .from('premios_fidelizacion')
-      .select('id, nombre, descripcion, costo_puntos, nivel_minimo_id, activo')
+      .select('id, nombre, descripcion, costo_puntos, nivel_minimo_id, activo, tipo, menu_item_id, descuento_importe')
       .eq('restaurant_id', restaurantId)
       .order('costo_puntos')
     if (err) { setError(err.message); return }
@@ -88,6 +102,10 @@ export default function AdminFidelizacion() {
 
   function nombreNivelPorId(id) {
     return niveles.find(n => n.id === id)?.nombre || '—'
+  }
+
+  function nombreMenuItemPorId(id) {
+    return menuItems.find(i => i.id === id)?.nombre || '—'
   }
 
   async function addNivel() {
@@ -119,6 +137,8 @@ export default function AdminFidelizacion() {
 
   async function addPremio() {
     if (!nombrePremio.trim() || !costoPremio) return
+    if (tipoPremio === 'plato_gratis' && !menuItemPremio) { setError('Elige el plato que se entrega gratis.'); return }
+    if (tipoPremio === 'descuento' && !descuentoImportePremio) { setError('Introduce el importe del descuento.'); return }
     setError(null)
     setAddingPremio(true)
     const { data, error: err } = await supabase
@@ -129,6 +149,9 @@ export default function AdminFidelizacion() {
         descripcion: descripcionPremio.trim() || null,
         costo_puntos: parseInt(costoPremio, 10),
         nivel_minimo_id: nivelMinimoPremio || null,
+        tipo: tipoPremio,
+        menu_item_id: tipoPremio === 'plato_gratis' ? menuItemPremio : null,
+        descuento_importe: tipoPremio === 'descuento' ? parseFloat(descuentoImportePremio) : null,
       })
       .select().single()
     setAddingPremio(false)
@@ -138,6 +161,9 @@ export default function AdminFidelizacion() {
     setDescripcionPremio('')
     setCostoPremio('')
     setNivelMinimoPremio('')
+    setTipoPremio('plato_gratis')
+    setMenuItemPremio('')
+    setDescuentoImportePremio('')
   }
 
   async function togglePremioActivo(premio) {
@@ -245,6 +271,27 @@ export default function AdminFidelizacion() {
               <input style={{ ...S.input, width: 90 }} type="number" min="1" placeholder="200" value={costoPremio} onChange={e => setCostoPremio(e.target.value)} />
             </div>
             <div style={S.field}>
+              <span style={S.label}>Tipo</span>
+              <select style={S.select} value={tipoPremio} onChange={e => setTipoPremio(e.target.value)}>
+                <option value="plato_gratis">Plato gratis</option>
+                <option value="descuento">Descuento en efectivo</option>
+              </select>
+            </div>
+            {tipoPremio === 'plato_gratis' ? (
+              <div style={S.field}>
+                <span style={S.label}>Plato</span>
+                <select style={S.select} value={menuItemPremio} onChange={e => setMenuItemPremio(e.target.value)}>
+                  <option value="">Elige un plato</option>
+                  {menuItems.map(i => <option key={i.id} value={i.id}>{i.nombre}</option>)}
+                </select>
+              </div>
+            ) : (
+              <div style={S.field}>
+                <span style={S.label}>Importe ({restaurant?.moneda})</span>
+                <input style={{ ...S.input, width: 90 }} type="number" min="0.01" step="0.01" placeholder="5" value={descuentoImportePremio} onChange={e => setDescuentoImportePremio(e.target.value)} />
+              </div>
+            )}
+            <div style={S.field}>
               <span style={S.label}>Nivel mínimo</span>
               <select style={S.select} value={nivelMinimoPremio} onChange={e => setNivelMinimoPremio(e.target.value)}>
                 <option value="">Cualquiera</option>
@@ -268,6 +315,7 @@ export default function AdminFidelizacion() {
                 <tr>
                   <th style={S.th}>Premio</th>
                   <th style={S.th}>Puntos</th>
+                  <th style={S.th}>Qué entrega</th>
                   <th style={S.th}>Nivel mínimo</th>
                   <th style={S.th}></th>
                 </tr>
@@ -280,6 +328,11 @@ export default function AdminFidelizacion() {
                       {p.descripcion && <div style={{ fontSize: 12, color: '#7a6a50' }}>{p.descripcion}</div>}
                     </td>
                     <td style={S.td}>{p.costo_puntos}</td>
+                    <td style={S.td}>
+                      {p.tipo === 'plato_gratis'
+                        ? `🍽 ${nombreMenuItemPorId(p.menu_item_id)}`
+                        : `💶 -${formatMoney(p.descuento_importe, restaurant?.moneda)}`}
+                    </td>
                     <td style={S.td}>{p.nivel_minimo_id ? nombreNivelPorId(p.nivel_minimo_id) : '—'}</td>
                     <td style={S.td}>
                       <button style={S.toggleBtn(p.activo)} onClick={() => togglePremioActivo(p)}>

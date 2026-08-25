@@ -110,6 +110,7 @@ export default function Mesa() {
   const [guardandoCliente, setGuardandoCliente] = useState(false)
   const [clienteError, setClienteError] = useState(null)
   const [fidelizacionEstado, setFidelizacionEstado] = useState(null) // resultado de fn_estado_fidelizacion
+  const [premiosEnCarrito, setPremiosEnCarrito] = useState([]) // [{ key, premioId, nombre, tipo, costoPuntos, comensal }]
   const [cargandoEstadoFidelizacion, setCargandoEstadoFidelizacion] = useState(false)
   const [editandoTelefono, setEditandoTelefono] = useState(false)
   const [lastClosedSessionId, setLastClosedSessionId] = useState(null)
@@ -457,7 +458,8 @@ export default function Mesa() {
   }, [])
 
   const cartCount = Object.values(cart).reduce((a, b) => a + b.qty, 0)
-  const cartTotal = Object.values(cart).reduce((s, i) => s + i.precio * i.qty, 0)
+  const descuentoPremios = premiosEnCarrito.reduce((s, p) => s + (p.tipo === 'descuento' ? p.descuentoImporte : 0), 0)
+  const cartTotal = Math.max(0, Object.values(cart).reduce((s, i) => s + i.precio * i.qty, 0) - descuentoPremios)
 
   // Sugerencias de upsell: reglas cuyo plato disparador está en el
   // carrito, sugiriendo explorar otra categoría — salvo que el
@@ -506,10 +508,12 @@ export default function Mesa() {
       // misma mesa/sesión (modo agrupado) o si crea uno nuevo (modo orden
       // de llegada). El mismo criterio se usa desde el flujo de WhatsApp,
       // así que no se decide nada de esto acá en el cliente.
+      const premiosPayload = premiosEnCarrito.map(p => ({ premio_id: p.premioId, comensal: p.comensal ?? null }))
       const { data: newOrderId, error: rpcErr } = await supabase.rpc('fn_registrar_pedido', {
         p_table_session_id: session.id,
         p_items: itemsPayload,
         p_notas: orderNote.trim() || null,
+        p_premios_canjeados: premiosPayload,
       })
       if (rpcErr) throw rpcErr
 
@@ -517,6 +521,11 @@ export default function Mesa() {
       setCart({})
       setOrderNote('')
       setEditingNoteFor(null)
+      setPremiosEnCarrito([])
+      // Los puntos ya se descontaron del lado del servidor — si el
+      // panel de fidelización llegara a reabrirse, que muestre el
+      // saldo real y no el de antes de canjear.
+      if (session?.cliente_telefono) await cargarEstadoFidelizacion(session.cliente_telefono)
       setOverlay('success')
     } catch (e) {
       // Si la sesión se cerró mientras el cliente tenía el carrito
@@ -584,6 +593,29 @@ export default function Mesa() {
     })
     setCargandoEstadoFidelizacion(false)
     setFidelizacionEstado(data || null)
+  }
+
+  // Suma en pantalla lo que ya se puso en el carrito para canjear, así
+  // no se puede agregar un premio de más aunque el saldo real todavía
+  // no se haya descontado (eso pasa recién al confirmar el pedido).
+  const puntosReservados = premiosEnCarrito.reduce((s, p) => s + p.costoPuntos, 0)
+  const puntosDisponibles = (fidelizacionEstado?.puntos || 0) - puntosReservados
+
+  function canjearPremio(premio) {
+    if (premio.costo_puntos > puntosDisponibles) return
+    setPremiosEnCarrito(prev => [...prev, {
+      key: crypto.randomUUID(),
+      premioId: premio.id,
+      nombre: premio.nombre,
+      tipo: premio.tipo,
+      costoPuntos: premio.costo_puntos,
+      descuentoImporte: premio.descuento_importe || 0,
+      comensal: selectedComensal,
+    }])
+  }
+
+  function quitarPremioCarrito(key) {
+    setPremiosEnCarrito(prev => prev.filter(p => p.key !== key))
   }
 
   // fn_registrar_cliente_sesion valida, del lado del servidor, que la
@@ -879,9 +911,9 @@ export default function Mesa() {
       </div>
 
       {!esModoCamarero && (
-        <div style={S.cartBar(cartCount > 0)} onClick={() => setOverlay('cart')}>
+        <div style={S.cartBar(cartCount > 0 || premiosEnCarrito.length > 0)} onClick={() => setOverlay('cart')}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={S.cartBadge}>{cartCount}</div>
+            <div style={S.cartBadge}>{cartCount + premiosEnCarrito.length}</div>
             <span style={{ fontSize: 14, fontWeight: 500, color: '#1a1410' }}>Ver pedido</span>
           </div>
           <span style={{ fontSize: 15, fontWeight: 500, color: '#1a1410' }}>{formatMoney(cartTotal, restaurant?.moneda)}</span>
@@ -1032,6 +1064,25 @@ export default function Mesa() {
                 </div>
               ))}
 
+              {premiosEnCarrito.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  {premiosEnCarrito.map(p => (
+                    <div key={p.key} style={S.oItem}>
+                      <div>
+                        <div style={S.oName}>🎁 {p.nombre}</div>
+                        {session?.comensales > 1 && (
+                          <div style={{ fontSize: 11, color: '#7a6a50' }}>{p.comensal == null ? 'Compartido' : `Comensal ${p.comensal}`}</div>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={S.oPrice}>{p.tipo === 'plato_gratis' ? 'GRATIS' : `-${formatMoney(p.descuentoImporte, restaurant?.moneda)}`}</span>
+                        <button style={{ ...S.btn, width: 26, height: 26 }} onClick={() => quitarPremioCarrito(p.key)}>×</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div style={{ marginTop: 12 }}>
                 <div style={{ fontSize: 12, color: '#8a7560' }}>Nota general del pedido</div>
                 <textarea
@@ -1159,18 +1210,44 @@ export default function Mesa() {
                       Te faltan {formatMoney(fidelizacionEstado.proximo_nivel.umbral_gasto - fidelizacionEstado.gasto_acumulado, restaurant?.moneda)} para {fidelizacionEstado.proximo_nivel.nombre}
                     </div>
                   )}
+                  {premiosEnCarrito.length > 0 && (
+                    <div style={{ marginTop: 8, marginBottom: 8 }}>
+                      <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>En tu pedido</div>
+                      {premiosEnCarrito.map(p => (
+                        <div key={p.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0' }}>
+                          <div style={{ fontSize: 13, color: '#e8c97a' }}>🎁 {p.nombre} ({p.costoPuntos} pts)</div>
+                          <button style={S.resenaSkip} onClick={() => quitarPremioCarrito(p.key)}>Quitar</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {fidelizacionEstado.premios?.length > 0 && (
                     <div style={{ marginTop: 8 }}>
                       <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Premios</div>
-                      {fidelizacionEstado.premios.map(p => (
-                        <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '0.5px solid #2a2018', opacity: p.disponible ? 1 : 0.5 }}>
-                          <div>
-                            <div style={{ fontSize: 13, color: '#f0e8d8' }}>{p.nombre}</div>
-                            {p.descripcion && <div style={{ fontSize: 11, color: '#7a6a50' }}>{p.descripcion}</div>}
+                      {fidelizacionEstado.premios.map(p => {
+                        const puedeCanjear = p.costo_puntos <= puntosDisponibles
+                        return (
+                          <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '0.5px solid #2a2018', opacity: puedeCanjear ? 1 : 0.5 }}>
+                            <div>
+                              <div style={{ fontSize: 13, color: '#f0e8d8' }}>
+                                {p.tipo === 'plato_gratis' ? `🍽 ${p.menu_item_nombre}` : `💶 -${formatMoney(p.descuento_importe, restaurant?.moneda)}`}
+                                {' · '}{p.nombre}
+                              </div>
+                              {p.descripcion && <div style={{ fontSize: 11, color: '#7a6a50' }}>{p.descripcion}</div>}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontSize: 12, color: puedeCanjear ? '#e8c97a' : '#7a6a50' }}>{p.costo_puntos} pts</span>
+                              <button
+                                style={{ ...S.upsellBtn, opacity: puedeCanjear ? 1 : 0.4 }}
+                                disabled={!puedeCanjear}
+                                onClick={() => canjearPremio(p)}
+                              >
+                                Canjear
+                              </button>
+                            </div>
                           </div>
-                          <div style={{ fontSize: 12, color: p.disponible ? '#e8c97a' : '#7a6a50' }}>{p.costo_puntos} pts</div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
                 </>
