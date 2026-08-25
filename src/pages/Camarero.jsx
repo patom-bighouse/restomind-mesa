@@ -24,6 +24,7 @@ const ALERGENOS = [
 const S = {
   app: { minHeight: '100vh', background: '#111', color: '#f0e8d8', fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column' },
   header: { background: '#0a0a0a', padding: '14px 20px', borderBottom: '0.5px solid #2a2a2a', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 10 },
+  stickyTop: { position: 'sticky', top: 0, zIndex: 15, background: '#111' },
   logo: { fontFamily: "'Playfair Display', serif", fontSize: 18, fontWeight: 600, color: '#e8c97a' },
   sub: { fontSize: 12, color: '#8a7560', marginTop: 2 },
   badge: { background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 20, padding: '5px 14px', fontSize: 12, color: '#c4a85a' },
@@ -46,6 +47,9 @@ const S = {
 
   catsBar: { display: 'flex', gap: 8, padding: '10px 16px', overflowX: 'auto', borderBottom: '0.5px solid #2a2a2a' },
   cat: (active) => ({ background: active ? '#e8c97a' : 'transparent', color: active ? '#111' : '#8a7560', border: `0.5px solid ${active ? '#e8c97a' : '#3a2e20'}`, borderRadius: 20, padding: '6px 14px', fontSize: 12, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'Inter', sans-serif" }),
+  comensalBar: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', overflowX: 'auto', borderBottom: '0.5px solid #2a2a2a' },
+  comensalLabel: { fontSize: 11, color: '#7a6a50', whiteSpace: 'nowrap' },
+  comensalChip: (active) => ({ fontSize: 12, fontWeight: 500, padding: '5px 12px', borderRadius: 20, border: `0.5px solid ${active ? '#e8c97a' : '#3a2e20'}`, background: active ? '#e8c97a' : '#1a1a1a', color: active ? '#111' : '#c4a85a', cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'Inter', sans-serif" }),
   scroll: { flex: 1, overflowY: 'auto', padding: '4px 16px 100px' },
   secTitle: { fontSize: 13, fontWeight: 600, color: '#c4a85a', margin: '16px 0 8px', textTransform: 'uppercase', letterSpacing: 0.5 },
   item: { display: 'flex', gap: 12, padding: '10px 0', borderBottom: '0.5px solid #222' },
@@ -93,6 +97,7 @@ export default function Camarero() {
   const [modSelectorItem, setModSelectorItem] = useState(null)
   const [modSelectorChoices, setModSelectorChoices] = useState({})
   const [activeCat, setActiveCat] = useState('todos')
+  const [selectedComensal, setSelectedComensal] = useState(1) // número de comensal | null ("Compartido")
   const [alergenosExcluidos, setAlergenosExcluidos] = useState([])
   const [showAlergenosPanel, setShowAlergenosPanel] = useState(false)
   const [cart, setCart] = useState({})
@@ -328,20 +333,26 @@ export default function Camarero() {
     setItemModifiers(map)
   }
 
+  // Cada línea del carrito queda atada a un comensal — dos unidades
+  // del mismo plato para personas distintas son líneas separadas.
+  // "x" identifica lo compartido (sin comensal).
+  const comensalTag = (c) => (c == null ? 'x' : `c${c}`)
+
   function change(item, delta) {
     if (delta > 0 && itemModifiers[item.id]?.length > 0) {
       setModSelectorItem(item)
       setModSelectorChoices({})
       return
     }
+    const cartKey = `${item.id}::${comensalTag(selectedComensal)}`
     setCart(prev => {
-      const current = prev[item.id]?.qty || 0
+      const current = prev[cartKey]?.qty || 0
       const next = Math.max(0, current + delta)
       if (next === 0) {
-        const { [item.id]: _, ...rest } = prev
+        const { [cartKey]: _, ...rest } = prev
         return rest
       }
-      return { ...prev, [item.id]: { qty: next, precio: item.precio, nombre: item.nombre, menuItemId: item.id } }
+      return { ...prev, [cartKey]: { qty: next, precio: item.precio, nombre: item.nombre, menuItemId: item.id, comensal: selectedComensal } }
     })
   }
 
@@ -397,7 +408,7 @@ export default function Camarero() {
       .sort((a, b) => (a.grupo_id + a.opcion_id).localeCompare(b.grupo_id + b.opcion_id))
       .map(d => `${d.grupo_id}:${d.opcion_id}`)
       .join('|')
-    const cartKey = `${item.id}::${comboKey}`
+    const cartKey = `${item.id}::${comboKey}::${comensalTag(selectedComensal)}`
 
     setCart(prev => {
       const curr = prev[cartKey]?.qty || 0
@@ -409,6 +420,7 @@ export default function Camarero() {
           precio: parseFloat(item.precio) + extra,
           menuItemId: item.id,
           modificadoresDetalle: detalle,
+          comensal: selectedComensal,
         },
       }
     })
@@ -442,6 +454,7 @@ export default function Camarero() {
         menu_item_id: v.menuItemId || id,
         cantidad: v.qty,
         notas: null,
+        comensal: v.comensal ?? null,
         modificadores: (v.modificadoresDetalle || []).map(m => ({ grupo_id: m.grupo_id, opcion_id: m.opcion_id })),
       }))
       const { error: err } = await supabase.rpc('fn_registrar_pedido', {
@@ -564,6 +577,7 @@ export default function Camarero() {
   // ---------- Render: carta para cargar pedido ----------
   return (
     <div style={S.app}>
+      <div style={S.stickyTop}>
       <div style={S.header}>
         <div>
           <div style={S.logo}>{restaurant?.nombre || 'Restomind'}</div>
@@ -592,6 +606,17 @@ export default function Camarero() {
         {categories.map(c => (
           <button key={c.id} style={S.cat(activeCat === c.id)} onClick={() => setActiveCat(c.id)}>{c.nombre}</button>
         ))}
+      </div>
+
+      {selectedTable?.session?.comensales > 1 && (
+        <div style={S.comensalBar}>
+          <span style={S.comensalLabel}>¿Para quién?</span>
+          {Array.from({ length: selectedTable.session.comensales }, (_, i) => i + 1).map(n => (
+            <button key={n} style={S.comensalChip(selectedComensal === n)} onClick={() => setSelectedComensal(n)}>{n}</button>
+          ))}
+          <button style={S.comensalChip(selectedComensal == null)} onClick={() => setSelectedComensal(null)}>Compartido</button>
+        </div>
+      )}
       </div>
 
       <div style={S.scroll}>
@@ -627,7 +652,7 @@ export default function Camarero() {
                   ) : (
                     <div style={S.qty}>
                       <button style={S.btn} onClick={() => change(item, -1)}>−</button>
-                      <span style={S.qnum}>{cart[item.id]?.qty || 0}</span>
+                      <span style={S.qnum}>{cart[`${item.id}::${comensalTag(selectedComensal)}`]?.qty || 0}</span>
                       <button style={S.btn} onClick={() => change(item, 1)}>+</button>
                     </div>
                   )}
@@ -749,7 +774,12 @@ export default function Camarero() {
               <div key={id} style={{ ...S.cartLine, flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <div>
-                    <div style={{ fontSize: 14 }}>{v.nombre}</div>
+                    <div style={{ fontSize: 14 }}>
+                      {v.nombre}
+                      {selectedTable?.session?.comensales > 1 && (
+                        <span style={{ fontSize: 11, color: '#7a6a50' }}> · {v.comensal == null ? 'Compartido' : `Comensal ${v.comensal}`}</span>
+                      )}
+                    </div>
                     {v.modificadoresDetalle?.length > 0 && (
                       <div style={{ fontSize: 12, color: '#8a7560', marginTop: 2 }}>
                         {v.modificadoresDetalle.map(m => m.opcion_nombre).join(', ')}
