@@ -40,6 +40,14 @@ const S = {
 
   mesasGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12, padding: 20 },
   mesaCard: { background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 12, padding: '16px 14px', cursor: 'pointer', textAlign: 'center' },
+  limpiezaOverlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 },
+  limpiezaBox: { background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 16, padding: 24, width: '100%', maxWidth: 380 },
+  limpiezaTitle: { fontFamily: "'Playfair Display', serif", fontSize: 17, color: '#e8c97a', marginBottom: 4 },
+  limpiezaSub: { fontSize: 13, color: '#8a7560', marginBottom: 18 },
+  limpiezaPasoRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '0.5px solid #2a2a2a', cursor: 'pointer' },
+  limpiezaCheck: (marcado) => ({ width: 22, height: 22, borderRadius: 6, border: `1.5px solid ${marcado ? '#2ecc71' : '#3a2e20'}`, background: marcado ? '#2ecc71' : 'transparent', color: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }),
+  limpiezaTexto: (marcado) => ({ fontSize: 14, color: marcado ? '#7a6a50' : '#f0e8d8', textDecoration: marcado ? 'line-through' : 'none' }),
+  limpiezaCloseBtn: { width: '100%', background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 10, padding: 12, fontSize: 14, color: '#8a7560', cursor: 'pointer', fontFamily: "'Inter', sans-serif", marginTop: 16 },
   mesaNum: { fontFamily: "'Playfair Display', serif", fontSize: 17, color: '#e8c97a' },
   mesaZona: { fontSize: 11, color: '#8a7560', marginTop: 2 },
   mesaComensales: { fontSize: 11, color: '#7a6a50', marginTop: 6 },
@@ -89,6 +97,8 @@ export default function Camarero() {
   const [selectedTable, setSelectedTable] = useState(null)
   const [modoHabilitado, setModoHabilitado] = useState(true)
   const [abriendoMesa, setAbriendoMesa] = useState(null)
+  const [limpiezaPasos, setLimpiezaPasos] = useState([])
+  const [limpiezaModal, setLimpiezaModal] = useState(null) // table | null
 
   const [categories, setCategories] = useState([])
   const [items, setItems] = useState([])
@@ -151,6 +161,7 @@ export default function Camarero() {
     setCamarero(data[0])
     setPinInput('')
     await loadTablas()
+    await loadLimpiezaPasos()
   }
 
   function cambiarCamarero() {
@@ -163,7 +174,7 @@ export default function Camarero() {
   async function loadTablas() {
     const { data: tabs } = await supabase
       .from('tables')
-      .select('id, numero, zona, capacidad, activa')
+      .select('id, numero, zona, capacidad, activa, necesita_limpieza, limpieza_progreso')
       .eq('restaurant_id', restaurantId)
       .eq('activa', true)
       .order('numero')
@@ -179,6 +190,32 @@ export default function Camarero() {
     setSessions(map)
   }
 
+  async function loadLimpiezaPasos() {
+    const { data } = await supabase
+      .from('limpieza_pasos')
+      .select('id, texto, orden')
+      .eq('restaurant_id', restaurantId)
+      .eq('activo', true)
+      .order('orden')
+    setLimpiezaPasos(data || [])
+  }
+
+  // Tilda/destilda un paso del checklist de la mesa que se está
+  // limpiando. Cuando quedan todos los pasos activos tildados, la
+  // mesa vuelve a estar libre sola.
+  async function toggleLimpiezaPaso(table, pasoId) {
+    const actual = table.limpieza_progreso || []
+    const nuevo = actual.includes(pasoId) ? actual.filter(id => id !== pasoId) : [...actual, pasoId]
+    const completo = limpiezaPasos.every(p => nuevo.includes(p.id))
+    const patch = { limpieza_progreso: nuevo, necesita_limpieza: !completo }
+    setTables(prev => prev.map(t => t.id === table.id ? { ...t, ...patch } : t))
+    setLimpiezaModal(prev => {
+      if (!prev || prev.id !== table.id) return prev
+      return completo ? null : { ...prev, ...patch }
+    })
+    await supabase.from('tables').update(patch).eq('id', table.id)
+  }
+
   // Realtime: refresca la lista de mesas cuando cambian sesiones (otra
   // mesa se abre/cierra, o se la toma otro camarero) sin necesitar F5.
   useEffect(() => {
@@ -189,11 +226,24 @@ export default function Camarero() {
         event: '*', schema: 'public', table: 'table_sessions',
         filter: `restaurant_id=eq.${restaurantId}`,
       }, () => { loadTablas() })
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'tables',
+        filter: `restaurant_id=eq.${restaurantId}`,
+      }, (payload) => {
+        // Mantiene sincronizado el progreso del checklist de limpieza
+        // entre pestañas/dispositivos distintos.
+        setTables(prev => prev.map(t => t.id === payload.new.id ? { ...t, ...payload.new } : t))
+        setLimpiezaModal(prev => {
+          if (!prev || prev.id !== payload.new.id) return prev
+          return payload.new.necesita_limpieza ? { ...prev, ...payload.new } : null
+        })
+      })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [camarero, restaurantId])
 
   async function abrirMesa(table) {
+    if (table.necesita_limpieza) { setLimpiezaModal(table); return }
     setAbriendoMesa(table.id)
     const session = sessions[table.id]
     try {
@@ -562,12 +612,35 @@ export default function Camarero() {
         ) : (
           <div style={S.mesasGrid}>
             {mesasParaAbrir.map(t => (
-              <div key={t.id} style={{ ...S.mesaCard, opacity: abriendoMesa === t.id ? 0.5 : 1 }} onClick={() => abrirMesa(t)}>
+              <div
+                key={t.id}
+                style={{ ...S.mesaCard, opacity: abriendoMesa === t.id ? 0.5 : 1, ...(t.necesita_limpieza ? { border: '0.5px solid #d4a017', background: '#2a2010' } : {}) }}
+                onClick={() => abrirMesa(t)}
+              >
                 <div style={S.mesaNum}>Mesa {t.numero}</div>
                 {t.zona && <div style={S.mesaZona}>{t.zona.charAt(0).toUpperCase() + t.zona.slice(1)}</div>}
-                <div style={S.mesaComensales}>Capacidad: {t.capacidad}</div>
+                <div style={S.mesaComensales}>{t.necesita_limpieza ? '🧹 Necesita limpieza' : `Capacidad: ${t.capacidad}`}</div>
               </div>
             ))}
+          </div>
+        )}
+
+        {limpiezaModal && (
+          <div style={S.limpiezaOverlay} onClick={() => setLimpiezaModal(null)}>
+            <div style={S.limpiezaBox} onClick={e => e.stopPropagation()}>
+              <div style={S.limpiezaTitle}>🧹 Mesa {limpiezaModal.numero}</div>
+              <div style={S.limpiezaSub}>Tildá cada paso a medida que lo completás — la mesa vuelve a estar libre sola.</div>
+              {limpiezaPasos.map(paso => {
+                const marcado = (limpiezaModal.limpieza_progreso || []).includes(paso.id)
+                return (
+                  <div key={paso.id} style={S.limpiezaPasoRow} onClick={() => toggleLimpiezaPaso(limpiezaModal, paso.id)}>
+                    <div style={S.limpiezaCheck(marcado)}>{marcado ? '✓' : ''}</div>
+                    <div style={S.limpiezaTexto(marcado)}>{paso.texto}</div>
+                  </div>
+                )
+              })}
+              <button style={S.limpiezaCloseBtn} onClick={() => setLimpiezaModal(null)}>Cerrar</button>
+            </div>
           </div>
         )}
       </div>
