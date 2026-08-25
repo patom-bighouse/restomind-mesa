@@ -11,6 +11,13 @@
 alter table order_items
   add column if not exists comensal integer;
 
+-- table_sessions tiene un permiso de SELECT por columna para el rol
+-- anónimo (ver sql/fix_grants_test.sql) que nunca incluyó
+-- "comensales" — Mesa.jsx lo necesita para mostrar los chips "¿Para
+-- quién?". Es aditivo: no le saca acceso a ninguna columna que ya
+-- tuviera permitida.
+grant select (comensales) on table_sessions to anon;
+
 -- Misma función de siempre (ver sql/modificadores_plato.sql), con un
 -- único agregado: lee "comensal" de cada ítem del payload y lo guarda
 -- en la columna nueva. El resto de la lógica (agrupado por mesa,
