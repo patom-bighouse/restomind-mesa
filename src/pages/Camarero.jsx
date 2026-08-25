@@ -24,6 +24,7 @@ const ALERGENOS = [
 const S = {
   app: { minHeight: '100vh', background: '#111', color: '#f0e8d8', fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column' },
   header: { background: '#0a0a0a', padding: '14px 20px', borderBottom: '0.5px solid #2a2a2a', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 10 },
+  stickyTop: { position: 'sticky', top: 0, zIndex: 15, background: '#111' },
   logo: { fontFamily: "'Playfair Display', serif", fontSize: 18, fontWeight: 600, color: '#e8c97a' },
   sub: { fontSize: 12, color: '#8a7560', marginTop: 2 },
   badge: { background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 20, padding: '5px 14px', fontSize: 12, color: '#c4a85a' },
@@ -576,6 +577,7 @@ export default function Camarero() {
   // ---------- Render: carta para cargar pedido ----------
   return (
     <div style={S.app}>
+      <div style={S.stickyTop}>
       <div style={S.header}>
         <div>
           <div style={S.logo}>{restaurant?.nombre || 'Restomind'}</div>
@@ -615,6 +617,7 @@ export default function Camarero() {
           <button style={S.comensalChip(selectedComensal == null)} onClick={() => setSelectedComensal(null)}>Compartido</button>
         </div>
       )}
+      </div>
 
       <div style={S.scroll}>
         {filteredCats.map(cat => {

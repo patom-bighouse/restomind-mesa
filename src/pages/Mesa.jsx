@@ -24,6 +24,7 @@ const ALERGENOS = [
 const S = {
   app: { minHeight: '100vh', background: '#1a1410', color: '#f0e8d8', display: 'flex', flexDirection: 'column', maxWidth: 480, margin: '0 auto' },
   header: { background: '#0f0c09', padding: '16px 20px 12px', borderBottom: '0.5px solid #3a2e20', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 10 },
+  stickyTop: { position: 'sticky', top: 0, zIndex: 15, background: '#1a1410' },
   logo: { fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 600, color: '#e8c97a' },
   sub: { fontSize: 11, color: '#8a7560', marginTop: 2 },
   badge: { fontSize: 11, color: '#8a7560', background: '#1a1410', border: '0.5px solid #3a2e20', padding: '4px 10px', borderRadius: 20 },
@@ -268,7 +269,7 @@ export default function Mesa() {
         // la más reciente y no rompemos la carga si hay filas duplicadas.
         const { data: sessionRows, error: sessErr } = await supabase
           .from('table_sessions')
-          .select('id, estado, abierta_at, cliente_telefono, cliente_nombre')
+          .select('id, estado, abierta_at, cliente_telefono, cliente_nombre, comensales')
           .eq('table_id', tableData.id)
           .eq('estado', 'abierta')
           .order('abierta_at', { ascending: false })
@@ -526,7 +527,7 @@ export default function Mesa() {
       if (esMesaCerrada) {
         const { data: sessionActualRows } = await supabase
           .from('table_sessions')
-          .select('id, estado, abierta_at, cliente_telefono, cliente_nombre')
+          .select('id, estado, abierta_at, cliente_telefono, cliente_nombre, comensales')
           .eq('table_id', table.id)
           .eq('estado', 'abierta')
           .order('abierta_at', { ascending: false })
@@ -750,6 +751,7 @@ export default function Mesa() {
 
   return (
     <div style={S.app}>
+      <div style={S.stickyTop}>
       <div style={S.header}>
         <div>
           <div style={S.logo}>{restaurant?.nombre || 'Restomind'}</div>
@@ -793,6 +795,7 @@ export default function Mesa() {
           <button style={S.comensalChip(selectedComensal == null)} onClick={() => setSelectedComensal(null)}>Compartido</button>
         </div>
       )}
+      </div>
 
       <div style={S.scroll}>
         {filteredCats.map(cat => {
