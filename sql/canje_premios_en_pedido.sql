@@ -21,6 +21,13 @@ alter table premios_fidelizacion drop constraint if exists premios_fidelizacion_
 alter table premios_fidelizacion add constraint premios_fidelizacion_tipo_check
   check (tipo in ('plato_gratis', 'descuento'));
 
+-- Los premios creados con la versión anterior (antes de tipo/menu_item_id)
+-- quedaron con tipo='plato_gratis' por el default de arriba pero sin
+-- menu_item_id — no cumplen la restricción nueva. Eran de prueba, así
+-- que se borran en vez de intentar adivinarles un plato al azar; hay
+-- que volver a crearlos desde /admin/fidelizacion con el tipo correcto.
+delete from premios_fidelizacion where tipo = 'plato_gratis' and menu_item_id is null;
+
 alter table premios_fidelizacion drop constraint if exists premios_fidelizacion_config_check;
 alter table premios_fidelizacion add constraint premios_fidelizacion_config_check
   check (
