@@ -50,6 +50,9 @@ export default function AdminClientes() {
   const [historialAbierto, setHistorialAbierto] = useState(null) // cliente_id | null
   const [movimientos, setMovimientos] = useState({}) // cliente_id -> [movimientos]
   const [redeeming, setRedeeming] = useState(false)
+  const [niveles, setNiveles] = useState([])
+  const [premios, setPremios] = useState([])
+  const [redeemPremioId, setRedeemPremioId] = useState('')
 
   useEffect(() => { checkAuth() }, [])
 
@@ -59,6 +62,8 @@ export default function AdminClientes() {
     const { data: rest } = await supabase.from('restaurants').select('nombre, moneda').eq('id', restaurantId).single()
     setRestaurant(rest)
     await loadClientes()
+    await loadNiveles()
+    await loadPremios()
     setLoading(false)
   }
 
@@ -70,6 +75,33 @@ export default function AdminClientes() {
       .order('puntos', { ascending: false })
     if (err) { setError(err.message); return }
     setClientes(data || [])
+  }
+
+  async function loadNiveles() {
+    const { data } = await supabase
+      .from('niveles_fidelizacion')
+      .select('id, nombre, umbral_gasto')
+      .eq('restaurant_id', restaurantId)
+      .order('umbral_gasto')
+    setNiveles(data || [])
+  }
+
+  async function loadPremios() {
+    const { data } = await supabase
+      .from('premios_fidelizacion')
+      .select('id, nombre, costo_puntos, nivel_minimo_id')
+      .eq('restaurant_id', restaurantId)
+      .eq('activo', true)
+      .order('costo_puntos')
+    setPremios(data || [])
+  }
+
+  // El nivel más alto cuyo umbral de gasto ya se alcanzó — el mismo
+  // criterio que usa fn_estado_fidelizacion del lado del cliente.
+  function nivelDeCliente(gastoAcumulado) {
+    const gasto = parseFloat(gastoAcumulado) || 0
+    const elegibles = niveles.filter(n => n.umbral_gasto <= gasto)
+    return elegibles.length > 0 ? elegibles[elegibles.length - 1] : null
   }
 
   async function toggleHistorial(clienteId) {
@@ -95,7 +127,28 @@ export default function AdminClientes() {
     setRedeemCliente(cliente)
     setRedeemCantidad('')
     setRedeemMotivo('')
+    setRedeemPremioId('')
     setError(null)
+  }
+
+  // Premios que este cliente puede canjear ahora: activos, con puntos
+  // suficientes, y si tienen nivel mínimo, que ya lo haya alcanzado.
+  function premiosDisponiblesPara(cliente) {
+    if (!cliente) return []
+    const nivel = nivelDeCliente(cliente.gasto_acumulado)
+    return premios.filter(p =>
+      p.costo_puntos <= cliente.puntos &&
+      (!p.nivel_minimo_id || (nivel && niveles.find(n => n.id === p.nivel_minimo_id)?.umbral_gasto <= nivel.umbral_gasto))
+    )
+  }
+
+  function seleccionarPremio(premioId) {
+    setRedeemPremioId(premioId)
+    const premio = premios.find(p => p.id === premioId)
+    if (premio) {
+      setRedeemCantidad(String(premio.costo_puntos))
+      setRedeemMotivo(premio.nombre)
+    }
   }
 
   async function confirmarCanje() {
@@ -156,6 +209,7 @@ export default function AdminClientes() {
           <a href={`/admin/upsell/${restaurantId}`} style={S.navTab(false)}>Upsell</a>
           <a href={`/admin/reservas/${restaurantId}`} style={S.navTab(false)}>Reservas</a>
           <a href={`/admin/limpieza/${restaurantId}`} style={S.navTab(false)}>Limpieza</a>
+          <a href={`/admin/fidelizacion/${restaurantId}`} style={S.navTab(false)}>Fidelización</a>
           <a href={`/admin/config/${restaurantId}`} style={S.navTab(false)}>Configuración</a>
           <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
         </div>
@@ -189,6 +243,7 @@ export default function AdminClientes() {
               <tr>
                 <th style={S.th}>Cliente</th>
                 <th style={S.th}>Teléfono</th>
+                <th style={S.th}>Nivel</th>
                 <th style={S.th}>Puntos</th>
                 <th style={S.th}>Gasto acumulado</th>
                 <th style={S.th}>Última visita</th>
@@ -201,6 +256,7 @@ export default function AdminClientes() {
                   <tr style={S.row}>
                     <td style={S.td}>{c.nombre || '—'}</td>
                     <td style={S.td}>{c.telefono}</td>
+                    <td style={S.td}>{nivelDeCliente(c.gasto_acumulado)?.nombre || '—'}</td>
                     <td style={{ ...S.td, ...S.puntos }}>{c.puntos}</td>
                     <td style={S.td}>{formatMoney(c.gasto_acumulado, restaurant?.moneda)}</td>
                     <td style={S.td}>{c.ultima_visita ? new Date(c.ultima_visita).toLocaleDateString('es-ES') : '—'}</td>
@@ -215,7 +271,7 @@ export default function AdminClientes() {
                   </tr>
                   {historialAbierto === c.id && (
                     <tr style={S.row}>
-                      <td colSpan={6} style={{ ...S.td, paddingTop: 0 }}>
+                      <td colSpan={7} style={{ ...S.td, paddingTop: 0 }}>
                         {!movimientos[c.id] ? (
                           <div style={{ fontSize: 12, color: '#555' }}>Cargando...</div>
                         ) : movimientos[c.id].length === 0 ? (
@@ -248,6 +304,18 @@ export default function AdminClientes() {
             <div style={S.modalTitle}>Canjear puntos</div>
             <div style={S.modalSub}>{redeemCliente.nombre || redeemCliente.telefono} · tiene {redeemCliente.puntos} puntos</div>
             {error && <div style={S.error}>{error}</div>}
+            {premiosDisponiblesPara(redeemCliente).length > 0 && (
+              <select
+                style={{ ...S.input, width: '100%', boxSizing: 'border-box', marginBottom: 16 }}
+                value={redeemPremioId}
+                onChange={e => seleccionarPremio(e.target.value)}
+              >
+                <option value="">Elige un premio del catálogo (opcional)</option>
+                {premiosDisponiblesPara(redeemCliente).map(p => (
+                  <option key={p.id} value={p.id}>{p.nombre} — {p.costo_puntos} puntos</option>
+                ))}
+              </select>
+            )}
             <input
               style={{ ...S.input, width: '100%', boxSizing: 'border-box', marginBottom: 16 }}
               type="number"

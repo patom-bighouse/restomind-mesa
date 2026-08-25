@@ -109,6 +109,9 @@ export default function Mesa() {
   const [nombreInput, setNombreInput] = useState('')
   const [guardandoCliente, setGuardandoCliente] = useState(false)
   const [clienteError, setClienteError] = useState(null)
+  const [fidelizacionEstado, setFidelizacionEstado] = useState(null) // resultado de fn_estado_fidelizacion
+  const [cargandoEstadoFidelizacion, setCargandoEstadoFidelizacion] = useState(false)
+  const [editandoTelefono, setEditandoTelefono] = useState(false)
   const [lastClosedSessionId, setLastClosedSessionId] = useState(null)
   const [resenaEstado, setResenaEstado] = useState('pendiente') // 'pendiente' | 'enviada' | 'omitida'
   const [resenaPuntuacion, setResenaPuntuacion] = useState(0)
@@ -560,6 +563,27 @@ export default function Mesa() {
     setNombreInput(session?.cliente_nombre || '')
     setClienteError(null)
     setOverlay('fidelizacion')
+    if (session?.cliente_telefono) {
+      setEditandoTelefono(false)
+      cargarEstadoFidelizacion(session.cliente_telefono)
+    } else {
+      setEditandoTelefono(true)
+      setFidelizacionEstado(null)
+    }
+  }
+
+  // Trae puntos, nivel y premios disponibles para el teléfono ya
+  // guardado — fn_estado_fidelizacion es pública mediante RPC porque
+  // clientes no se puede leer directo desde el cliente anónimo (dejaría
+  // consultar el saldo de cualquier teléfono ajeno).
+  async function cargarEstadoFidelizacion(telefono) {
+    setCargandoEstadoFidelizacion(true)
+    const { data } = await supabase.rpc('fn_estado_fidelizacion', {
+      p_restaurant_id: table.restaurant_id,
+      p_telefono: telefono,
+    })
+    setCargandoEstadoFidelizacion(false)
+    setFidelizacionEstado(data || null)
   }
 
   // fn_registrar_cliente_sesion valida, del lado del servidor, que la
@@ -590,7 +614,8 @@ export default function Mesa() {
       cliente_telefono: telefono,
       cliente_nombre: nombreInput.trim() || prev.cliente_nombre || null,
     } : prev)
-    setOverlay(null)
+    setEditandoTelefono(false)
+    await cargarEstadoFidelizacion(telefono)
   }
 
   async function loadMisPedidos() {
@@ -1112,12 +1137,56 @@ export default function Mesa() {
             </div>
           )}
 
-          {overlay === 'fidelizacion' && (
+          {overlay === 'fidelizacion' && !editandoTelefono && session?.cliente_telefono && (
+            <>
+              <button style={S.closeBtn} onClick={() => setOverlay(null)}>×</button>
+              <div style={S.sheetTitle}>🎁 Tu fidelización</div>
+              {cargandoEstadoFidelizacion ? (
+                <div style={{ textAlign: 'center', color: '#7a6a50', padding: '20px 0' }}>Cargando...</div>
+              ) : fidelizacionEstado ? (
+                <>
+                  <div style={{ textAlign: 'center', margin: '8px 0 16px' }}>
+                    <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 32, color: '#e8c97a' }}>{fidelizacionEstado.puntos}</div>
+                    <div style={{ fontSize: 12, color: '#7a6a50' }}>puntos</div>
+                  </div>
+                  {fidelizacionEstado.nivel_actual && (
+                    <div style={{ textAlign: 'center', fontSize: 14, color: '#c4a85a', marginBottom: 4 }}>
+                      Nivel {fidelizacionEstado.nivel_actual.nombre}
+                    </div>
+                  )}
+                  {fidelizacionEstado.proximo_nivel && (
+                    <div style={{ textAlign: 'center', fontSize: 12, color: '#7a6a50', marginBottom: 16 }}>
+                      Te faltan {formatMoney(fidelizacionEstado.proximo_nivel.umbral_gasto - fidelizacionEstado.gasto_acumulado, restaurant?.moneda)} para {fidelizacionEstado.proximo_nivel.nombre}
+                    </div>
+                  )}
+                  {fidelizacionEstado.premios?.length > 0 && (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Premios</div>
+                      {fidelizacionEstado.premios.map(p => (
+                        <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '0.5px solid #2a2018', opacity: p.disponible ? 1 : 0.5 }}>
+                          <div>
+                            <div style={{ fontSize: 13, color: '#f0e8d8' }}>{p.nombre}</div>
+                            {p.descripcion && <div style={{ fontSize: 11, color: '#7a6a50' }}>{p.descripcion}</div>}
+                          </div>
+                          <div style={{ fontSize: 12, color: p.disponible ? '#e8c97a' : '#7a6a50' }}>{p.costo_puntos} pts</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div style={{ fontSize: 13, color: '#7a6a50' }}>Todavía no tienes puntos — vuelve después de tu próxima visita.</div>
+              )}
+              <button style={{ ...S.resenaSkip, marginTop: 16 }} onClick={() => setEditandoTelefono(true)}>Cambiar teléfono</button>
+            </>
+          )}
+
+          {overlay === 'fidelizacion' && editandoTelefono && (
             <>
               <button style={S.closeBtn} onClick={() => setOverlay(null)}>×</button>
               <div style={S.sheetTitle}>🎁 Suma puntos por esta visita</div>
               <div style={{ fontSize: 13, color: '#8a7560', marginBottom: 16, lineHeight: 1.5 }}>
-                Dejanos tu teléfono y, cuando el camarero cierre la mesa, sumamos puntos por tu consumo automáticamente a tu cuenta de fidelización.
+                Déjanos tu teléfono y, cuando el camarero cierre la mesa, sumaremos puntos por tu consumo automáticamente a tu cuenta de fidelización.
               </div>
               {clienteError && <div style={{ ...S.error, margin: '0 0 12px' }}>{clienteError}</div>}
               <input

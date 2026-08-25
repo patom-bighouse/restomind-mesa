@@ -586,6 +586,7 @@ export default function AdminMesas() {
           <a href={`/admin/upsell/${restaurantId}`} style={S.navTab(false)}>Upsell</a>
           <a href={`/admin/reservas/${restaurantId}`} style={S.navTab(false)}>Reservas</a>
           <a href={`/admin/limpieza/${restaurantId}`} style={S.navTab(false)}>Limpieza</a>
+          <a href={`/admin/fidelizacion/${restaurantId}`} style={S.navTab(false)}>Fidelización</a>
           <a href={`/admin/config/${restaurantId}`} style={S.navTab(false)}>Configuración</a>
           {restaurant?.config?.modo_pedidos === 'camarero' && (
             <a href={`/camarero/${restaurantId}`} target="_blank" rel="noreferrer" style={S.navTab(false)}>Pantalla camarero ↗</a>
