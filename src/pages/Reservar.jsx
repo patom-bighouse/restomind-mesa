@@ -97,7 +97,7 @@ export default function Reservar() {
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
       <div style={S.card}>
         <div style={S.logo}>{restaurant?.nombre}</div>
-        <div style={S.sub}>Reservá tu mesa</div>
+        <div style={S.sub}>Reserva tu mesa</div>
 
         {error && <div style={S.error}>{error}</div>}
 

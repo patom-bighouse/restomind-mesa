@@ -132,7 +132,7 @@ export default function AdminConfig() {
   async function addSector() {
     setSectorError(null)
     const nombre = nuevoSectorNombre.trim()
-    if (!nombre) { setSectorError('Ingresá el nombre del sector.'); return }
+    if (!nombre) { setSectorError('Introduce el nombre del sector.'); return }
     const orden = sectores.length
     const { error: err } = await supabase
       .from('sectores_cocina')
@@ -168,13 +168,13 @@ export default function AdminConfig() {
     setCamareroError(null)
     const nombre = nuevoCamareroNombre.trim()
     const pin = nuevoCamareroPin.trim()
-    if (!nombre) { setCamareroError('Ingresá el nombre del camarero.'); return }
+    if (!nombre) { setCamareroError('Introduce el nombre del camarero.'); return }
     if (!/^\d{4}$/.test(pin)) { setCamareroError('El PIN debe ser de 4 dígitos numéricos.'); return }
     const { error: err } = await supabase
       .from('camareros')
       .insert({ restaurant_id: restaurantId, nombre, pin })
     if (err) {
-      setCamareroError(err.code === '23505' ? 'Ya existe un camarero con ese PIN. Elegí otro.' : err.message)
+      setCamareroError(err.code === '23505' ? 'Ya existe un camarero con ese PIN. Elige otro.' : err.message)
       return
     }
     setNuevoCamareroNombre('')
@@ -354,7 +354,7 @@ export default function AdminConfig() {
           <div style={S.modoCocinaOptions}>
             <div style={S.modoCocinaBtn(modoPedidos === 'cliente')} onClick={() => setModoPedidos('cliente')}>
               <div style={S.modoCocinaBtnTitle(modoPedidos === 'cliente')}>Cliente desde la mesa</div>
-              <div style={S.modoCocinaBtnDesc}>El cliente escanea el QR y arma su pedido solo, desde su celular.</div>
+              <div style={S.modoCocinaBtnDesc}>El cliente escanea el QR y arma su pedido solo, desde su móvil.</div>
             </div>
             <div style={S.modoCocinaBtn(modoPedidos === 'camarero')} onClick={() => setModoPedidos('camarero')}>
               <div style={S.modoCocinaBtnTitle(modoPedidos === 'camarero')}>Camarero con tablet</div>
@@ -368,7 +368,7 @@ export default function AdminConfig() {
           <div style={S.infoCard}>
             <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 4 }}>Camareros</div>
             <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 12 }}>
-              Cada camarero entra a su pantalla con este PIN de 4 dígitos. Recordá guardar la configuración de arriba para activar el modo camarero.
+              Cada camarero entra a su pantalla con este PIN de 4 dígitos. Recuerda guardar la configuración de arriba para activar el modo camarero.
             </div>
 
             {camareroError && <div style={{ ...S.error, marginBottom: 12 }}>{camareroError}</div>}
@@ -418,7 +418,7 @@ export default function AdminConfig() {
         <div style={S.infoCard}>
           <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 4 }}>Sectores de cocina</div>
           <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 12 }}>
-            Si tu cocina está dividida en estaciones (Parrilla, Cocina fría, Postres...), activá esto para poder filtrar las comandas por sector en la pantalla de Cocina.
+            Si tu cocina está dividida en estaciones (Parrilla, Cocina fría, Postres...), activa esto para poder filtrar las comandas por sector en la pantalla de Cocina.
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: sectoresCocinaActivo ? 16 : 0 }}>
@@ -470,7 +470,7 @@ export default function AdminConfig() {
         <div style={S.infoCard}>
           <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 4 }}>Envases (take away)</div>
           <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 12 }}>
-            La Ley 7/2022 obliga a cobrar por separado el envase si es de plástico de un solo uso. Si usás envases compostables, reciclables o reutilizables, la ley prohíbe cobrarlos aparte — deben ser gratuitos.
+            La Ley 7/2022 obliga a cobrar por separado el envase si es de plástico de un solo uso. Si usas envases compostables, reciclables o reutilizables, la ley prohíbe cobrarlos aparte — deben ser gratuitos.
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={S.toggleSwitch(envasesSostenibles)} onClick={() => setEnvasesSostenibles(!envasesSostenibles)}>

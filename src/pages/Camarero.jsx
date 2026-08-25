@@ -237,6 +237,18 @@ export default function Camarero() {
           if (!prev || prev.id !== payload.new.id) return prev
           return payload.new.necesita_limpieza ? { ...prev, ...payload.new } : null
         })
+        // Si la mesa que este camarero tenía abierta para pedir se
+        // acaba de marcar "necesita limpieza" (se cerró desde otro
+        // lado mientras él estaba ahí — lo más probable es que sea el
+        // mismo camarero quien la vuelva a atender), lo devolvemos a
+        // la lista y le mostramos el checklist directamente.
+        setSelectedTable(prev => {
+          if (prev && prev.id === payload.new.id && payload.new.necesita_limpieza) {
+            setLimpiezaModal({ ...prev, ...payload.new })
+            return null
+          }
+          return prev
+        })
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
@@ -536,7 +548,7 @@ export default function Camarero() {
           </div>
         </div>
         <div style={S.center}>
-          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: '#e8c97a' }}>Ingresá tu PIN</div>
+          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: '#e8c97a' }}>Introduce tu PIN</div>
           <div style={S.pinDots}>
             {[0, 1, 2, 3].map(i => <div key={i} style={S.pinDot(i < pinInput.length)} />)}
           </div>
@@ -629,7 +641,7 @@ export default function Camarero() {
           <div style={S.limpiezaOverlay} onClick={() => setLimpiezaModal(null)}>
             <div style={S.limpiezaBox} onClick={e => e.stopPropagation()}>
               <div style={S.limpiezaTitle}>🧹 Mesa {limpiezaModal.numero}</div>
-              <div style={S.limpiezaSub}>Tildá cada paso a medida que lo completás — la mesa vuelve a estar libre sola.</div>
+              <div style={S.limpiezaSub}>Marca cada paso a medida que lo completas — la mesa vuelve a estar libre sola.</div>
               {limpiezaPasos.map(paso => {
                 const marcado = (limpiezaModal.limpieza_progreso || []).includes(paso.id)
                 return (
@@ -749,7 +761,7 @@ export default function Camarero() {
           <div style={S.sheet} onClick={e => e.stopPropagation()}>
             <div style={S.sheetTitle}>Alérgenos a evitar</div>
             <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 14 }}>
-              Marcá los que el comensal quiere evitar — se ocultan de la carta los platos que los contengan.
+              Marca los que el comensal quiere evitar — se ocultan de la carta los platos que los contengan.
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px 12px', marginBottom: 16 }}>
               {ALERGENOS.map(a => {
@@ -795,7 +807,7 @@ export default function Camarero() {
                 <div style={{ fontSize: 13, fontWeight: 500, color: '#c4a85a', marginBottom: 8 }}>
                   {grupo.grupo_nombre}
                   {grupo.obligatorio && <span style={{ color: '#e87a7a', fontSize: 11 }}> · obligatorio</span>}
-                  {grupo.tipo_seleccion === 'multiple' && <span style={{ color: '#7a6a50', fontSize: 11 }}> · elegí una o más</span>}
+                  {grupo.tipo_seleccion === 'multiple' && <span style={{ color: '#7a6a50', fontSize: 11 }}> · elige una o más</span>}
                 </div>
                 {grupo.opciones.map(op => {
                   const elegido = grupo.tipo_seleccion === 'multiple'
@@ -831,7 +843,7 @@ export default function Camarero() {
                   disabled={faltaObligatorio}
                   style={{ background: faltaObligatorio ? '#5a4a2a' : '#e8c97a', color: faltaObligatorio ? '#8a7560' : '#1a1410', border: 'none', borderRadius: 10, padding: '12px', width: '100%', fontSize: 14, fontWeight: 500, cursor: faltaObligatorio ? 'not-allowed' : 'pointer', fontFamily: "'Inter', sans-serif" }}
                 >
-                  {faltaObligatorio ? 'Elegí las opciones obligatorias' : 'Agregar al pedido'}
+                  {faltaObligatorio ? 'Elige las opciones obligatorias' : 'Agregar al pedido'}
                 </button>
               )
             })()}
@@ -901,7 +913,7 @@ export default function Camarero() {
           <div style={S.sheet} onClick={e => e.stopPropagation()}>
             <div style={S.sheetTitle}>🎁 Fidelización — Mesa {selectedTable.numero}</div>
             <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 14, lineHeight: 1.5 }}>
-              Cargá el teléfono del cliente para que sume puntos automáticamente cuando se cierre la mesa como pagada.
+              Introduce el teléfono del cliente para que sume puntos automáticamente cuando se cierre la mesa como pagada.
             </div>
             {clienteError && <div style={{ fontSize: 13, color: '#e87a7a', marginBottom: 10 }}>{clienteError}</div>}
             <input

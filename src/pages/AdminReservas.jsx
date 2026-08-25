@@ -189,7 +189,7 @@ export default function AdminReservas() {
       <div style={S.content}>
         <div style={S.sectionTitle}>Reservas</div>
         <div style={S.sectionHint}>
-          Compartí este link para que tus clientes reserven mesa por su cuenta — en tu Instagram, Google Maps,
+          Comparte este link para que tus clientes reserven mesa por su cuenta — en tu Instagram, Google Maps,
           WhatsApp, o embebido en tu propia web. Las que llegan por acá quedan "Pendiente" hasta que las confirmes.
         </div>
 

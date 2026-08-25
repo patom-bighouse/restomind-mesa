@@ -761,8 +761,8 @@ export default function AdminMesas() {
           <>
             <div style={S.planoHint}>
               {editandoPlano
-                ? 'Arrastrá las mesas hasta que el plano se parezca a tu salón real — se guarda solo al soltar.'
-                : 'Tocá una mesa para abrirla o ver su cuenta, igual que en la grilla.'}
+                ? 'Arrastra las mesas hasta que el plano se parezca a tu salón real — se guarda solo al soltar.'
+                : 'Toca una mesa para abrirla o ver su cuenta, igual que en la grilla.'}
             </div>
             {ZONAS.map(zona => {
               const zonaTablas = tables.filter(t => t.zona === zona).sort((a, b) => a.numero - b.numero)
@@ -844,7 +844,7 @@ export default function AdminMesas() {
         <div style={S.limpiezaOverlay} onClick={() => setLimpiezaModal(null)}>
           <div style={S.limpiezaBox} onClick={e => e.stopPropagation()}>
             <div style={S.limpiezaTitle}>🧹 Mesa {limpiezaModal.numero}</div>
-            <div style={S.limpiezaSub}>Tildá cada paso a medida que lo completás — la mesa vuelve a estar libre sola.</div>
+            <div style={S.limpiezaSub}>Marca cada paso a medida que lo completas — la mesa vuelve a estar libre sola.</div>
             {limpiezaPasos.map(paso => {
               const marcado = (limpiezaModal.limpieza_progreso || []).includes(paso.id)
               return (

@@ -868,7 +868,7 @@ export default function Mesa() {
           <button style={S.closeBtn} onClick={() => setShowAlergenosPanel(false)}>×</button>
           <div style={S.sheetTitle}>Alérgenos a evitar</div>
           <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 14 }}>
-            Marcá los que querés evitar — vamos a ocultar de la carta los platos que los contengan.
+            Marca los que quieres evitar — ocultaremos de la carta los platos que los contengan.
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px 12px', marginBottom: 16 }}>
             {ALERGENOS.map(a => {
@@ -915,7 +915,7 @@ export default function Mesa() {
                   <div style={{ fontSize: 13, fontWeight: 500, color: '#c4a85a', marginBottom: 8 }}>
                     {grupo.grupo_nombre}
                     {grupo.obligatorio && <span style={{ color: '#e87a7a', fontSize: 11 }}> · obligatorio</span>}
-                    {grupo.tipo_seleccion === 'multiple' && <span style={{ color: '#7a6a50', fontSize: 11 }}> · elegí una o más</span>}
+                    {grupo.tipo_seleccion === 'multiple' && <span style={{ color: '#7a6a50', fontSize: 11 }}> · elige una o más</span>}
                   </div>
                   {grupo.opciones.map(op => {
                     const elegido = grupo.tipo_seleccion === 'multiple'
@@ -951,7 +951,7 @@ export default function Mesa() {
                     disabled={faltaObligatorio}
                     style={{ background: faltaObligatorio ? '#5a4a2a' : '#e8c97a', color: faltaObligatorio ? '#8a7560' : '#1a1410', border: 'none', borderRadius: 10, padding: '12px', width: '100%', fontSize: 14, fontWeight: 500, cursor: faltaObligatorio ? 'not-allowed' : 'pointer', fontFamily: "'Inter', sans-serif" }}
                   >
-                    {faltaObligatorio ? 'Elegí las opciones obligatorias' : 'Agregar al pedido'}
+                    {faltaObligatorio ? 'Elige las opciones obligatorias' : 'Agregar al pedido'}
                   </button>
                 )
               })()}
@@ -1115,7 +1115,7 @@ export default function Mesa() {
           {overlay === 'fidelizacion' && (
             <>
               <button style={S.closeBtn} onClick={() => setOverlay(null)}>×</button>
-              <div style={S.sheetTitle}>🎁 Sumá puntos por esta visita</div>
+              <div style={S.sheetTitle}>🎁 Suma puntos por esta visita</div>
               <div style={{ fontSize: 13, color: '#8a7560', marginBottom: 16, lineHeight: 1.5 }}>
                 Dejanos tu teléfono y, cuando el camarero cierre la mesa, sumamos puntos por tu consumo automáticamente a tu cuenta de fidelización.
               </div>

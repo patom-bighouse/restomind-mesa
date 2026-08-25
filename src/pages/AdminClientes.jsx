@@ -101,7 +101,7 @@ export default function AdminClientes() {
   async function confirmarCanje() {
     const cantidad = parseInt(redeemCantidad, 10)
     if (!Number.isInteger(cantidad) || cantidad <= 0) {
-      setError('Ingresá una cantidad de puntos válida.')
+      setError('Introduce una cantidad de puntos válida.')
       return
     }
     if (cantidad > redeemCliente.puntos) {

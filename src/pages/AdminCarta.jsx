@@ -615,7 +615,7 @@ export default function AdminCarta() {
 
             <label style={S.label}>Alérgenos</label>
             <div style={{ fontSize: 11, color: '#7a6a50', marginBottom: 8, marginTop: -4 }}>
-              Marcá los que contenga este plato (Reglamento UE 1169/2011). El cliente los va a ver en la carta y podrá filtrar por ellos.
+              Marca los que contenga este plato (Reglamento UE 1169/2011). El cliente los verá en la carta y podrá filtrar por ellos.
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px 12px', marginBottom: 16 }}>
               {ALERGENOS.map(a => {
@@ -643,7 +643,7 @@ export default function AdminCarta() {
               <>
                 <label style={S.label}>Modificadores</label>
                 <div style={{ fontSize: 11, color: '#7a6a50', marginBottom: 8, marginTop: -4 }}>
-                  Elegí qué grupos aplican a este plato. El precio extra de cada opción es propio de este plato.
+                  Elige qué grupos aplican a este plato. El precio extra de cada opción es propio de este plato.
                 </div>
                 <div style={{ marginBottom: 16 }}>
                   {modGrupos.map(grupo => {

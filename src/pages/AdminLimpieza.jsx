@@ -137,7 +137,7 @@ export default function AdminLimpieza() {
         <div style={S.sectionTitle}>Checklist de limpieza</div>
         <div style={S.sectionHint}>
           Estos pasos aparecen cuando se cierra una mesa con consumo real — queda marcada "necesita limpieza"
-          hasta que se tildan todos, en la Grilla, el Plano, y la pantalla del camarero.
+          hasta que se marcan todos, en la Grilla, el Plano, y la pantalla del camarero.
         </div>
 
         {error && <div style={S.error}>{error}</div>}
