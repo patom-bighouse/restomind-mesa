@@ -602,6 +602,9 @@ export default function Mesa() {
   const puntosDisponibles = (fidelizacionEstado?.puntos || 0) - puntosReservados
 
   function canjearPremio(premio) {
+    // En modo camarero, este teléfono nunca envía el pedido — el canje
+    // solo puede quedar en manos de quien sí lo hace (Camarero.jsx).
+    if (esModoCamarero) return
     if (premio.costo_puntos > puntosDisponibles) return
     setPremiosEnCarrito(prev => [...prev, {
       key: crypto.randomUUID(),
@@ -1210,7 +1213,7 @@ export default function Mesa() {
                       Te faltan {formatMoney(fidelizacionEstado.proximo_nivel.umbral_gasto - fidelizacionEstado.gasto_acumulado, restaurant?.moneda)} para {fidelizacionEstado.proximo_nivel.nombre}
                     </div>
                   )}
-                  {premiosEnCarrito.length > 0 && (
+                  {!esModoCamarero && premiosEnCarrito.length > 0 && (
                     <div style={{ marginTop: 8, marginBottom: 8 }}>
                       <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>En tu pedido</div>
                       {premiosEnCarrito.map(p => (
@@ -1237,13 +1240,20 @@ export default function Mesa() {
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               <span style={{ fontSize: 12, color: puedeCanjear ? '#e8c97a' : '#7a6a50' }}>{p.costo_puntos} pts</span>
-                              <button
-                                style={{ ...S.upsellBtn, opacity: puedeCanjear ? 1 : 0.4 }}
-                                disabled={!puedeCanjear}
-                                onClick={() => canjearPremio(p)}
-                              >
-                                Canjear
-                              </button>
+                              {esModoCamarero ? (
+                                // En modo camarero, el cliente no puede enviar
+                                // pedidos por su cuenta — el canje solo puede
+                                // hacerlo quien realmente confirma el pedido.
+                                puedeCanjear && <span style={{ fontSize: 11, color: '#7a6a50', fontStyle: 'italic' }}>Pídeselo al camarero</span>
+                              ) : (
+                                <button
+                                  style={{ ...S.upsellBtn, opacity: puedeCanjear ? 1 : 0.4 }}
+                                  disabled={!puedeCanjear}
+                                  onClick={() => canjearPremio(p)}
+                                >
+                                  Canjear
+                                </button>
+                              )}
                             </div>
                           </div>
                         )
