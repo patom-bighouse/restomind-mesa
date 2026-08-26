@@ -121,6 +121,10 @@ export default function Camarero() {
   const [nombreInput, setNombreInput] = useState('')
   const [guardandoCliente, setGuardandoCliente] = useState(false)
   const [clienteError, setClienteError] = useState(null)
+  const [editandoTelefono, setEditandoTelefono] = useState(false)
+  const [fidelizacionEstado, setFidelizacionEstado] = useState(null)
+  const [cargandoEstadoFidelizacion, setCargandoEstadoFidelizacion] = useState(false)
+  const [premiosEnCarrito, setPremiosEnCarrito] = useState([])
 
   useEffect(() => {
     loadRestaurant()
@@ -307,6 +311,43 @@ export default function Camarero() {
     setNombreInput(selectedTable?.session?.cliente_nombre || '')
     setClienteError(null)
     setShowFidelizacion(true)
+    if (selectedTable?.session?.cliente_telefono) {
+      setEditandoTelefono(false)
+      cargarEstadoFidelizacion(selectedTable.session.cliente_telefono)
+    } else {
+      setEditandoTelefono(true)
+      setFidelizacionEstado(null)
+    }
+  }
+
+  async function cargarEstadoFidelizacion(telefono) {
+    setCargandoEstadoFidelizacion(true)
+    const { data } = await supabase.rpc('fn_estado_fidelizacion', {
+      p_restaurant_id: restaurantId,
+      p_telefono: telefono,
+    })
+    setCargandoEstadoFidelizacion(false)
+    setFidelizacionEstado(data || null)
+  }
+
+  const puntosReservados = premiosEnCarrito.reduce((s, p) => s + p.costoPuntos, 0)
+  const puntosDisponibles = (fidelizacionEstado?.puntos || 0) - puntosReservados
+
+  function canjearPremio(premio) {
+    if (premio.costo_puntos > puntosDisponibles) return
+    setPremiosEnCarrito(prev => [...prev, {
+      key: crypto.randomUUID(),
+      premioId: premio.id,
+      nombre: premio.nombre,
+      tipo: premio.tipo,
+      costoPuntos: premio.costo_puntos,
+      descuentoImporte: premio.descuento_importe || 0,
+      comensal: selectedComensal,
+    }])
+  }
+
+  function quitarPremioCarrito(key) {
+    setPremiosEnCarrito(prev => prev.filter(p => p.key !== key))
   }
 
   async function guardarCliente() {
@@ -323,7 +364,8 @@ export default function Camarero() {
     if (err) { setClienteError(err.message); return }
     setSelectedTable(prev => prev ? { ...prev, session: { ...prev.session, cliente_telefono: telefono, cliente_nombre: nuevoNombre } } : prev)
     setSessions(prev => ({ ...prev, [selectedTable.id]: { ...prev[selectedTable.id], cliente_telefono: telefono, cliente_nombre: nuevoNombre } }))
-    setShowFidelizacion(false)
+    setEditandoTelefono(false)
+    await cargarEstadoFidelizacion(telefono)
   }
 
   // ---------- Carta ----------
@@ -491,7 +533,8 @@ export default function Camarero() {
   }
 
   const cartCount = Object.values(cart).reduce((a, b) => a + b.qty, 0)
-  const cartTotal = Object.values(cart).reduce((s, i) => s + i.precio * i.qty, 0)
+  const descuentoPremios = premiosEnCarrito.reduce((s, p) => s + (p.tipo === 'descuento' ? p.descuentoImporte : 0), 0)
+  const cartTotal = Math.max(0, Object.values(cart).reduce((s, i) => s + i.precio * i.qty, 0) - descuentoPremios)
 
   const itemIdsEnCarrito = new Set(Object.values(cart).map(v => v.menuItemId))
   const categoriasEnCarrito = new Set(
@@ -519,13 +562,17 @@ export default function Camarero() {
         comensal: v.comensal ?? null,
         modificadores: (v.modificadoresDetalle || []).map(m => ({ grupo_id: m.grupo_id, opcion_id: m.opcion_id })),
       }))
+      const premiosPayload = premiosEnCarrito.map(p => ({ premio_id: p.premioId, comensal: p.comensal ?? null }))
       const { error: err } = await supabase.rpc('fn_registrar_pedido', {
         p_table_session_id: selectedTable.session.id,
         p_items: itemsPayload,
         p_camarero_id: camarero.id,
+        p_premios_canjeados: premiosPayload,
       })
       if (err) throw err
       setCart({})
+      setPremiosEnCarrito([])
+      if (selectedTable?.session?.cliente_telefono) await cargarEstadoFidelizacion(selectedTable.session.cliente_telefono)
       setShowCart(false)
       setSendSuccess(true)
       setTimeout(() => setSendSuccess(false), 2000)
@@ -748,9 +795,9 @@ export default function Camarero() {
         })}
       </div>
 
-      <div style={S.cartBar(cartCount > 0)} onClick={() => setShowCart(true)}>
+      <div style={S.cartBar(cartCount > 0 || premiosEnCarrito.length > 0)} onClick={() => setShowCart(true)}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={S.cartBadge}>{cartCount}</div>
+          <div style={S.cartBadge}>{cartCount + premiosEnCarrito.length}</div>
           <span style={{ fontSize: 14, fontWeight: 500, color: '#1a1410' }}>Enviar a cocina</span>
         </div>
         <span style={{ fontSize: 15, fontWeight: 500, color: '#1a1410' }}>{formatMoney(cartTotal, restaurant?.moneda)}</span>
@@ -880,6 +927,24 @@ export default function Camarero() {
                 </div>
               </div>
             ))}
+            {premiosEnCarrito.length > 0 && (
+              <div style={{ marginTop: 6 }}>
+                {premiosEnCarrito.map(p => (
+                  <div key={p.key} style={S.cartLine}>
+                    <div>
+                      <div style={{ fontSize: 14 }}>🎁 {p.nombre}</div>
+                      {selectedTable?.session?.comensales > 1 && (
+                        <div style={{ fontSize: 11, color: '#7a6a50' }}>{p.comensal == null ? 'Compartido' : `Comensal ${p.comensal}`}</div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontSize: 14, color: '#e8c97a' }}>{p.tipo === 'plato_gratis' ? 'GRATIS' : `-${formatMoney(p.descuentoImporte, restaurant?.moneda)}`}</span>
+                      <button style={{ ...S.btn, width: 26, height: 26 }} onClick={() => quitarPremioCarrito(p.key)}>×</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             {sugerencias.length > 0 && (
               <div style={{ marginTop: 12 }}>
                 {sugerencias.map(s => (
@@ -908,7 +973,79 @@ export default function Camarero() {
         </div>
       )}
 
-      {showFidelizacion && (
+      {showFidelizacion && !editandoTelefono && selectedTable?.session?.cliente_telefono && (
+        <div style={S.overlay} onClick={() => setShowFidelizacion(false)}>
+          <div style={S.sheet} onClick={e => e.stopPropagation()}>
+            <div style={S.sheetTitle}>🎁 Fidelización — Mesa {selectedTable.numero}</div>
+            {cargandoEstadoFidelizacion ? (
+              <div style={{ textAlign: 'center', color: '#7a6a50', padding: '20px 0' }}>Cargando...</div>
+            ) : fidelizacionEstado ? (
+              <>
+                <div style={{ textAlign: 'center', margin: '8px 0 16px' }}>
+                  <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 32, color: '#e8c97a' }}>{fidelizacionEstado.puntos}</div>
+                  <div style={{ fontSize: 12, color: '#7a6a50' }}>puntos</div>
+                </div>
+                {fidelizacionEstado.nivel_actual && (
+                  <div style={{ textAlign: 'center', fontSize: 14, color: '#c4a85a', marginBottom: 4 }}>
+                    Nivel {fidelizacionEstado.nivel_actual.nombre}
+                  </div>
+                )}
+                {fidelizacionEstado.proximo_nivel && (
+                  <div style={{ textAlign: 'center', fontSize: 12, color: '#7a6a50', marginBottom: 16 }}>
+                    Faltan {formatMoney(fidelizacionEstado.proximo_nivel.umbral_gasto - fidelizacionEstado.gasto_acumulado, restaurant?.moneda)} para {fidelizacionEstado.proximo_nivel.nombre}
+                  </div>
+                )}
+                {premiosEnCarrito.length > 0 && (
+                  <div style={{ marginTop: 8, marginBottom: 8 }}>
+                    <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>En el pedido</div>
+                    {premiosEnCarrito.map(p => (
+                      <div key={p.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0' }}>
+                        <div style={{ fontSize: 13, color: '#e8c97a' }}>🎁 {p.nombre} ({p.costoPuntos} pts)</div>
+                        <button style={{ background: 'none', border: 'none', color: '#7a6a50', fontSize: 12, textDecoration: 'underline', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }} onClick={() => quitarPremioCarrito(p.key)}>Quitar</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {fidelizacionEstado.premios?.length > 0 && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Premios</div>
+                    {fidelizacionEstado.premios.map(p => {
+                      const puedeCanjear = p.costo_puntos <= puntosDisponibles
+                      return (
+                        <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '0.5px solid #2a2a2a', opacity: puedeCanjear ? 1 : 0.5 }}>
+                          <div>
+                            <div style={{ fontSize: 13, color: '#f0e8d8' }}>
+                              {p.tipo === 'plato_gratis' ? `🍽 ${p.menu_item_nombre}` : `💶 -${formatMoney(p.descuento_importe, restaurant?.moneda)}`}
+                              {' · '}{p.nombre}
+                            </div>
+                            {p.descripcion && <div style={{ fontSize: 11, color: '#7a6a50' }}>{p.descripcion}</div>}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 12, color: puedeCanjear ? '#e8c97a' : '#7a6a50' }}>{p.costo_puntos} pts</span>
+                            <button style={{ ...S.upsellBtn, opacity: puedeCanjear ? 1 : 0.4 }} disabled={!puedeCanjear} onClick={() => canjearPremio(p)}>
+                              Canjear
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ fontSize: 13, color: '#7a6a50' }}>Este cliente todavía no tiene puntos.</div>
+            )}
+            <button
+              style={{ background: 'none', border: 'none', color: '#7a6a50', fontSize: 12, textDecoration: 'underline', cursor: 'pointer', fontFamily: "'Inter', sans-serif", marginTop: 16 }}
+              onClick={() => setEditandoTelefono(true)}
+            >
+              Cambiar teléfono
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showFidelizacion && editandoTelefono && (
         <div style={S.overlay} onClick={() => setShowFidelizacion(false)}>
           <div style={S.sheet} onClick={e => e.stopPropagation()}>
             <div style={S.sheetTitle}>🎁 Fidelización — Mesa {selectedTable.numero}</div>

@@ -431,6 +431,7 @@ export default function AdminCarta() {
           <a href={`/admin/upsell/${restaurantId}`} style={S.navTab(false)}>Upsell</a>
           <a href={`/admin/reservas/${restaurantId}`} style={S.navTab(false)}>Reservas</a>
           <a href={`/admin/limpieza/${restaurantId}`} style={S.navTab(false)}>Limpieza</a>
+          <a href={`/admin/fidelizacion/${restaurantId}`} style={S.navTab(false)}>Fidelización</a>
           <a href={`/admin/config/${restaurantId}`} style={S.navTab(false)}>Configuración</a>
           <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
         </div>
