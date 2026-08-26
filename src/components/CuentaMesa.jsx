@@ -144,6 +144,23 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
         items = itemsData || []
       }
 
+      // El total autoritativo (orders.total, ya calculado por la base)
+      // incluye el extra de los modificadores elegidos — sin traerlos
+      // acá, la lista de platos no sumaba lo mismo que ese total.
+      const itemIds = items.map(i => i.id)
+      let modificadoresPorItem = {}
+      if (itemIds.length > 0) {
+        const { data: modsData } = await supabase
+          .from('order_item_modificadores')
+          .select('order_item_id, opcion_nombre, precio_extra')
+          .in('order_item_id', itemIds)
+        ;(modsData || []).forEach(m => {
+          if (!modificadoresPorItem[m.order_item_id]) modificadoresPorItem[m.order_item_id] = []
+          modificadoresPorItem[m.order_item_id].push(m)
+        })
+      }
+      items = items.map(i => ({ ...i, modificadores: modificadoresPorItem[i.id] || [] }))
+
       const armados = (orders || []).map(o => ({
         ...o,
         items: items.filter(i => i.order_id === o.id),
@@ -162,13 +179,20 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
   const falta = Math.max(0, total - totalPagado)
   const cubierto = falta <= 0.01
 
+  // Extra de los modificadores elegidos para un ítem (ej. "punto de
+  // cocción", "tamaño") — sin esto, el precio de la línea no coincidía
+  // con el total real, que sí los incluye.
+  function extraModificadores(item) {
+    return (item.modificadores || []).reduce((s, m) => s + parseFloat(m.precio_extra || 0), 0)
+  }
+
   // Desglose por comensal — solo informativo, guía para que el
   // camarero sepa cuánto le corresponde a cada uno. No condiciona el
   // cobro en sí, que sigue siendo de monto libre como siempre.
   const porComensalMap = {}
   pedidos.forEach(p => (p.items || []).forEach(item => {
     const key = item.comensal == null ? 'compartido' : item.comensal
-    porComensalMap[key] = (porComensalMap[key] || 0) + parseFloat(item.precio_snapshot) * item.cantidad
+    porComensalMap[key] = (porComensalMap[key] || 0) + (parseFloat(item.precio_snapshot) + extraModificadores(item)) * item.cantidad
   }))
   const porComensal = Object.entries(porComensalMap).sort(([a], [b]) => {
     if (a === 'compartido') return 1
@@ -252,9 +276,16 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
               — Pedido {new Date(pedido.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })} —
             </div>
             {pedido.items.map(item => (
-              <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>{item.premio_canjeado_id ? '🎁 ' : ''}{item.cantidad}× {item.nombre_snapshot}{item.comensal != null ? ` (C${item.comensal})` : ''}</span>
-                <span>{formatMoney(parseFloat(item.precio_snapshot) * item.cantidad, moneda)}</span>
+              <div key={item.id}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>{item.premio_canjeado_id ? '🎁 ' : ''}{item.cantidad}× {item.nombre_snapshot}{item.comensal != null ? ` (C${item.comensal})` : ''}</span>
+                  <span>{formatMoney((parseFloat(item.precio_snapshot) + extraModificadores(item)) * item.cantidad, moneda)}</span>
+                </div>
+                {item.modificadores?.map(m => (
+                  <div key={m.opcion_nombre} style={{ fontSize: 11, paddingLeft: 12 }}>
+                    {m.opcion_nombre}{parseFloat(m.precio_extra) > 0 ? ` (+${formatMoney(m.precio_extra, moneda)})` : ''}
+                  </div>
+                ))}
               </div>
             ))}
             {pedido.notas && <div style={{ fontSize: 11 }}>Nota: {pedido.notas}</div>}
@@ -318,10 +349,15 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
                     <div style={S.itemNombre}>
                       {item.premio_canjeado_id ? '🎁 ' : ''}{item.cantidad}× {item.nombre_snapshot}
                       {item.comensal != null && <span style={{ fontSize: 11, color: '#7a6a50' }}> · Comensal {item.comensal}</span>}
+                      {item.modificadores?.length > 0 && (
+                        <div style={S.itemNota}>
+                          {item.modificadores.map(m => m.opcion_nombre).join(', ')}
+                        </div>
+                      )}
                       {item.notas && <div style={S.itemNota}>{item.notas}</div>}
                     </div>
                     <div style={S.itemPrecio}>
-                      {formatMoney(parseFloat(item.precio_snapshot) * item.cantidad, moneda)}
+                      {formatMoney((parseFloat(item.precio_snapshot) + extraModificadores(item)) * item.cantidad, moneda)}
                     </div>
                   </div>
                 ))}
