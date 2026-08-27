@@ -15,6 +15,16 @@ const DIAS = [
 
 const DEFAULT_DIA = { abierto: true, apertura: '13:00', cierre: '16:00', apertura2: '20:00', cierre2: '23:30' }
 
+// "Configuración" nunca aparece acá a propósito — eso sigue siendo
+// solo del dueño, con su login real.
+const PERMISOS_DISPONIBLES = [
+  { key: 'pedidos', label: 'Pedidos' },
+  { key: 'cocina', label: 'Cocina' },
+  { key: 'clientes', label: 'Clientes' },
+  { key: 'reservas', label: 'Reservas' },
+  { key: 'limpieza', label: 'Limpieza' },
+]
+
 const S = {
   app: { minHeight: '100vh', background: '#111', color: '#f0e8d8', fontFamily: "'Inter', sans-serif" },
   header: { background: '#0a0a0a', padding: '14px 24px', borderBottom: '0.5px solid #2a2a2a', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 10, flexWrap: 'wrap', gap: 12 },
@@ -70,6 +80,7 @@ export default function AdminConfig() {
   const [camareros, setCamareros] = useState([])
   const [nuevoCamareroNombre, setNuevoCamareroNombre] = useState('')
   const [nuevoCamareroPin, setNuevoCamareroPin] = useState('')
+  const [nuevoCamareroPermisos, setNuevoCamareroPermisos] = useState(['pedidos'])
   const [camareroError, setCamareroError] = useState(null)
   const [sectoresCocinaActivo, setSectoresCocinaActivo] = useState(false)
   const [envasesSostenibles, setEnvasesSostenibles] = useState(false)
@@ -158,10 +169,14 @@ export default function AdminConfig() {
   async function loadCamareros() {
     const { data } = await supabase
       .from('camareros')
-      .select('id, nombre, pin, activo')
+      .select('id, nombre, pin, activo, permisos')
       .eq('restaurant_id', restaurantId)
       .order('nombre')
     setCamareros(data || [])
+  }
+
+  function toggleNuevoPermiso(permiso) {
+    setNuevoCamareroPermisos(prev => prev.includes(permiso) ? prev.filter(p => p !== permiso) : [...prev, permiso])
   }
 
   async function addCamarero() {
@@ -170,21 +185,31 @@ export default function AdminConfig() {
     const pin = nuevoCamareroPin.trim()
     if (!nombre) { setCamareroError('Introduce el nombre del camarero.'); return }
     if (!/^\d{4}$/.test(pin)) { setCamareroError('El PIN debe ser de 4 dígitos numéricos.'); return }
+    if (nuevoCamareroPermisos.length === 0) { setCamareroError('Marca al menos un permiso.'); return }
     const { error: err } = await supabase
       .from('camareros')
-      .insert({ restaurant_id: restaurantId, nombre, pin })
+      .insert({ restaurant_id: restaurantId, nombre, pin, permisos: nuevoCamareroPermisos })
     if (err) {
       setCamareroError(err.code === '23505' ? 'Ya existe un camarero con ese PIN. Elige otro.' : err.message)
       return
     }
     setNuevoCamareroNombre('')
     setNuevoCamareroPin('')
+    setNuevoCamareroPermisos(['pedidos'])
     await loadCamareros()
   }
 
   async function toggleCamareroActivo(camarero) {
     await supabase.from('camareros').update({ activo: !camarero.activo }).eq('id', camarero.id)
     await loadCamareros()
+  }
+
+  async function toggleCamareroPermiso(camarero, permiso) {
+    const permisos = camarero.permisos.includes(permiso)
+      ? camarero.permisos.filter(p => p !== permiso)
+      : [...camarero.permisos, permiso]
+    setCamareros(prev => prev.map(c => c.id === camarero.id ? { ...c, permisos } : c))
+    await supabase.from('camareros').update({ permisos }).eq('id', camarero.id)
   }
 
   async function eliminarCamarero(camarero) {
@@ -364,20 +389,23 @@ export default function AdminConfig() {
           </div>
         </div>
 
-        {/* Gestión de camareros, solo relevante en modo 'camarero' */}
-        {modoPedidos === 'camarero' && (
-          <div style={S.infoCard}>
-            <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 4 }}>Camareros</div>
-            <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 12 }}>
-              Cada camarero entra a su pantalla con este PIN de 4 dígitos. Recuerda guardar la configuración de arriba para activar el modo camarero.
-            </div>
+        {/* Personal con PIN: camareros, cocina, encargados — cada uno con
+            los permisos que le marques. Ya no depende del modo de pedidos,
+            porque el PIN ahora sirve para más que solo tomar pedidos. */}
+        <div style={S.infoCard}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 4 }}>Personal con PIN</div>
+          <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 12 }}>
+            Cada persona entra con su PIN de 4 dígitos a las secciones que le marques. "Configuración" nunca se puede
+            otorgar por PIN — solo tú con tu login real.
+          </div>
 
-            {camareroError && <div style={{ ...S.error, marginBottom: 12 }}>{camareroError}</div>}
+          {camareroError && <div style={{ ...S.error, marginBottom: 12 }}>{camareroError}</div>}
 
-            {camareros.length > 0 && (
-              <div style={{ marginBottom: 16 }}>
-                {camareros.map(c => (
-                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '0.5px solid #2a2a2a' }}>
+          {camareros.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              {camareros.map(c => (
+                <div key={c.id} style={{ padding: '10px 0', borderBottom: '0.5px solid #2a2a2a' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                     <div>
                       <span style={{ fontSize: 14, color: c.activo ? '#f0e8d8' : '#666' }}>{c.nombre}</span>
                       <span style={{ fontSize: 12, color: '#7a6a50', marginLeft: 10 }}>PIN: {c.pin}</span>
@@ -392,28 +420,56 @@ export default function AdminConfig() {
                       </button>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <input
-                style={{ ...S.infoInput, width: 180 }}
-                placeholder="Nombre del camarero"
-                value={nuevoCamareroNombre}
-                onChange={e => setNuevoCamareroNombre(e.target.value)}
-              />
-              <input
-                style={{ ...S.infoInput, width: 90 }}
-                placeholder="PIN (4 dígitos)"
-                maxLength={4}
-                value={nuevoCamareroPin}
-                onChange={e => setNuevoCamareroPin(e.target.value.replace(/\D/g, ''))}
-              />
-              <button style={S.franjaToggle(true)} onClick={addCamarero}>+ Agregar</button>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {PERMISOS_DISPONIBLES.map(p => {
+                      const activo = c.permisos?.includes(p.key)
+                      return (
+                        <button
+                          key={p.key}
+                          onClick={() => toggleCamareroPermiso(c, p.key)}
+                          style={{ fontSize: 11, fontWeight: 500, padding: '4px 10px', borderRadius: 20, border: `0.5px solid ${activo ? '#27ae60' : '#3a2e20'}`, background: activo ? '#0f2a15' : 'transparent', color: activo ? '#2ecc71' : '#666', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+                        >
+                          {p.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <input
+              style={{ ...S.infoInput, width: 180 }}
+              placeholder="Nombre"
+              value={nuevoCamareroNombre}
+              onChange={e => setNuevoCamareroNombre(e.target.value)}
+            />
+            <input
+              style={{ ...S.infoInput, width: 90 }}
+              placeholder="PIN (4 dígitos)"
+              maxLength={4}
+              value={nuevoCamareroPin}
+              onChange={e => setNuevoCamareroPin(e.target.value.replace(/\D/g, ''))}
+            />
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {PERMISOS_DISPONIBLES.map(p => {
+                const activo = nuevoCamareroPermisos.includes(p.key)
+                return (
+                  <button
+                    key={p.key}
+                    onClick={() => toggleNuevoPermiso(p.key)}
+                    style={{ fontSize: 11, fontWeight: 500, padding: '4px 10px', borderRadius: 20, border: `0.5px solid ${activo ? '#27ae60' : '#3a2e20'}`, background: activo ? '#0f2a15' : 'transparent', color: activo ? '#2ecc71' : '#666', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+                  >
+                    {p.label}
+                  </button>
+                )
+              })}
+            </div>
+            <button style={S.franjaToggle(true)} onClick={addCamarero}>+ Agregar</button>
           </div>
-        )}
+        </div>
 
         {/* Sectores de cocina */}
         <div style={S.infoCard}>

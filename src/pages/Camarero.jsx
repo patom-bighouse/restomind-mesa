@@ -2,6 +2,12 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/money'
+import CamareroClientes from '../components/CamareroClientes'
+
+// Permisos que ya tienen pantalla construida acá — cocina/reservas/
+// limpieza quedan para una segunda vuelta con el mismo patrón.
+const PERMISOS_IMPLEMENTADOS = ['pedidos', 'clientes']
+const PERMISOS_LABEL = { pedidos: 'Pedidos', clientes: 'Clientes' }
 
 // Mismo catálogo fijo que AdminCarta.jsx y Mesa.jsx (Reglamento UE 1169/2011).
 const ALERGENOS = [
@@ -87,7 +93,8 @@ const S = {
 export default function Camarero() {
   const { restaurantId } = useParams()
   const [restaurant, setRestaurant] = useState(null)
-  const [camarero, setCamarero] = useState(null) // { id, nombre }
+  const [camarero, setCamarero] = useState(null) // { id, nombre, permisos }
+  const [seccionActiva, setSeccionActiva] = useState(null) // 'pedidos' | 'clientes' | null (selector)
   const [pinInput, setPinInput] = useState('')
   const [pinError, setPinError] = useState(null)
   const [verificando, setVerificando] = useState(false)
@@ -162,14 +169,22 @@ export default function Camarero() {
       setPinInput('')
       return
     }
-    setCamarero(data[0])
+    const persona = data[0]
+    setCamarero(persona)
     setPinInput('')
-    await loadTablas()
-    await loadLimpiezaPasos()
+    const permisosUtiles = (persona.permisos || []).filter(p => PERMISOS_IMPLEMENTADOS.includes(p))
+    // Con un solo permiso útil, entra directo a esa sección — el
+    // selector solo aparece si hay más de uno para elegir.
+    setSeccionActiva(permisosUtiles.length === 1 ? permisosUtiles[0] : null)
+    if (permisosUtiles.includes('pedidos')) {
+      await loadTablas()
+      await loadLimpiezaPasos()
+    }
   }
 
   function cambiarCamarero() {
     setCamarero(null)
+    setSeccionActiva(null)
     setSelectedTable(null)
     setPinInput('')
   }
@@ -614,6 +629,58 @@ export default function Camarero() {
     )
   }
 
+  // ---------- Render: selector de sección (solo si hay más de un permiso útil) ----------
+  if (!seccionActiva) {
+    const permisosUtiles = (camarero.permisos || []).filter(p => PERMISOS_IMPLEMENTADOS.includes(p))
+    return (
+      <div style={S.app}>
+        <div style={S.header}>
+          <div>
+            <div style={S.logo}>{restaurant?.nombre || 'Restomind'}</div>
+            <div style={S.sub}>Hola, {camarero.nombre}</div>
+          </div>
+          <button style={S.logoutBtn} onClick={cambiarCamarero}>Cambiar de persona</button>
+        </div>
+        <div style={S.center}>
+          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 17, color: '#e8c97a', marginBottom: 6 }}>¿Qué quieres hacer?</div>
+          {permisosUtiles.length === 0 ? (
+            <div style={{ fontSize: 13, color: '#8a7560', textAlign: 'center' }}>No tienes ningún permiso asignado todavía. Pídele al dueño que te lo configure.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', maxWidth: 280 }}>
+              {permisosUtiles.map(p => (
+                <button
+                  key={p}
+                  onClick={() => setSeccionActiva(p)}
+                  style={{ background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 12, padding: '16px', fontSize: 15, fontWeight: 500, color: '#e8c97a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+                >
+                  {PERMISOS_LABEL[p]}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ---------- Render: sección Clientes ----------
+  if (seccionActiva === 'clientes') {
+    return (
+      <CamareroClientes
+        camarero={camarero}
+        restaurantId={restaurantId}
+        restaurant={restaurant}
+        onVolver={() => {
+          const permisosUtiles = (camarero.permisos || []).filter(p => PERMISOS_IMPLEMENTADOS.includes(p))
+          // Si tenía más de un permiso, vuelve al selector; si "Clientes"
+          // era lo único que tenía, no hay a dónde volver más que salir.
+          if (permisosUtiles.length > 1) setSeccionActiva(null)
+          else cambiarCamarero()
+        }}
+      />
+    )
+  }
+
   // ---------- Render: selector de mesas ----------
   if (!selectedTable) {
     if (!modoHabilitado) {
@@ -625,7 +692,7 @@ export default function Camarero() {
           </div>
           <div style={S.center}>
             <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 17, color: '#e8c97a' }}>Modo camarero no habilitado</div>
-            <div style={{ fontSize: 13, color: '#8a7560' }}>Este restaurante no tiene activado el modo de pedidos por camarero. Pedile al dueño que lo active desde Configuración.</div>
+            <div style={{ fontSize: 13, color: '#8a7560' }}>Este restaurante no tiene activado el modo de pedidos por camarero. Pídele al dueño que lo active desde Configuración.</div>
           </div>
         </div>
       )
@@ -646,7 +713,12 @@ export default function Camarero() {
             <div style={S.logo}>{restaurant?.nombre || 'Restomind'}</div>
             <div style={S.sub}>Hola, {camarero.nombre}</div>
           </div>
-          <button style={S.logoutBtn} onClick={cambiarCamarero}>Cambiar de camarero</button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {(camarero.permisos || []).filter(p => PERMISOS_IMPLEMENTADOS.includes(p)).length > 1 && (
+              <button style={S.logoutBtn} onClick={() => setSeccionActiva(null)}>Cambiar de sección</button>
+            )}
+            <button style={S.logoutBtn} onClick={cambiarCamarero}>Cambiar de camarero</button>
+          </div>
         </div>
         {sendError && <div style={{ ...S.error, padding: '10px 16px' }}>{sendError}</div>}
 
