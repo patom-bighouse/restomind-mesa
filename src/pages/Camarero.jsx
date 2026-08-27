@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/money'
+import { playWaiterBell, unlockAudio } from '../lib/sound'
 import CamareroClientes from '../components/CamareroClientes'
 import CamareroReservas from '../components/CamareroReservas'
 import CamareroLimpieza from '../components/CamareroLimpieza'
@@ -36,6 +37,9 @@ const S = {
   sub: { fontSize: 12, color: '#8a7560', marginTop: 2 },
   badge: { background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 20, padding: '5px 14px', fontSize: 12, color: '#c4a85a' },
   logoutBtn: { background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '6px 14px', fontSize: 12, color: '#8a7560', cursor: 'pointer', fontFamily: "'Inter', sans-serif" },
+  sectionBtn: { position: 'relative', background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 12, padding: '16px', fontSize: 15, fontWeight: 500, color: '#e8c97a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" },
+  alertBadge: { position: 'absolute', top: -8, right: -8, background: '#e74c3c', color: '#fff', fontSize: 11, fontWeight: 600, minWidth: 20, height: 20, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px' },
+  llamadaBanner: { background: '#2a1a00', border: '1px solid #d4a017', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
 
   center: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, padding: 24, textAlign: 'center', gap: 18 },
   pinDots: { display: 'flex', gap: 14, margin: '8px 0' },
@@ -107,6 +111,9 @@ export default function Camarero() {
   const [abriendoMesa, setAbriendoMesa] = useState(null)
   const [limpiezaPasos, setLimpiezaPasos] = useState([])
   const [limpiezaModal, setLimpiezaModal] = useState(null) // table | null
+  const [alertas, setAlertas] = useState({ limpieza: 0, llamadas: 0 })
+  const [llamadasPendientes, setLlamadasPendientes] = useState([])
+  const llamadaIdsPrevias = useRef(null) // null hasta la primera carga, para no sonar con llamadas ya existentes
 
   const [categories, setCategories] = useState([])
   const [items, setItems] = useState([])
@@ -242,6 +249,61 @@ export default function Camarero() {
       return completo ? null : { ...prev, ...patch }
     })
     await supabase.from('tables').update(patch).eq('id', table.id)
+  }
+
+  // Avisos de mesas por limpiar / llamadas al camarero pendientes: como
+  // anon no puede leer waiter_calls directo, se pasa por la caja fuerte
+  // (fn_staff_contar_alertas ya filtra según los permisos que tenga
+  // este camarero). Se sondea cada 10s mientras haya sesión iniciada,
+  // así el aviso aparece tanto en el selector de sección como recién
+  // entra directo a Pedidos si ese es su único permiso.
+  useEffect(() => {
+    if (!camarero) return
+    const unlock = () => { unlockAudio(); window.removeEventListener('pointerdown', unlock) }
+    window.addEventListener('pointerdown', unlock)
+    loadAlertas()
+    const interval = setInterval(loadAlertas, 10000)
+    return () => { clearInterval(interval); window.removeEventListener('pointerdown', unlock) }
+  }, [camarero])
+
+  async function loadAlertas() {
+    const { data } = await supabase.rpc('fn_staff_contar_alertas', {
+      p_restaurant_id: restaurantId,
+      p_camarero_id: camarero.id,
+    })
+    if (data) setAlertas(data)
+  }
+
+  // Detalle de las llamadas (con número de mesa) para el aviso dentro
+  // de la pantalla de Pedidos — solo se sondea mientras esa pantalla
+  // está a la vista, y suena la campanilla si aparece una llamada nueva.
+  useEffect(() => {
+    if (!camarero || seccionActiva !== 'pedidos' || selectedTable) return
+    llamadaIdsPrevias.current = null
+    loadLlamadas()
+    const interval = setInterval(loadLlamadas, 10000)
+    return () => clearInterval(interval)
+  }, [camarero, seccionActiva, selectedTable])
+
+  async function loadLlamadas() {
+    const { data } = await supabase.rpc('fn_staff_listar_llamadas', {
+      p_restaurant_id: restaurantId,
+      p_camarero_id: camarero.id,
+    })
+    const lista = data || []
+    if (llamadaIdsPrevias.current && lista.some(l => !llamadaIdsPrevias.current.has(l.id))) playWaiterBell()
+    llamadaIdsPrevias.current = new Set(lista.map(l => l.id))
+    setLlamadasPendientes(lista)
+  }
+
+  async function atenderLlamada(id) {
+    setLlamadasPendientes(prev => prev.filter(l => l.id !== id))
+    await supabase.rpc('fn_staff_marcar_llamada_atendida', {
+      p_restaurant_id: restaurantId,
+      p_camarero_id: camarero.id,
+      p_llamada_id: id,
+    })
+    await loadAlertas()
   }
 
   // Realtime: refresca la lista de mesas cuando cambian sesiones (otra
@@ -656,15 +718,15 @@ export default function Camarero() {
             <div style={{ fontSize: 13, color: '#8a7560', textAlign: 'center' }}>No tienes ningún permiso asignado todavía. Pídele al dueño que te lo configure.</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', maxWidth: 280 }}>
-              {permisosUtiles.map(p => (
-                <button
-                  key={p}
-                  onClick={() => setSeccionActiva(p)}
-                  style={{ background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 12, padding: '16px', fontSize: 15, fontWeight: 500, color: '#e8c97a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
-                >
-                  {PERMISOS_LABEL[p]}
-                </button>
-              ))}
+              {permisosUtiles.map(p => {
+                const alerta = p === 'limpieza' ? alertas.limpieza : p === 'pedidos' ? alertas.llamadas : 0
+                return (
+                  <button key={p} onClick={() => setSeccionActiva(p)} style={S.sectionBtn}>
+                    {PERMISOS_LABEL[p]}
+                    {alerta > 0 && <span style={S.alertBadge}>{alerta}</span>}
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>
@@ -726,6 +788,22 @@ export default function Camarero() {
           </div>
         </div>
         {sendError && <div style={{ ...S.error, padding: '10px 16px' }}>{sendError}</div>}
+
+        {llamadasPendientes.length > 0 && (
+          <div style={{ padding: '0 20px 4px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {llamadasPendientes.map(call => (
+              <div key={call.id} style={S.llamadaBanner}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 18 }}>🛎</span>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: '#f0e8d8' }}>Mesa {call.mesa_numero} llama al camarero</div>
+                </div>
+                <button onClick={() => atenderLlamada(call.id)} style={{ background: '#d4a017', border: 'none', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 500, color: '#111', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+                  Atendido
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {mesasPropias.length > 0 && (
           <>
