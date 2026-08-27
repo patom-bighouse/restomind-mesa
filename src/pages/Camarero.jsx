@@ -3,11 +3,12 @@ import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/money'
 import CamareroClientes from '../components/CamareroClientes'
+import CamareroReservas from '../components/CamareroReservas'
+import CamareroLimpieza from '../components/CamareroLimpieza'
+import CamareroCocina from '../components/CamareroCocina'
 
-// Permisos que ya tienen pantalla construida acá — cocina/reservas/
-// limpieza quedan para una segunda vuelta con el mismo patrón.
-const PERMISOS_IMPLEMENTADOS = ['pedidos', 'clientes']
-const PERMISOS_LABEL = { pedidos: 'Pedidos', clientes: 'Clientes' }
+const PERMISOS_IMPLEMENTADOS = ['pedidos', 'clientes', 'reservas', 'limpieza', 'cocina']
+const PERMISOS_LABEL = { pedidos: 'Pedidos', clientes: 'Clientes', reservas: 'Reservas', limpieza: 'Limpieza', cocina: 'Cocina' }
 
 // Mismo catálogo fijo que AdminCarta.jsx y Mesa.jsx (Reglamento UE 1169/2011).
 const ALERGENOS = [
@@ -187,6 +188,14 @@ export default function Camarero() {
     setSeccionActiva(null)
     setSelectedTable(null)
     setPinInput('')
+  }
+
+  // Si tenía más de un permiso, vuelve al selector; si era el único,
+  // no hay a dónde volver más que salir.
+  function volverDeSeccion() {
+    const permisosUtiles = (camarero.permisos || []).filter(p => PERMISOS_IMPLEMENTADOS.includes(p))
+    if (permisosUtiles.length > 1) setSeccionActiva(null)
+    else cambiarCamarero()
   }
 
   // ---------- Selección de mesa ----------
@@ -663,22 +672,18 @@ export default function Camarero() {
     )
   }
 
-  // ---------- Render: sección Clientes ----------
+  // ---------- Render: secciones fuera de "Pedidos" ----------
   if (seccionActiva === 'clientes') {
-    return (
-      <CamareroClientes
-        camarero={camarero}
-        restaurantId={restaurantId}
-        restaurant={restaurant}
-        onVolver={() => {
-          const permisosUtiles = (camarero.permisos || []).filter(p => PERMISOS_IMPLEMENTADOS.includes(p))
-          // Si tenía más de un permiso, vuelve al selector; si "Clientes"
-          // era lo único que tenía, no hay a dónde volver más que salir.
-          if (permisosUtiles.length > 1) setSeccionActiva(null)
-          else cambiarCamarero()
-        }}
-      />
-    )
+    return <CamareroClientes camarero={camarero} restaurantId={restaurantId} restaurant={restaurant} onVolver={volverDeSeccion} />
+  }
+  if (seccionActiva === 'reservas') {
+    return <CamareroReservas camarero={camarero} restaurantId={restaurantId} onVolver={volverDeSeccion} />
+  }
+  if (seccionActiva === 'limpieza') {
+    return <CamareroLimpieza restaurantId={restaurantId} onVolver={volverDeSeccion} />
+  }
+  if (seccionActiva === 'cocina') {
+    return <CamareroCocina camarero={camarero} restaurantId={restaurantId} onVolver={volverDeSeccion} />
   }
 
   // ---------- Render: selector de mesas ----------
