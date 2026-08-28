@@ -774,6 +774,21 @@ export default function Camarero() {
             <div style={S.logo}>{restaurant?.nombre || 'Restomind'}</div>
             <button style={S.logoutBtn} onClick={cambiarCamarero}>Salir</button>
           </div>
+          {llamadasPendientes.length > 0 && (
+            <div style={{ padding: '16px 20px 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {llamadasPendientes.map(call => (
+                <div key={call.id} style={S.llamadaBanner}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 18 }}>🛎</span>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: '#f0e8d8' }}>Mesa {call.mesa_numero} llama al camarero</div>
+                  </div>
+                  <button onClick={() => atenderLlamada(call.id)} style={{ background: '#d4a017', border: 'none', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 500, color: '#111', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+                    Atendido
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <div style={S.center}>
             <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 17, color: '#e8c97a' }}>Modo camarero no habilitado</div>
             <div style={{ fontSize: 13, color: '#8a7560' }}>Este restaurante no tiene activado el modo de pedidos por camarero. Pídele al dueño que lo active desde Configuración.</div>
