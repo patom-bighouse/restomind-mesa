@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/money'
 import { resolverMenuActivo, aplicarPreciosMenu } from '../lib/menus'
+import { IDIOMAS_CARTA } from '../lib/idiomas'
 
 // Mismo catálogo fijo que AdminCarta.jsx (Reglamento UE 1169/2011).
 const ALERGENOS = [
@@ -90,6 +91,8 @@ export default function Mesa() {
   const [items, setItems] = useState([])
   const [itemModifiers, setItemModifiers] = useState({}) // menu_item_id -> [{grupo_id, grupo_nombre, obligatorio, tipo_seleccion, opciones}]
   const [upsellRules, setUpsellRules] = useState([]) // [{id, trigger_item_id, sugerida_categoria_id, mensaje}]
+  const [idiomaActivo, setIdiomaActivo] = useState('es')
+  const [traducciones, setTraducciones] = useState({}) // { [idioma]: { [menu_item_id]: {nombre, descripcion} } }
   const [modSelectorItem, setModSelectorItem] = useState(null) // el plato que se está configurando, o null
   const [modSelectorChoices, setModSelectorChoices] = useState({}) // { [grupo_id]: opcion_id | [opcion_id, ...] }
   const [cart, setCart] = useState({})
@@ -176,7 +179,7 @@ export default function Mesa() {
     setResenaEstado('enviada')
   }
 
-  async function loadMenu(restaurantId, zona) {
+  async function loadMenu(restaurantId, zona, idiomasCarta) {
     const { data: cats } = await supabase
       .from('categories')
       .select('id, nombre, orden')
@@ -212,12 +215,40 @@ export default function Mesa() {
     setItems(itemsFinal)
     await loadModificadores(itemsFinal.map(i => i.id))
 
+    // Carta multiidioma: se traduce una sola vez desde AdminCarta, acá
+    // solo se lee lo ya guardado — sin nada configurado, no se pide
+    // nada de más.
+    if (idiomasCarta && idiomasCarta.length && itemsFinal.length) {
+      const { data: traducs } = await supabase
+        .from('menu_item_traducciones')
+        .select('menu_item_id, idioma, nombre, descripcion')
+        .in('menu_item_id', itemsFinal.map(i => i.id))
+        .in('idioma', idiomasCarta)
+      const map = {}
+      ;(traducs || []).forEach(t => {
+        if (!map[t.idioma]) map[t.idioma] = {}
+        map[t.idioma][t.menu_item_id] = { nombre: t.nombre, descripcion: t.descripcion }
+      })
+      setTraducciones(map)
+    } else {
+      setTraducciones({})
+    }
+
     const { data: reglas } = await supabase
       .from('upsell_rules')
       .select('id, trigger_item_id, sugerida_categoria_id, mensaje')
       .eq('restaurant_id', restaurantId)
       .eq('activa', true)
     setUpsellRules(reglas || [])
+  }
+
+  // Sustituye nombre/descripción por la traducción guardada, si hay
+  // una para el idioma elegido — en español (o sin traducción para
+  // ese plato) devuelve el original tal cual.
+  function aplicarTraduccion(item) {
+    if (idiomaActivo === 'es') return item
+    const t = traducciones[idiomaActivo]?.[item.id]
+    return t ? { ...item, nombre: t.nombre, descripcion: t.descripcion } : item
   }
 
   // Trae los modificadores de TODOS los platos de una sola vez (4
@@ -300,7 +331,7 @@ export default function Mesa() {
         if (sessErr) throw sessErr
         setSession(sessionRows && sessionRows.length > 0 ? sessionRows[0] : null)
 
-        await loadMenu(tableData.restaurant_id, tableData.zona)
+        await loadMenu(tableData.restaurant_id, tableData.zona, rest?.config?.idiomas_carta)
       } catch (e) {
         setError(e.message)
       } finally {
@@ -318,11 +349,11 @@ export default function Mesa() {
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'menu_items',
         filter: `restaurant_id=eq.${table.restaurant_id}`
-      }, () => loadMenu(table.restaurant_id, table.zona))
+      }, () => loadMenu(table.restaurant_id, table.zona, restaurant?.config?.idiomas_carta))
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'categories',
         filter: `restaurant_id=eq.${table.restaurant_id}`
-      }, () => loadMenu(table.restaurant_id, table.zona))
+      }, () => loadMenu(table.restaurant_id, table.zona, restaurant?.config?.idiomas_carta))
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'tables',
         filter: `id=eq.${table.id}`
@@ -839,6 +870,19 @@ export default function Mesa() {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
           <div style={S.badge}>Mesa {table?.numero} · {table?.zona?.charAt(0).toUpperCase() + table?.zona?.slice(1)}</div>
           <div style={{ display: 'flex', gap: 6 }}>
+            {restaurant?.config?.idiomas_carta?.length > 0 && (
+              <select
+                value={idiomaActivo}
+                onChange={e => setIdiomaActivo(e.target.value)}
+                style={{ background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 20, padding: '4px 8px', fontSize: 11, color: '#c4a85a', fontFamily: "'Inter', sans-serif", outline: 'none' }}
+              >
+                <option value="es">🇪🇸 Español</option>
+                {restaurant.config.idiomas_carta.map(k => {
+                  const idi = IDIOMAS_CARTA.find(i => i.key === k)
+                  return idi ? <option key={k} value={k}>{idi.bandera} {idi.label}</option> : null
+                })}
+              </select>
+            )}
             <button
               onClick={() => setShowAlergenosPanel(true)}
               style={{ background: alergenosExcluidos.length > 0 ? '#3a2010' : 'transparent', border: `0.5px solid ${alergenosExcluidos.length > 0 ? '#e8c97a' : '#3a2e20'}`, borderRadius: 20, padding: '4px 12px', fontSize: 11, color: '#c4a85a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
@@ -886,16 +930,18 @@ export default function Mesa() {
             <div key={cat.id}>
               <div style={S.secTitle}>{cat.nombre}</div>
               <div style={S.itemsWrap}>
-                {catItems.map(item => (
+                {catItems.map(item => {
+                  const it = aplicarTraduccion(item)
+                  return (
                   <div key={item.id} style={S.item}>
                     <div style={S.emoji}>
                       {item.foto_url
-                        ? <img src={item.foto_url} alt={item.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }} />
+                        ? <img src={item.foto_url} alt={it.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }} />
                         : (item.emoji || '🍽')}
                     </div>
                     <div style={S.info}>
-                      <div style={S.name}>{item.nombre}</div>
-                      {item.descripcion && <div style={S.desc}>{item.descripcion}</div>}
+                      <div style={S.name}>{it.nombre}</div>
+                      {it.descripcion && <div style={S.desc}>{it.descripcion}</div>}
                       <div style={S.price}>{formatMoney(item.precio, restaurant?.moneda)}</div>
                       {item.alergenos && item.alergenos.length > 0 && (
                         <div style={{ fontSize: 13, marginTop: 3 }} title={item.alergenos.map(k => ALERGENOS.find(a => a.key === k)?.label).join(', ')}>
@@ -905,19 +951,20 @@ export default function Mesa() {
                     </div>
                     {!esModoCamarero && (
                       itemModifiers[item.id]?.length > 0 ? (
-                        <button style={{ ...S.btn, width: 'auto', padding: '0 14px', borderRadius: 16, fontSize: 12 }} onClick={() => change(item, 1)}>
+                        <button style={{ ...S.btn, width: 'auto', padding: '0 14px', borderRadius: 16, fontSize: 12 }} onClick={() => change(it, 1)}>
                           Elegir
                         </button>
                       ) : (
                         <div style={S.qty}>
-                          <button style={S.btn} onClick={() => change(item, -1)}>−</button>
+                          <button style={S.btn} onClick={() => change(it, -1)}>−</button>
                           <span style={S.qnum}>{cart[`${item.id}::${comensalTag(selectedComensal)}`]?.qty || 0}</span>
-                          <button style={S.btn} onClick={() => change(item, 1)}>+</button>
+                          <button style={S.btn} onClick={() => change(it, 1)}>+</button>
                         </div>
                       )
                     )}
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )
