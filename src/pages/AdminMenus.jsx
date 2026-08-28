@@ -74,6 +74,7 @@ export default function AdminMenus() {
   const [horaFin, setHoraFin] = useState('')
   const [diasSemana, setDiasSemana] = useState([])
   const [adding, setAdding] = useState(false)
+  const [editingMenuId, setEditingMenuId] = useState(null) // null = alta nueva
 
   const [editingMenu, setEditingMenu] = useState(null) // menu | null
   const [editValues, setEditValues] = useState({}) // menu_item_id -> { precio: string, excluido: bool }
@@ -124,22 +125,37 @@ export default function AdminMenus() {
     setDiasSemana(prev => prev.includes(v) ? prev.filter(d => d !== v) : [...prev, v])
   }
 
-  async function addMenu() {
+  function editarMenu(menu) {
+    setEditingMenuId(menu.id)
+    setNombre(menu.nombre)
+    setZona(menu.zona || '')
+    setHoraInicio(menu.hora_inicio ? menu.hora_inicio.slice(0, 5) : '')
+    setHoraFin(menu.hora_fin ? menu.hora_fin.slice(0, 5) : '')
+    setDiasSemana(menu.dias_semana || [])
+  }
+
+  function cancelarEdicion() {
+    setEditingMenuId(null)
+    setNombre(''); setZona(''); setHoraInicio(''); setHoraFin(''); setDiasSemana([])
+  }
+
+  async function guardarMenu() {
     if (!nombre.trim()) return
     setError(null)
     setAdding(true)
-    const { error: err } = await supabase
-      .from('menus')
-      .insert({
-        restaurant_id: restaurantId,
-        nombre: nombre.trim(),
-        zona: zona || null,
-        hora_inicio: horaInicio || null,
-        hora_fin: horaFin || null,
-        dias_semana: diasSemana.length ? diasSemana : null,
-      })
+    const payload = {
+      nombre: nombre.trim(),
+      zona: zona || null,
+      hora_inicio: horaInicio || null,
+      hora_fin: horaFin || null,
+      dias_semana: diasSemana.length ? diasSemana : null,
+    }
+    const { error: err } = editingMenuId
+      ? await supabase.from('menus').update(payload).eq('id', editingMenuId)
+      : await supabase.from('menus').insert({ restaurant_id: restaurantId, ...payload })
     setAdding(false)
     if (err) { setError(err.message); return }
+    setEditingMenuId(null)
     setNombre(''); setZona(''); setHoraInicio(''); setHoraFin(''); setDiasSemana([])
     await loadMenus()
   }
@@ -271,9 +287,12 @@ export default function AdminMenus() {
               ))}
             </div>
           </div>
-          <button style={S.addBtn} onClick={addMenu} disabled={adding || !nombre.trim()}>
-            {adding ? 'Añadiendo...' : '+ Añadir menú'}
+          <button style={S.addBtn} onClick={guardarMenu} disabled={adding || !nombre.trim()}>
+            {adding ? 'Guardando...' : editingMenuId ? 'Guardar cambios' : '+ Añadir menú'}
           </button>
+          {editingMenuId && (
+            <button style={S.cancelBtn} onClick={cancelarEdicion}>Cancelar</button>
+          )}
         </div>
 
         {menus.length === 0 ? (
@@ -298,6 +317,7 @@ export default function AdminMenus() {
                     {!m.zona && !franjaLabel(m) && !diasLabel(m) && <span style={{ color: '#555' }}>Siempre</span>}
                   </td>
                   <td style={{ ...S.td, display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                    <button style={S.editBtn} onClick={() => editarMenu(m)}>Editar</button>
                     <button style={S.editBtn} onClick={() => abrirEditorPrecios(m)}>Editar precios</button>
                     <button style={S.toggleBtn(m.activo)} onClick={() => toggleMenu(m)}>
                       {m.activo ? 'Activo' : 'Inactivo'}
