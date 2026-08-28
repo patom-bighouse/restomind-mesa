@@ -433,6 +433,7 @@ export default function AdminDashboard() {
           <a href={`/admin/limpieza/${restaurantId}`} style={S.navTab(false)}>Limpieza</a>
           <a href={`/admin/fidelizacion/${restaurantId}`} style={S.navTab(false)}>Fidelización</a>
           <a href={`/admin/config/${restaurantId}`} style={S.navTab(false)}>Configuración</a>
+          <a href={`/cocina/${restaurantId}`} target="_blank" rel="noreferrer" style={S.navTab(false)}>Cocina ↗</a>
           <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
         </div>
       </div>
