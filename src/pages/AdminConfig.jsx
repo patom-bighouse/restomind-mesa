@@ -214,7 +214,8 @@ export default function AdminConfig() {
 
   async function eliminarCamarero(camarero) {
     if (!confirm(`¿Eliminar a ${camarero.nombre}? Los pedidos que ya cargó quedan igual en el historial.`)) return
-    await supabase.from('camareros').delete().eq('id', camarero.id)
+    const { error: err } = await supabase.from('camareros').delete().eq('id', camarero.id)
+    if (err) { alert(err.message); return }
     await loadCamareros()
   }
 
