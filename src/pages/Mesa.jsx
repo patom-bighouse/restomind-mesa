@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/money'
+import { resolverMenuActivo, aplicarPreciosMenu } from '../lib/menus'
 
 // Mismo catálogo fijo que AdminCarta.jsx (Reglamento UE 1169/2011).
 const ALERGENOS = [
@@ -175,7 +176,7 @@ export default function Mesa() {
     setResenaEstado('enviada')
   }
 
-  async function loadMenu(restaurantId) {
+  async function loadMenu(restaurantId, zona) {
     const { data: cats } = await supabase
       .from('categories')
       .select('id, nombre, orden')
@@ -190,8 +191,26 @@ export default function Mesa() {
       .eq('restaurant_id', restaurantId)
       .eq('disponible', true)
       .order('orden')
-    setItems(menuItems || [])
-    await loadModificadores((menuItems || []).map(i => i.id))
+
+    // Multi-menú: si hay un menú activo (bar/terraza/mediodía...) para
+    // la zona y hora actuales, sus excepciones de precio/exclusión se
+    // aplican sobre la carta base — sin ninguno configurado, sigue
+    // igual que siempre.
+    const { data: menusData } = await supabase
+      .from('menus')
+      .select('id, nombre, zona, hora_inicio, hora_fin, activo, orden')
+      .eq('restaurant_id', restaurantId)
+    const menuActivo = resolverMenuActivo(menusData, zona)
+    let itemsFinal = menuItems || []
+    if (menuActivo) {
+      const { data: precios } = await supabase
+        .from('menu_item_precios_menu')
+        .select('menu_id, menu_item_id, precio, excluido')
+        .eq('menu_id', menuActivo.id)
+      itemsFinal = aplicarPreciosMenu(itemsFinal, menuActivo, precios)
+    }
+    setItems(itemsFinal)
+    await loadModificadores(itemsFinal.map(i => i.id))
 
     const { data: reglas } = await supabase
       .from('upsell_rules')
@@ -281,7 +300,7 @@ export default function Mesa() {
         if (sessErr) throw sessErr
         setSession(sessionRows && sessionRows.length > 0 ? sessionRows[0] : null)
 
-        await loadMenu(tableData.restaurant_id)
+        await loadMenu(tableData.restaurant_id, tableData.zona)
       } catch (e) {
         setError(e.message)
       } finally {
@@ -299,11 +318,11 @@ export default function Mesa() {
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'menu_items',
         filter: `restaurant_id=eq.${table.restaurant_id}`
-      }, () => loadMenu(table.restaurant_id))
+      }, () => loadMenu(table.restaurant_id, table.zona))
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'categories',
         filter: `restaurant_id=eq.${table.restaurant_id}`
-      }, () => loadMenu(table.restaurant_id))
+      }, () => loadMenu(table.restaurant_id, table.zona))
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'tables',
         filter: `id=eq.${table.id}`

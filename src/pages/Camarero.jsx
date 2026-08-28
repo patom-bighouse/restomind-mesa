@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/money'
 import { playWaiterBell, unlockAudio } from '../lib/sound'
+import { resolverMenuActivo, aplicarPreciosMenu } from '../lib/menus'
 import CamareroClientes from '../components/CamareroClientes'
 import CamareroReservas from '../components/CamareroReservas'
 import CamareroLimpieza from '../components/CamareroLimpieza'
@@ -377,7 +378,7 @@ export default function Camarero() {
       setCart({})
       setSendSuccess(false)
       setSendError(null)
-      await loadMenu()
+      await loadMenu(table.zona)
     } catch (e) {
       setSendError(e.message)
     } finally {
@@ -455,7 +456,7 @@ export default function Camarero() {
   }
 
   // ---------- Carta ----------
-  async function loadMenu() {
+  async function loadMenu(zona) {
     const { data: cats } = await supabase
       .from('categories')
       .select('id, nombre, orden')
@@ -468,8 +469,24 @@ export default function Camarero() {
       .eq('restaurant_id', restaurantId)
       .eq('disponible', true)
       .order('orden')
-    setItems(menuItems || [])
-    await loadModificadores((menuItems || []).map(i => i.id))
+
+    // Multi-menú: mismas excepciones de precio/exclusión que en
+    // Mesa.jsx, según la zona de la mesa y la hora actual.
+    const { data: menusData } = await supabase
+      .from('menus')
+      .select('id, nombre, zona, hora_inicio, hora_fin, activo, orden')
+      .eq('restaurant_id', restaurantId)
+    const menuActivo = resolverMenuActivo(menusData, zona)
+    let itemsFinal = menuItems || []
+    if (menuActivo) {
+      const { data: precios } = await supabase
+        .from('menu_item_precios_menu')
+        .select('menu_id, menu_item_id, precio, excluido')
+        .eq('menu_id', menuActivo.id)
+      itemsFinal = aplicarPreciosMenu(itemsFinal, menuActivo, precios)
+    }
+    setItems(itemsFinal)
+    await loadModificadores(itemsFinal.map(i => i.id))
 
     const { data: reglas } = await supabase
       .from('upsell_rules')

@@ -198,6 +198,7 @@ export default function AdminFidelizacion() {
           {tieneModulo('reportes') && <a href={`/admin/dashboard/${restaurantId}`} style={S.navTab(false)}>Dashboard</a>}
           <a href={`/admin/mesas/${restaurantId}`} style={S.navTab(false)}>Mesas</a>
           <a href={`/admin/carta/${restaurantId}`} style={S.navTab(false)}>Carta</a>
+          <a href={`/admin/menus/${restaurantId}`} style={S.navTab(false)}>Menús</a>
           <a href={`/admin/clientes/${restaurantId}`} style={S.navTab(false)}>Clientes</a>
           <a href={`/admin/upsell/${restaurantId}`} style={S.navTab(false)}>Upsell</a>
           <a href={`/admin/reservas/${restaurantId}`} style={S.navTab(false)}>Reservas</a>
