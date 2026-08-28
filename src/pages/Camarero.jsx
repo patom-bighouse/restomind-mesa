@@ -474,7 +474,7 @@ export default function Camarero() {
     // Mesa.jsx, según la zona de la mesa y la hora actual.
     const { data: menusData } = await supabase
       .from('menus')
-      .select('id, nombre, zona, hora_inicio, hora_fin, activo, orden')
+      .select('id, nombre, zona, hora_inicio, hora_fin, dias_semana, activo, orden')
       .eq('restaurant_id', restaurantId)
     const menuActivo = resolverMenuActivo(menusData, zona)
     let itemsFinal = menuItems || []

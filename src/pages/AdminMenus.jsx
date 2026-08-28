@@ -6,6 +6,12 @@ import { useRestaurantModulos } from '../lib/modulos'
 
 const ZONAS = ['interior', 'terraza', 'privado', 'barra']
 
+// Mismo criterio que Date.getDay() en JS: 0=domingo...6=sábado.
+const DIAS = [
+  { v: 1, l: 'L' }, { v: 2, l: 'M' }, { v: 3, l: 'X' }, { v: 4, l: 'J' },
+  { v: 5, l: 'V' }, { v: 6, l: 'S' }, { v: 0, l: 'D' },
+]
+
 const S = {
   app: { minHeight: '100vh', background: '#111', color: '#f0e8d8', fontFamily: "'Inter', sans-serif" },
   header: { background: '#0a0a0a', padding: '14px 24px', borderBottom: '0.5px solid #2a2a2a', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 10 },
@@ -28,6 +34,7 @@ const S = {
   td: { padding: '14px', fontSize: 14, color: '#f0e8d8', borderBottom: '0.5px solid #222' },
   row: { background: '#1a1a1a' },
   chip: { fontSize: 11, color: '#8a7560', background: '#111', border: '0.5px solid #3a2e20', borderRadius: 20, padding: '3px 10px', marginRight: 6 },
+  diaChip: (active) => ({ width: 30, height: 30, borderRadius: '50%', background: active ? '#e8c97a' : '#111', color: active ? '#111' : '#8a7560', border: `0.5px solid ${active ? '#e8c97a' : '#3a2e20'}`, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }),
   toggleBtn: (activo) => ({ background: 'transparent', border: `0.5px solid ${activo ? '#27ae60' : '#3a2e20'}`, borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 500, cursor: 'pointer', color: activo ? '#2ecc71' : '#666', fontFamily: "'Inter', sans-serif" }),
   editBtn: { background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 500, cursor: 'pointer', color: '#c4a85a', fontFamily: "'Inter', sans-serif" },
   deleteBtn: { background: 'transparent', border: 'none', color: '#8a5050', fontSize: 12, cursor: 'pointer', fontFamily: "'Inter', sans-serif", textDecoration: 'underline' },
@@ -65,6 +72,7 @@ export default function AdminMenus() {
   const [zona, setZona] = useState('')
   const [horaInicio, setHoraInicio] = useState('')
   const [horaFin, setHoraFin] = useState('')
+  const [diasSemana, setDiasSemana] = useState([])
   const [adding, setAdding] = useState(false)
 
   const [editingMenu, setEditingMenu] = useState(null) // menu | null
@@ -95,7 +103,7 @@ export default function AdminMenus() {
   async function loadMenus() {
     const { data, error: err } = await supabase
       .from('menus')
-      .select('id, nombre, zona, hora_inicio, hora_fin, activo, orden')
+      .select('id, nombre, zona, hora_inicio, hora_fin, dias_semana, activo, orden')
       .eq('restaurant_id', restaurantId)
       .order('orden')
     if (err) { setError(err.message); return }
@@ -105,6 +113,15 @@ export default function AdminMenus() {
   function franjaLabel(m) {
     if (!m.hora_inicio || !m.hora_fin) return null
     return `${m.hora_inicio.slice(0, 5)}–${m.hora_fin.slice(0, 5)}`
+  }
+
+  function diasLabel(m) {
+    if (!m.dias_semana || m.dias_semana.length === 0) return null
+    return DIAS.filter(d => m.dias_semana.includes(d.v)).map(d => d.l).join(' ')
+  }
+
+  function toggleDia(v) {
+    setDiasSemana(prev => prev.includes(v) ? prev.filter(d => d !== v) : [...prev, v])
   }
 
   async function addMenu() {
@@ -119,10 +136,11 @@ export default function AdminMenus() {
         zona: zona || null,
         hora_inicio: horaInicio || null,
         hora_fin: horaFin || null,
+        dias_semana: diasSemana.length ? diasSemana : null,
       })
     setAdding(false)
     if (err) { setError(err.message); return }
-    setNombre(''); setZona(''); setHoraInicio(''); setHoraFin('')
+    setNombre(''); setZona(''); setHoraInicio(''); setHoraFin(''); setDiasSemana([])
     await loadMenus()
   }
 
@@ -243,6 +261,16 @@ export default function AdminMenus() {
             <span style={S.label}>Hasta</span>
             <input style={S.select} type="time" value={horaFin} onChange={e => setHoraFin(e.target.value)} />
           </div>
+          <div style={S.field}>
+            <span style={S.label}>Días (vacío = todos)</span>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {DIAS.map(d => (
+                <button key={d.v} type="button" style={S.diaChip(diasSemana.includes(d.v))} onClick={() => toggleDia(d.v)}>
+                  {d.l}
+                </button>
+              ))}
+            </div>
+          </div>
           <button style={S.addBtn} onClick={addMenu} disabled={adding || !nombre.trim()}>
             {adding ? 'Añadiendo...' : '+ Añadir menú'}
           </button>
@@ -266,7 +294,8 @@ export default function AdminMenus() {
                   <td style={S.td}>
                     {m.zona && <span style={S.chip}>{m.zona.charAt(0).toUpperCase() + m.zona.slice(1)}</span>}
                     {franjaLabel(m) && <span style={S.chip}>{franjaLabel(m)}</span>}
-                    {!m.zona && !franjaLabel(m) && <span style={{ color: '#555' }}>Siempre</span>}
+                    {diasLabel(m) && <span style={S.chip}>{diasLabel(m)}</span>}
+                    {!m.zona && !franjaLabel(m) && !diasLabel(m) && <span style={{ color: '#555' }}>Siempre</span>}
                   </td>
                   <td style={{ ...S.td, display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                     <button style={S.editBtn} onClick={() => abrirEditorPrecios(m)}>Editar precios</button>

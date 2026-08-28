@@ -19,6 +19,9 @@ create table menus (
   -- interpreta en el frontend, acá solo se guardan.
   hora_inicio time,
   hora_fin time,
+  -- Días de la semana en los que aplica (0=domingo...6=sábado, igual
+  -- que Date.getDay() en JS). Null o vacío = todos los días.
+  dias_semana smallint[],
   activo boolean not null default true,
   orden integer not null default 0,
   created_at timestamp with time zone not null default now()

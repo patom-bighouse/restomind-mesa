@@ -21,16 +21,22 @@ function enFranjaHoraria(menu, minutosActuales) {
   return minutosActuales >= inicio || minutosActuales < fin
 }
 
-// Más específico gana: zona+hora > solo hora > solo zona > genérico.
+function enDiaSemana(menu, diaActual) {
+  if (!menu.dias_semana || menu.dias_semana.length === 0) return true
+  return menu.dias_semana.includes(diaActual)
+}
+
+// Más específico gana: cuantos más criterios (zona, horario, días) usa
+// el menú, antes se prueba.
 function especificidad(menu) {
-  return (menu.zona ? 1 : 0) + (menu.hora_inicio ? 1 : 0)
+  return (menu.zona ? 1 : 0) + (menu.hora_inicio ? 1 : 0) + (menu.dias_semana?.length ? 1 : 0)
 }
 
 export function resolverMenuActivo(menus, zona, ahora = new Date()) {
   const minutosActuales = minutosDesdeMedianoche(ahora)
   const candidatos = (menus || [])
     .filter(m => m.activo)
-    .filter(m => (!m.zona || m.zona === zona) && enFranjaHoraria(m, minutosActuales))
+    .filter(m => (!m.zona || m.zona === zona) && enFranjaHoraria(m, minutosActuales) && enDiaSemana(m, ahora.getDay()))
   if (!candidatos.length) return null
   candidatos.sort((a, b) => especificidad(b) - especificidad(a) || (a.orden - b.orden))
   return candidatos[0]
