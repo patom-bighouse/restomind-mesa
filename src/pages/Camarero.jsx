@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/money'
 import { playWaiterBell, unlockAudio } from '../lib/sound'
+import { resolverMenuActivo, aplicarPreciosMenu } from '../lib/menus'
 import CamareroClientes from '../components/CamareroClientes'
 import CamareroReservas from '../components/CamareroReservas'
 import CamareroLimpieza from '../components/CamareroLimpieza'
@@ -377,7 +378,7 @@ export default function Camarero() {
       setCart({})
       setSendSuccess(false)
       setSendError(null)
-      await loadMenu()
+      await loadMenu(table.zona)
     } catch (e) {
       setSendError(e.message)
     } finally {
@@ -455,7 +456,7 @@ export default function Camarero() {
   }
 
   // ---------- Carta ----------
-  async function loadMenu() {
+  async function loadMenu(zona) {
     const { data: cats } = await supabase
       .from('categories')
       .select('id, nombre, orden')
@@ -468,8 +469,24 @@ export default function Camarero() {
       .eq('restaurant_id', restaurantId)
       .eq('disponible', true)
       .order('orden')
-    setItems(menuItems || [])
-    await loadModificadores((menuItems || []).map(i => i.id))
+
+    // Multi-menú: mismas excepciones de precio/exclusión que en
+    // Mesa.jsx, según la zona de la mesa y la hora actual.
+    const { data: menusData } = await supabase
+      .from('menus')
+      .select('id, nombre, zona, hora_inicio, hora_fin, dias_semana, activo, orden')
+      .eq('restaurant_id', restaurantId)
+    const menuActivo = resolverMenuActivo(menusData, zona)
+    let itemsFinal = menuItems || []
+    if (menuActivo) {
+      const { data: precios } = await supabase
+        .from('menu_item_precios_menu')
+        .select('menu_id, menu_item_id, precio, excluido')
+        .eq('menu_id', menuActivo.id)
+      itemsFinal = aplicarPreciosMenu(itemsFinal, menuActivo, precios)
+    }
+    setItems(itemsFinal)
+    await loadModificadores(itemsFinal.map(i => i.id))
 
     const { data: reglas } = await supabase
       .from('upsell_rules')
@@ -757,6 +774,21 @@ export default function Camarero() {
             <div style={S.logo}>{restaurant?.nombre || 'Restomind'}</div>
             <button style={S.logoutBtn} onClick={cambiarCamarero}>Salir</button>
           </div>
+          {llamadasPendientes.length > 0 && (
+            <div style={{ padding: '16px 20px 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {llamadasPendientes.map(call => (
+                <div key={call.id} style={S.llamadaBanner}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 18 }}>🛎</span>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: '#f0e8d8' }}>Mesa {call.mesa_numero} llama al camarero</div>
+                  </div>
+                  <button onClick={() => atenderLlamada(call.id)} style={{ background: '#d4a017', border: 'none', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 500, color: '#111', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+                    Atendido
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <div style={S.center}>
             <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 17, color: '#e8c97a' }}>Modo camarero no habilitado</div>
             <div style={{ fontSize: 13, color: '#8a7560' }}>Este restaurante no tiene activado el modo de pedidos por camarero. Pídele al dueño que lo active desde Configuración.</div>
