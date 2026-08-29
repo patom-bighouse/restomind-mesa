@@ -1,9 +1,12 @@
-// Traduce la carta de un restaurante a uno o varios idiomas usando la
+// Traduce toda la carta de un restaurante (platos, categorías,
+// modificadores y mensajes de upsell) a uno o varios idiomas usando la
 // API de Anthropic (clave de la plataforma, nunca del restaurante — se
 // guarda como secreto de esta función, jamás llega al navegador). Se
 // llama una vez desde AdminCarta.jsx, no en cada visita de un
-// comensal: el resultado queda guardado en menu_item_traducciones y
-// Mesa.jsx solo lo lee.
+// comensal: el resultado queda guardado en las tablas *_traducciones y
+// Mesa.jsx solo las lee. Los alérgenos NO pasan por acá — son un
+// catálogo fijo por ley, se traducen como texto estático en el código
+// (src/lib/idiomas.js).
 //
 // Body esperado: { restaurant_id: string, idiomas: string[] }
 
@@ -16,6 +19,15 @@ const IDIOMA_NOMBRE: Record<string, string> = {
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+type Texto = { id: string; nombre?: string; descripcion?: string; mensaje?: string }
+type Entrada = {
+  platos: Texto[]
+  categorias: Texto[]
+  modificador_grupos: Texto[]
+  modificador_opciones: Texto[]
+  upsells: Texto[]
 }
 
 Deno.serve(async (req) => {
@@ -49,41 +61,54 @@ Deno.serve(async (req) => {
       .maybeSingle()
     if (!modulo) return json({ error: 'Este restaurante no tiene activo el módulo de carta multiidioma.' }, 403)
 
-    const { data: items, error: itemsErr } = await supabase
-      .from('menu_items').select('id, nombre, descripcion').eq('restaurant_id', restaurant_id)
-    if (itemsErr) return json({ error: itemsErr.message }, 500)
-    if (!items || items.length === 0) return json({ ok: true, traducidos: {} })
-
     const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
     if (!apiKey) return json({ error: 'Falta configurar ANTHROPIC_API_KEY en los secretos de la función.' }, 500)
+
+    const [platosRes, categoriasRes, gruposRes, upsellsRes] = await Promise.all([
+      supabase.from('menu_items').select('id, nombre, descripcion').eq('restaurant_id', restaurant_id),
+      supabase.from('categories').select('id, nombre').eq('restaurant_id', restaurant_id),
+      supabase.from('modificador_grupos').select('id, nombre').eq('restaurant_id', restaurant_id),
+      supabase.from('upsell_rules').select('id, mensaje').eq('restaurant_id', restaurant_id).not('mensaje', 'is', null),
+    ])
+    for (const r of [platosRes, categoriasRes, gruposRes, upsellsRes]) {
+      if (r.error) return json({ error: r.error.message }, 500)
+    }
+    const platos = platosRes.data || []
+    const categorias = categoriasRes.data || []
+    const grupos = gruposRes.data || []
+    const upsells = upsellsRes.data || []
+
+    const grupoIds = grupos.map((g) => g.id)
+    const { data: opciones, error: opcErr } = grupoIds.length
+      ? await supabase.from('modificador_opciones').select('id, nombre').in('grupo_id', grupoIds)
+      : { data: [], error: null }
+    if (opcErr) return json({ error: opcErr.message }, 500)
+
+    if (!platos.length && !categorias.length && !grupos.length && !opciones!.length && !upsells.length) {
+      return json({ ok: true, traducidos: {} })
+    }
+
+    const entrada: Entrada = {
+      platos: platos.map((i) => ({ id: i.id, nombre: i.nombre, descripcion: i.descripcion || '' })),
+      categorias: categorias.map((c) => ({ id: c.id, nombre: c.nombre })),
+      modificador_grupos: grupos.map((g) => ({ id: g.id, nombre: g.nombre })),
+      modificador_opciones: (opciones || []).map((o) => ({ id: o.id, nombre: o.nombre })),
+      upsells: upsells.map((u) => ({ id: u.id, mensaje: u.mensaje })),
+    }
 
     const resumen: Record<string, number> = {}
 
     for (const idioma of idiomasValidos) {
-      const traducciones = await traducirLote(apiKey, items, idioma)
-      const filas = traducciones
-        .map((t) => {
-          const original = items.find((i) => i.id === t.id)
-          if (!original) return null
-          return {
-            menu_item_id: t.id,
-            idioma,
-            nombre: t.nombre,
-            descripcion: t.descripcion ?? null,
-            nombre_origen: original.nombre,
-            descripcion_origen: original.descripcion ?? null,
-            generado_en: new Date().toISOString(),
-          }
-        })
-        .filter(Boolean)
+      const traducido = await traducirTodo(apiKey, entrada, idioma)
+      let total = 0
 
-      if (filas.length) {
-        const { error: upsertErr } = await supabase
-          .from('menu_item_traducciones')
-          .upsert(filas, { onConflict: 'menu_item_id,idioma' })
-        if (upsertErr) return json({ error: upsertErr.message }, 500)
-      }
-      resumen[idioma] = filas.length
+      total += await guardar(supabase, 'menu_item_traducciones', 'menu_item_id', idioma, traducido.platos, platos, ['nombre', 'descripcion'])
+      total += await guardar(supabase, 'categoria_traducciones', 'category_id', idioma, traducido.categorias, categorias, ['nombre'])
+      total += await guardar(supabase, 'modificador_grupo_traducciones', 'grupo_id', idioma, traducido.modificador_grupos, grupos, ['nombre'])
+      total += await guardar(supabase, 'modificador_opcion_traducciones', 'opcion_id', idioma, traducido.modificador_opciones, opciones || [], ['nombre'])
+      total += await guardar(supabase, 'upsell_traducciones', 'upsell_rule_id', idioma, traducido.upsells, upsells, ['mensaje'])
+
+      resumen[idioma] = total
     }
 
     // Guarda qué idiomas tienen traducción disponible, para que
@@ -110,13 +135,43 @@ function json(body: unknown, status = 200) {
   })
 }
 
-async function traducirLote(
-  apiKey: string,
-  items: { id: string; nombre: string; descripcion: string | null }[],
-  idioma: string
-): Promise<{ id: string; nombre: string; descripcion: string | null }[]> {
+// Guarda las traducciones de un tipo (platos/categorías/...) en su
+// tabla correspondiente, junto a un snapshot del texto original para
+// poder detectar más adelante cuándo quedó desactualizada.
+async function guardar(
+  supabase: ReturnType<typeof createClient>,
+  tabla: string,
+  columnaId: string,
+  idioma: string,
+  traducidos: Texto[],
+  originales: Texto[],
+  campos: ('nombre' | 'descripcion' | 'mensaje')[]
+): Promise<number> {
+  if (!traducidos?.length) return 0
+  const filas = traducidos
+    .map((t) => {
+      const original = originales.find((o) => o.id === t.id)
+      if (!original) return null
+      const fila: Record<string, unknown> = {
+        [columnaId]: t.id,
+        idioma,
+        generado_en: new Date().toISOString(),
+      }
+      for (const campo of campos) {
+        fila[campo] = t[campo] ?? null
+        fila[`${campo}_origen`] = original[campo] ?? null
+      }
+      return fila
+    })
+    .filter(Boolean)
+  if (!filas.length) return 0
+  const { error } = await supabase.from(tabla).upsert(filas, { onConflict: `${columnaId},idioma` })
+  if (error) throw new Error(`${tabla}: ${error.message}`)
+  return filas.length
+}
+
+async function traducirTodo(apiKey: string, entrada: Entrada, idioma: string): Promise<Entrada> {
   const nombreIdioma = IDIOMA_NOMBRE[idioma]
-  const entrada = items.map((i) => ({ id: i.id, nombre: i.nombre, descripcion: i.descripcion || '' }))
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -129,18 +184,29 @@ async function traducirLote(
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 8000,
       system:
-        `Eres un traductor especializado en cartas de restaurante. Traduce el nombre y la ` +
-        `descripción de cada plato al ${nombreIdioma}, conservando el tono gastronómico y sin ` +
-        `inventar contenido que no esté en el original. Si la descripción llega vacía, devuélvela ` +
-        `vacía. Responde ÚNICAMENTE con un array JSON válido, sin texto adicional ni bloques de ` +
-        `código, con este formato exacto: [{"id":"...","nombre":"...","descripcion":"..."}]`,
+        `Eres un traductor especializado en cartas de restaurante. Traduce al ${nombreIdioma} todos ` +
+        `los textos del JSON de entrada, conservando el tono gastronómico y sin inventar contenido ` +
+        `que no esté en el original. "platos" tiene nombre y descripción de cada plato; ` +
+        `"categorias" y "modificador_grupos"/"modificador_opciones" solo tienen nombre (ej. de grupo: ` +
+        `"Punto de cocción", de opción: "Poco hecho"); "upsells" tiene un mensaje corto sugiriendo ` +
+        `un producto. Si una descripción o mensaje llega vacío, devuélvelo vacío. Responde ` +
+        `ÚNICAMENTE con un JSON válido, sin texto adicional ni bloques de código, con EXACTAMENTE ` +
+        `la misma forma que la entrada (mismos arrays, mismos "id", mismos campos presentes por ` +
+        `elemento), solo con los textos traducidos.`,
       messages: [{ role: 'user', content: JSON.stringify(entrada) }],
     }),
   })
 
   if (!res.ok) throw new Error(`Anthropic API: ${res.status} ${await res.text()}`)
   const data = await res.json()
-  const texto = data.content?.[0]?.text?.trim() || '[]'
+  const texto = data.content?.[0]?.text?.trim() || '{}'
   const limpio = texto.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '')
-  return JSON.parse(limpio)
+  const parsed = JSON.parse(limpio)
+  return {
+    platos: parsed.platos || [],
+    categorias: parsed.categorias || [],
+    modificador_grupos: parsed.modificador_grupos || [],
+    modificador_opciones: parsed.modificador_opciones || [],
+    upsells: parsed.upsells || [],
+  }
 }

@@ -266,7 +266,7 @@ export default function AdminCarta() {
       setTraduccionError(msg)
       return
     }
-    const resumen = Object.entries(data.traducidos || {}).map(([k, n]) => `${IDIOMAS_CARTA.find(i => i.key === k)?.label || k}: ${n} platos`).join(' · ')
+    const resumen = Object.entries(data.traducidos || {}).map(([k, n]) => `${IDIOMAS_CARTA.find(i => i.key === k)?.label || k}: ${n} elementos`).join(' · ')
     setTraduccionMsg(resumen || 'Carta traducida.')
     const { data: rest } = await supabase.from('restaurants').select('nombre, moneda, config').eq('id', restaurantId).single()
     setRestaurant(rest)
@@ -563,9 +563,10 @@ export default function AdminCarta() {
             {showTraducciones && (
               <div style={{ marginTop: 14 }}>
                 <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 12 }}>
-                  Traduce nombre y descripción de toda la carta con IA. Se guarda una sola vez —
-                  vuelve a traducir cuando cambies platos, precios o descripciones. El comensal podrá
-                  elegir el idioma desde Mesa.jsx.
+                  Traduce con IA los platos, categorías, modificadores y mensajes de sugerencia de
+                  toda la carta. Se guarda una sola vez — vuelve a traducir cuando cambies algo de
+                  esto. El comensal podrá elegir el idioma desde Mesa.jsx. Los alérgenos ya están
+                  traducidos (catálogo fijo, no hace falta IA).
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
                   {IDIOMAS_CARTA.map(idi => {
