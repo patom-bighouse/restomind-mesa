@@ -254,7 +254,18 @@ export default function AdminCarta() {
       body: { restaurant_id: restaurantId, idiomas: idiomasSeleccionados },
     })
     setTraduciendo(false)
-    if (err || data?.error) { setTraduccionError(data?.error || err.message); return }
+    if (err || data?.error) {
+      let msg = data?.error || err.message
+      // supabase-js no expone el cuerpo de la respuesta cuando la
+      // función devuelve un status distinto de 2xx — hay que leerlo
+      // del Response crudo para ver el motivo real, no el genérico
+      // "Edge Function returned a non-2xx status code".
+      if (err?.context?.json) {
+        try { const body = await err.context.json(); if (body?.error) msg = body.error } catch { /* noop */ }
+      }
+      setTraduccionError(msg)
+      return
+    }
     const resumen = Object.entries(data.traducidos || {}).map(([k, n]) => `${IDIOMAS_CARTA.find(i => i.key === k)?.label || k}: ${n} platos`).join(' · ')
     setTraduccionMsg(resumen || 'Carta traducida.')
     const { data: rest } = await supabase.from('restaurants').select('nombre, moneda, config').eq('id', restaurantId).single()
