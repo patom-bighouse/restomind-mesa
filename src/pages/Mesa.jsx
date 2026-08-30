@@ -3,6 +3,8 @@ import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/money'
 import { resolverMenuActivo, aplicarPreciosMenu } from '../lib/menus'
+import { IDIOMAS_CARTA } from '../lib/idiomas'
+import { traducirAlergenos } from '../lib/alergenosI18n'
 
 // Mismo catálogo fijo que AdminCarta.jsx (Reglamento UE 1169/2011).
 const ALERGENOS = [
@@ -90,6 +92,12 @@ export default function Mesa() {
   const [items, setItems] = useState([])
   const [itemModifiers, setItemModifiers] = useState({}) // menu_item_id -> [{grupo_id, grupo_nombre, obligatorio, tipo_seleccion, opciones}]
   const [upsellRules, setUpsellRules] = useState([]) // [{id, trigger_item_id, sugerida_categoria_id, mensaje}]
+  const [idiomaActivo, setIdiomaActivo] = useState('es')
+  const [traducciones, setTraducciones] = useState({}) // { [idioma]: { [menu_item_id]: {nombre, descripcion} } }
+  const [traduccionesCategorias, setTraduccionesCategorias] = useState({}) // { [idioma]: { [category_id]: nombre } }
+  const [traduccionesGrupos, setTraduccionesGrupos] = useState({}) // { [idioma]: { [grupo_id]: nombre } }
+  const [traduccionesOpciones, setTraduccionesOpciones] = useState({}) // { [idioma]: { [opcion_id]: nombre } }
+  const [traduccionesUpsells, setTraduccionesUpsells] = useState({}) // { [idioma]: { [upsell_rule_id]: mensaje } }
   const [modSelectorItem, setModSelectorItem] = useState(null) // el plato que se está configurando, o null
   const [modSelectorChoices, setModSelectorChoices] = useState({}) // { [grupo_id]: opcion_id | [opcion_id, ...] }
   const [cart, setCart] = useState({})
@@ -176,7 +184,7 @@ export default function Mesa() {
     setResenaEstado('enviada')
   }
 
-  async function loadMenu(restaurantId, zona) {
+  async function loadMenu(restaurantId, zona, idiomasCarta) {
     const { data: cats } = await supabase
       .from('categories')
       .select('id, nombre, orden')
@@ -210,7 +218,7 @@ export default function Mesa() {
       itemsFinal = aplicarPreciosMenu(itemsFinal, menuActivo, precios)
     }
     setItems(itemsFinal)
-    await loadModificadores(itemsFinal.map(i => i.id))
+    await loadModificadores(itemsFinal.map(i => i.id), idiomasCarta)
 
     const { data: reglas } = await supabase
       .from('upsell_rules')
@@ -218,19 +226,104 @@ export default function Mesa() {
       .eq('restaurant_id', restaurantId)
       .eq('activa', true)
     setUpsellRules(reglas || [])
+
+    // Carta multiidioma: se traduce una sola vez desde AdminCarta, acá
+    // solo se lee lo ya guardado — sin nada configurado, no se pide
+    // nada de más.
+    if (idiomasCarta && idiomasCarta.length && itemsFinal.length) {
+      const { data: traducs } = await supabase
+        .from('menu_item_traducciones')
+        .select('menu_item_id, idioma, nombre, descripcion')
+        .in('menu_item_id', itemsFinal.map(i => i.id))
+        .in('idioma', idiomasCarta)
+      const map = {}
+      ;(traducs || []).forEach(t => {
+        if (!map[t.idioma]) map[t.idioma] = {}
+        map[t.idioma][t.menu_item_id] = { nombre: t.nombre, descripcion: t.descripcion }
+      })
+      setTraducciones(map)
+    } else {
+      setTraducciones({})
+    }
+
+    if (idiomasCarta && idiomasCarta.length && (cats || []).length) {
+      const { data: catTraducs } = await supabase
+        .from('categoria_traducciones')
+        .select('category_id, idioma, nombre')
+        .in('category_id', (cats || []).map(c => c.id))
+        .in('idioma', idiomasCarta)
+      const map = {}
+      ;(catTraducs || []).forEach(t => {
+        if (!map[t.idioma]) map[t.idioma] = {}
+        map[t.idioma][t.category_id] = t.nombre
+      })
+      setTraduccionesCategorias(map)
+    } else {
+      setTraduccionesCategorias({})
+    }
+
+    if (idiomasCarta && idiomasCarta.length && (reglas || []).length) {
+      const { data: upsellTraducs } = await supabase
+        .from('upsell_traducciones')
+        .select('upsell_rule_id, idioma, mensaje')
+        .in('upsell_rule_id', (reglas || []).map(r => r.id))
+        .in('idioma', idiomasCarta)
+      const map = {}
+      ;(upsellTraducs || []).forEach(t => {
+        if (!map[t.idioma]) map[t.idioma] = {}
+        map[t.idioma][t.upsell_rule_id] = t.mensaje
+      })
+      setTraduccionesUpsells(map)
+    } else {
+      setTraduccionesUpsells({})
+    }
+  }
+
+  // Sustituye nombre/descripción por la traducción guardada, si hay
+  // una para el idioma elegido — en español (o sin traducción para
+  // ese plato) devuelve el original tal cual.
+  function aplicarTraduccion(item) {
+    if (idiomaActivo === 'es') return item
+    const t = traducciones[idiomaActivo]?.[item.id]
+    return t ? { ...item, nombre: t.nombre, descripcion: t.descripcion } : item
+  }
+
+  function nombreCategoria(cat) {
+    if (idiomaActivo === 'es' || !cat) return cat?.nombre
+    return traduccionesCategorias[idiomaActivo]?.[cat.id] || cat.nombre
+  }
+
+  function nombreGrupoModificador(grupo) {
+    if (idiomaActivo === 'es') return grupo.grupo_nombre
+    return traduccionesGrupos[idiomaActivo]?.[grupo.grupo_id] || grupo.grupo_nombre
+  }
+
+  function nombreOpcionModificador(opcion) {
+    if (idiomaActivo === 'es') return opcion.nombre
+    return traduccionesOpciones[idiomaActivo]?.[opcion.id] || opcion.nombre
+  }
+
+  function mensajeUpsell(regla) {
+    if (idiomaActivo === 'es') return regla.mensaje
+    return traduccionesUpsells[idiomaActivo]?.[regla.id] || regla.mensaje
   }
 
   // Trae los modificadores de TODOS los platos de una sola vez (4
   // consultas simples), en vez de cargarlos plato por plato al abrir
   // cada uno — la carta se muestra completa de entrada, así que
   // conviene tenerlo todo listo desde el principio.
-  async function loadModificadores(itemIds) {
+  async function loadModificadores(itemIds, idiomasCarta) {
     if (!itemIds.length) { setItemModifiers({}); return }
     const { data: asignados } = await supabase
       .from('menu_item_modificador_grupos')
       .select('menu_item_id, grupo_id, obligatorio, tipo_seleccion')
       .in('menu_item_id', itemIds)
-    if (!asignados || !asignados.length) { setItemModifiers({}); return }
+    if (!asignados || !asignados.length) {
+      setItemModifiers({})
+      setTraduccionesGrupos({})
+      setTraduccionesOpciones({})
+      return
+    }
 
     const grupoIds = [...new Set(asignados.map(a => a.grupo_id))]
     const { data: grupos } = await supabase
@@ -239,6 +332,25 @@ export default function Mesa() {
       .from('modificador_opciones').select('id, grupo_id, nombre, orden').in('grupo_id', grupoIds).order('orden')
     const { data: precios } = await supabase
       .from('menu_item_modificador_precios').select('menu_item_id, opcion_id, precio_extra').in('menu_item_id', itemIds)
+
+    if (idiomasCarta && idiomasCarta.length) {
+      const opcionIds = (opciones || []).map(o => o.id)
+      const [{ data: grupoTraducs }, { data: opcionTraducs }] = await Promise.all([
+        supabase.from('modificador_grupo_traducciones').select('grupo_id, idioma, nombre').in('grupo_id', grupoIds).in('idioma', idiomasCarta),
+        opcionIds.length
+          ? supabase.from('modificador_opcion_traducciones').select('opcion_id, idioma, nombre').in('opcion_id', opcionIds).in('idioma', idiomasCarta)
+          : Promise.resolve({ data: [] }),
+      ])
+      const mapGrupos = {}
+      ;(grupoTraducs || []).forEach(t => { if (!mapGrupos[t.idioma]) mapGrupos[t.idioma] = {}; mapGrupos[t.idioma][t.grupo_id] = t.nombre })
+      setTraduccionesGrupos(mapGrupos)
+      const mapOpciones = {}
+      ;(opcionTraducs || []).forEach(t => { if (!mapOpciones[t.idioma]) mapOpciones[t.idioma] = {}; mapOpciones[t.idioma][t.opcion_id] = t.nombre })
+      setTraduccionesOpciones(mapOpciones)
+    } else {
+      setTraduccionesGrupos({})
+      setTraduccionesOpciones({})
+    }
 
     const nombreGrupo = {}
     ;(grupos || []).forEach(g => { nombreGrupo[g.id] = g.nombre })
@@ -300,7 +412,7 @@ export default function Mesa() {
         if (sessErr) throw sessErr
         setSession(sessionRows && sessionRows.length > 0 ? sessionRows[0] : null)
 
-        await loadMenu(tableData.restaurant_id, tableData.zona)
+        await loadMenu(tableData.restaurant_id, tableData.zona, rest?.config?.idiomas_carta)
       } catch (e) {
         setError(e.message)
       } finally {
@@ -318,11 +430,11 @@ export default function Mesa() {
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'menu_items',
         filter: `restaurant_id=eq.${table.restaurant_id}`
-      }, () => loadMenu(table.restaurant_id, table.zona))
+      }, () => loadMenu(table.restaurant_id, table.zona, restaurant?.config?.idiomas_carta))
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'categories',
         filter: `restaurant_id=eq.${table.restaurant_id}`
-      }, () => loadMenu(table.restaurant_id, table.zona))
+      }, () => loadMenu(table.restaurant_id, table.zona, restaurant?.config?.idiomas_carta))
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'tables',
         filter: `id=eq.${table.id}`
@@ -438,7 +550,7 @@ export default function Mesa() {
       opcionIds.forEach(opId => {
         const op = g.opciones.find(o => o.id === opId)
         if (!op) return
-        detalle.push({ grupo_id: g.grupo_id, grupo_nombre: g.grupo_nombre, opcion_id: op.id, opcion_nombre: op.nombre, precio_extra: op.precio_extra })
+        detalle.push({ grupo_id: g.grupo_id, grupo_nombre: nombreGrupoModificador(g), opcion_id: op.id, opcion_nombre: nombreOpcionModificador(op), precio_extra: op.precio_extra })
         extra += op.precio_extra
       })
     })
@@ -828,6 +940,8 @@ export default function Mesa() {
     </div>
   )
 
+  const alergenosMostrados = traducirAlergenos(ALERGENOS, idiomaActivo)
+
   return (
     <div style={S.app}>
       <div style={S.stickyTop}>
@@ -839,6 +953,19 @@ export default function Mesa() {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
           <div style={S.badge}>Mesa {table?.numero} · {table?.zona?.charAt(0).toUpperCase() + table?.zona?.slice(1)}</div>
           <div style={{ display: 'flex', gap: 6 }}>
+            {restaurant?.config?.idiomas_carta?.length > 0 && (
+              <select
+                value={idiomaActivo}
+                onChange={e => setIdiomaActivo(e.target.value)}
+                style={{ background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 20, padding: '4px 8px', fontSize: 11, color: '#c4a85a', fontFamily: "'Inter', sans-serif", outline: 'none' }}
+              >
+                <option value="es">🇪🇸 Español</option>
+                {restaurant.config.idiomas_carta.map(k => {
+                  const idi = IDIOMAS_CARTA.find(i => i.key === k)
+                  return idi ? <option key={k} value={k}>{idi.bandera} {idi.label}</option> : null
+                })}
+              </select>
+            )}
             <button
               onClick={() => setShowAlergenosPanel(true)}
               style={{ background: alergenosExcluidos.length > 0 ? '#3a2010' : 'transparent', border: `0.5px solid ${alergenosExcluidos.length > 0 ? '#e8c97a' : '#3a2e20'}`, borderRadius: 20, padding: '4px 12px', fontSize: 11, color: '#c4a85a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
@@ -861,7 +988,7 @@ export default function Mesa() {
       <div style={S.catsBar}>
         <button style={S.cat(activeCat === 'todos')} onClick={() => setActiveCat('todos')}>Todos</button>
         {categories.map(c => (
-          <button key={c.id} style={S.cat(activeCat === c.id)} onClick={() => setActiveCat(c.id)}>{c.nombre}</button>
+          <button key={c.id} style={S.cat(activeCat === c.id)} onClick={() => setActiveCat(c.id)}>{nombreCategoria(c)}</button>
         ))}
       </div>
 
@@ -884,40 +1011,43 @@ export default function Mesa() {
           if (!catItems.length) return null
           return (
             <div key={cat.id}>
-              <div style={S.secTitle}>{cat.nombre}</div>
+              <div style={S.secTitle}>{nombreCategoria(cat)}</div>
               <div style={S.itemsWrap}>
-                {catItems.map(item => (
+                {catItems.map(item => {
+                  const it = aplicarTraduccion(item)
+                  return (
                   <div key={item.id} style={S.item}>
                     <div style={S.emoji}>
                       {item.foto_url
-                        ? <img src={item.foto_url} alt={item.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }} />
+                        ? <img src={item.foto_url} alt={it.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }} />
                         : (item.emoji || '🍽')}
                     </div>
                     <div style={S.info}>
-                      <div style={S.name}>{item.nombre}</div>
-                      {item.descripcion && <div style={S.desc}>{item.descripcion}</div>}
+                      <div style={S.name}>{it.nombre}</div>
+                      {it.descripcion && <div style={S.desc}>{it.descripcion}</div>}
                       <div style={S.price}>{formatMoney(item.precio, restaurant?.moneda)}</div>
                       {item.alergenos && item.alergenos.length > 0 && (
-                        <div style={{ fontSize: 13, marginTop: 3 }} title={item.alergenos.map(k => ALERGENOS.find(a => a.key === k)?.label).join(', ')}>
-                          {item.alergenos.map(k => ALERGENOS.find(a => a.key === k)?.emoji).join(' ')}
+                        <div style={{ fontSize: 13, marginTop: 3 }} title={item.alergenos.map(k => alergenosMostrados.find(a => a.key === k)?.label).join(', ')}>
+                          {item.alergenos.map(k => alergenosMostrados.find(a => a.key === k)?.emoji).join(' ')}
                         </div>
                       )}
                     </div>
                     {!esModoCamarero && (
                       itemModifiers[item.id]?.length > 0 ? (
-                        <button style={{ ...S.btn, width: 'auto', padding: '0 14px', borderRadius: 16, fontSize: 12 }} onClick={() => change(item, 1)}>
+                        <button style={{ ...S.btn, width: 'auto', padding: '0 14px', borderRadius: 16, fontSize: 12 }} onClick={() => change(it, 1)}>
                           Elegir
                         </button>
                       ) : (
                         <div style={S.qty}>
-                          <button style={S.btn} onClick={() => change(item, -1)}>−</button>
+                          <button style={S.btn} onClick={() => change(it, -1)}>−</button>
                           <span style={S.qnum}>{cart[`${item.id}::${comensalTag(selectedComensal)}`]?.qty || 0}</span>
-                          <button style={S.btn} onClick={() => change(item, 1)}>+</button>
+                          <button style={S.btn} onClick={() => change(it, 1)}>+</button>
                         </div>
                       )
                     )}
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )
@@ -950,7 +1080,7 @@ export default function Mesa() {
             Marca los que quieres evitar — ocultaremos de la carta los platos que los contengan.
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px 12px', marginBottom: 16 }}>
-            {ALERGENOS.map(a => {
+            {alergenosMostrados.map(a => {
               const checked = alergenosExcluidos.includes(a.key)
               return (
                 <label key={a.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#f0e8d8', cursor: 'pointer' }}>
@@ -992,7 +1122,7 @@ export default function Mesa() {
               {(itemModifiers[modSelectorItem.id] || []).map(grupo => (
                 <div key={grupo.grupo_id} style={{ marginBottom: 18 }}>
                   <div style={{ fontSize: 13, fontWeight: 500, color: '#c4a85a', marginBottom: 8 }}>
-                    {grupo.grupo_nombre}
+                    {nombreGrupoModificador(grupo)}
                     {grupo.obligatorio && <span style={{ color: '#e87a7a', fontSize: 11 }}> · obligatorio</span>}
                     {grupo.tipo_seleccion === 'multiple' && <span style={{ color: '#7a6a50', fontSize: 11 }}> · elige una o más</span>}
                   </div>
@@ -1009,7 +1139,7 @@ export default function Mesa() {
                             checked={elegido}
                             onChange={() => toggleModChoice(grupo, op.id)}
                           />
-                          {op.nombre}
+                          {nombreOpcionModificador(op)}
                         </span>
                         {op.precio_extra > 0 && <span style={{ fontSize: 13, color: '#c4a85a' }}>+{formatMoney(op.precio_extra, restaurant?.moneda)}</span>}
                       </label>
@@ -1119,7 +1249,7 @@ export default function Mesa() {
                 <div style={{ marginTop: 16 }}>
                   {sugerencias.map(s => (
                     <div key={s.sugerida_categoria_id} style={S.upsellCard}>
-                      <div style={S.upsellMsg}>{s.mensaje || `¿Le sumamos algo de ${s.categoria.nombre}?`}</div>
+                      <div style={S.upsellMsg}>{mensajeUpsell(s) || `¿Le sumamos algo de ${nombreCategoria(s.categoria)}?`}</div>
                       <button
                         style={S.upsellBtn}
                         onClick={() => { setActiveCat(s.sugerida_categoria_id); setOverlay(null) }}

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatMoney, getCurrencySymbol } from '../lib/money'
 import { useRestaurantModulos } from '../lib/modulos'
+import { IDIOMAS_CARTA } from '../lib/idiomas'
 
 // Los 14 alérgenos del Anexo II del Reglamento UE 1169/2011. Es un
 // catálogo fijo por ley, no configurable por restaurante — por eso vive
@@ -91,6 +92,11 @@ export default function AdminCarta() {
   const [newCatName, setNewCatName] = useState('')
   const [modGrupos, setModGrupos] = useState([]) // [{id, nombre, orden, opciones: [{id, nombre, orden}]}]
   const [showModGestion, setShowModGestion] = useState(false)
+  const [showTraducciones, setShowTraducciones] = useState(false)
+  const [idiomasSeleccionados, setIdiomasSeleccionados] = useState([])
+  const [traduciendo, setTraduciendo] = useState(false)
+  const [traduccionMsg, setTraduccionMsg] = useState(null)
+  const [traduccionError, setTraduccionError] = useState(null)
   const [nuevoGrupoNombre, setNuevoGrupoNombre] = useState('')
 
   // Item modal
@@ -229,6 +235,41 @@ export default function AdminCarta() {
     const { error: err } = await supabase.from('modificador_grupos').delete().eq('id', grupo.id)
     if (err) { setError(err.message); return }
     setModGrupos(prev => prev.filter(g => g.id !== grupo.id))
+  }
+
+  function toggleIdiomaSeleccionado(key) {
+    setIdiomasSeleccionados(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
+  }
+
+  // Llama a la función de servidor (nunca desde el navegador: la clave
+  // de Anthropic es de la plataforma, no debe salir del backend) que
+  // traduce toda la carta a los idiomas elegidos y guarda el resultado
+  // en menu_item_traducciones — Mesa.jsx solo lee lo que quede ahí.
+  async function traducirCarta() {
+    if (idiomasSeleccionados.length === 0) return
+    setTraduciendo(true)
+    setTraduccionError(null)
+    setTraduccionMsg(null)
+    const { data, error: err } = await supabase.functions.invoke('traducir-carta', {
+      body: { restaurant_id: restaurantId, idiomas: idiomasSeleccionados },
+    })
+    setTraduciendo(false)
+    if (err || data?.error) {
+      let msg = data?.error || err.message
+      // supabase-js no expone el cuerpo de la respuesta cuando la
+      // función devuelve un status distinto de 2xx — hay que leerlo
+      // del Response crudo para ver el motivo real, no el genérico
+      // "Edge Function returned a non-2xx status code".
+      if (err?.context?.json) {
+        try { const body = await err.context.json(); if (body?.error) msg = body.error } catch { /* noop */ }
+      }
+      setTraduccionError(msg)
+      return
+    }
+    const resumen = Object.entries(data.traducidos || {}).map(([k, n]) => `${IDIOMAS_CARTA.find(i => i.key === k)?.label || k}: ${n} elementos`).join(' · ')
+    setTraduccionMsg(resumen || 'Carta traducida.')
+    const { data: rest } = await supabase.from('restaurants').select('nombre, moneda, config').eq('id', restaurantId).single()
+    setRestaurant(rest)
   }
 
   async function addModOpcion(grupo, nombre) {
@@ -506,6 +547,60 @@ export default function AdminCarta() {
             </div>
           )}
         </div>
+
+        {/* Carta multiidioma con IA — solo si el dueño tiene el módulo activo */}
+        {tieneModulo('multiidioma') && (
+          <div style={{ background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 12, padding: '14px 18px', marginBottom: 20 }}>
+            <div
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+              onClick={() => setShowTraducciones(!showTraducciones)}
+            >
+              <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a' }}>
+                Carta multiidioma con IA {restaurant?.config?.idiomas_carta?.length > 0 && `(${restaurant.config.idiomas_carta.length} activos)`}
+              </div>
+              <span style={{ color: '#8a7560', fontSize: 12 }}>{showTraducciones ? '▲ ocultar' : '▼ gestionar'}</span>
+            </div>
+            {showTraducciones && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 12 }}>
+                  Traduce con IA los platos, categorías, modificadores y mensajes de sugerencia de
+                  toda la carta. Se guarda una sola vez — vuelve a traducir cuando cambies algo de
+                  esto. El comensal podrá elegir el idioma desde Mesa.jsx. Los alérgenos ya están
+                  traducidos (catálogo fijo, no hace falta IA).
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                  {IDIOMAS_CARTA.map(idi => {
+                    const activo = restaurant?.config?.idiomas_carta?.includes(idi.key)
+                    const marcado = idiomasSeleccionados.includes(idi.key)
+                    return (
+                      <button
+                        key={idi.key}
+                        onClick={() => toggleIdiomaSeleccionado(idi.key)}
+                        style={{
+                          background: marcado ? '#e8c97a' : '#111',
+                          color: marcado ? '#111' : '#8a7560',
+                          border: `0.5px solid ${marcado ? '#e8c97a' : '#3a2e20'}`,
+                          borderRadius: 20, padding: '6px 14px', fontSize: 13, cursor: 'pointer', fontFamily: "'Inter', sans-serif",
+                        }}
+                      >
+                        {idi.bandera} {idi.label}{activo ? ' ✓' : ''}
+                      </button>
+                    )
+                  })}
+                </div>
+                {traduccionError && <div style={{ ...S.error, marginBottom: 12 }}>{traduccionError}</div>}
+                {traduccionMsg && <div style={{ fontSize: 12, color: '#7ae8a0', marginBottom: 12 }}>{traduccionMsg}</div>}
+                <button
+                  style={S.addBtn}
+                  onClick={traducirCarta}
+                  disabled={traduciendo || idiomasSeleccionados.length === 0}
+                >
+                  {traduciendo ? 'Traduciendo...' : `Traducir a ${idiomasSeleccionados.length || ''} idioma(s)`}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Categorías y platos */}
         {sortedCats.map((cat, idx) => {
