@@ -99,6 +99,16 @@ export default function AdminCarta() {
   const [traduccionError, setTraduccionError] = useState(null)
   const [nuevoGrupoNombre, setNuevoGrupoNombre] = useState('')
 
+  // Importador de carta con foto (IA)
+  const [showImportador, setShowImportador] = useState(false)
+  const [imagenesImportador, setImagenesImportador] = useState([]) // [{ nombre, dataUri }]
+  const [extrayendo, setExtrayendo] = useState(false)
+  const [importadorError, setImportadorError] = useState(null)
+  const [categoriasExtraidas, setCategoriasExtraidas] = useState(null) // null = todavía no se extrajo nada
+  const [importando, setImportando] = useState(false)
+  const [importadorMsg, setImportadorMsg] = useState(null)
+  const importadorFileRef = useRef(null)
+
   // Item modal
   const [editingItem, setEditingItem] = useState(null) // null | 'new' | item object
   const [editingCatId, setEditingCatId] = useState(null)
@@ -270,6 +280,173 @@ export default function AdminCarta() {
     setTraduccionMsg(resumen || 'Carta traducida.')
     const { data: rest } = await supabase.from('restaurants').select('nombre, moneda, config').eq('id', restaurantId).single()
     setRestaurant(rest)
+  }
+
+  // ---------- Copia de seguridad de la carta ----------
+  // El importador de fotos solo AGREGA categorías/platos, nunca borra
+  // ni sobreescribe lo que ya había — pero de todas formas conviene
+  // tener un archivo al que volver antes de probarlo.
+  function descargarCopiaCarta() {
+    const contenido = {
+      restaurante: restaurant?.nombre || null,
+      exportado_en: new Date().toISOString(),
+      categorias: categories.map(cat => ({
+        nombre: cat.nombre,
+        orden: cat.orden,
+        activa: cat.activa,
+        platos: items.filter(i => i.category_id === cat.id).map(i => ({
+          nombre: i.nombre,
+          descripcion: i.descripcion,
+          precio: i.precio,
+          precio_costo: i.precio_costo,
+          alergenos: i.alergenos,
+          emoji: i.emoji,
+          foto_url: i.foto_url,
+          disponible: i.disponible,
+          orden: i.orden,
+        })),
+      })),
+    }
+    const blob = new Blob([JSON.stringify(contenido, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `carta-${(restaurant?.nombre || 'restomind').toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // ---------- Importador de carta con foto (IA) ----------
+  function resizeImagen(file, maxAncho = 1400, calidad = 0.75) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onerror = reject
+      reader.onload = () => {
+        const img = new Image()
+        img.onerror = reject
+        img.onload = () => {
+          const escala = Math.min(1, maxAncho / img.width)
+          const canvas = document.createElement('canvas')
+          canvas.width = img.width * escala
+          canvas.height = img.height * escala
+          const ctx = canvas.getContext('2d')
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+          resolve(canvas.toDataURL('image/jpeg', calidad))
+        }
+        img.src = reader.result
+      }
+      reader.readAsDataURL(file)
+    })
+  }
+
+  async function manejarSeleccionImagenes(e) {
+    const files = Array.from(e.target.files || [])
+    if (!files.length) return
+    setImportadorError(null)
+    const nuevas = await Promise.all(files.map(async f => ({ nombre: f.name, dataUri: await resizeImagen(f) })))
+    setImagenesImportador(prev => [...prev, ...nuevas].slice(0, 6))
+    e.target.value = ''
+  }
+
+  function quitarImagenImportador(idx) {
+    setImagenesImportador(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  async function extraerCarta() {
+    if (!imagenesImportador.length) return
+    setExtrayendo(true)
+    setImportadorError(null)
+    setImportadorMsg(null)
+    const { data, error: err } = await supabase.functions.invoke('importar-carta', {
+      body: { restaurant_id: restaurantId, imagenes: imagenesImportador.map(i => i.dataUri) },
+    })
+    setExtrayendo(false)
+    if (err || data?.error) {
+      let msg = data?.error || err.message
+      if (err?.context?.json) {
+        try { const body = await err.context.json(); if (body?.error) msg = body.error } catch { /* noop */ }
+      }
+      setImportadorError(msg)
+      return
+    }
+    setCategoriasExtraidas(
+      (data.categorias || []).map(cat => ({
+        nombre: cat.nombre,
+        platos: (cat.platos || []).map(p => ({ ...p, incluido: true })),
+      }))
+    )
+  }
+
+  function actualizarCategoriaExtraida(catIdx, nombre) {
+    setCategoriasExtraidas(prev => prev.map((c, i) => i === catIdx ? { ...c, nombre } : c))
+  }
+
+  function actualizarPlatoExtraido(catIdx, platoIdx, patch) {
+    setCategoriasExtraidas(prev => prev.map((c, i) => {
+      if (i !== catIdx) return c
+      return { ...c, platos: c.platos.map((p, j) => j === platoIdx ? { ...p, ...patch } : p) }
+    }))
+  }
+
+  function cancelarImportacion() {
+    setCategoriasExtraidas(null)
+    setImagenesImportador([])
+    setImportadorError(null)
+  }
+
+  async function confirmarImportacion() {
+    setImportando(true)
+    setImportadorError(null)
+    let nuevasCategorias = 0
+    let nuevosPlatos = 0
+    try {
+      let categoriasActuales = [...categories]
+      for (const cat of categoriasExtraidas) {
+        const platosIncluidos = cat.platos.filter(p => p.incluido && p.nombre?.trim())
+        if (!platosIncluidos.length) continue
+
+        let categoria = categoriasActuales.find(c => c.nombre.trim().toLowerCase() === cat.nombre.trim().toLowerCase())
+        if (!categoria) {
+          const orden = categoriasActuales.length ? Math.max(...categoriasActuales.map(c => c.orden)) + 1 : 1
+          const { data, error: err } = await supabase
+            .from('categories')
+            .insert({ restaurant_id: restaurantId, nombre: cat.nombre.trim(), orden, activa: true })
+            .select().single()
+          if (err) throw err
+          categoria = data
+          categoriasActuales = [...categoriasActuales, categoria]
+          nuevasCategorias++
+        }
+
+        const itemsEnCat = items.filter(i => i.category_id === categoria.id)
+        let orden = itemsEnCat.length ? Math.max(...itemsEnCat.map(i => i.orden)) : 0
+        const filas = platosIncluidos.map(p => {
+          orden += 1
+          return {
+            restaurant_id: restaurantId,
+            category_id: categoria.id,
+            nombre: p.nombre.trim(),
+            descripcion: p.descripcion?.trim() || null,
+            precio: parseFloat(p.precio) || 0,
+            emoji: '🍽',
+            disponible: true,
+            orden,
+          }
+        })
+        const { error: insErr } = await supabase.from('menu_items').insert(filas)
+        if (insErr) throw insErr
+        nuevosPlatos += filas.length
+      }
+
+      setImportadorMsg(`Importado: ${nuevasCategorias} categoría(s) nueva(s), ${nuevosPlatos} plato(s).`)
+      setCategoriasExtraidas(null)
+      setImagenesImportador([])
+      await loadData()
+    } catch (e) {
+      setImportadorError(e.message)
+    } finally {
+      setImportando(false)
+    }
   }
 
   async function addModOpcion(grupo, nombre) {
@@ -480,7 +657,15 @@ export default function AdminCarta() {
       </div>
 
       <div style={S.content}>
-        <div style={S.sectionTitle}>Gestión de carta</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <div style={S.sectionTitle}>Gestión de carta</div>
+          <button
+            onClick={descargarCopiaCarta}
+            style={{ background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '6px 12px', fontSize: 12, color: '#8a7560', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+          >
+            ⬇ Descargar copia de la carta
+          </button>
+        </div>
         {error && <div style={S.error}>{error}</div>}
 
         {/* Añadir categoría */}
@@ -597,6 +782,107 @@ export default function AdminCarta() {
                 >
                   {traduciendo ? 'Traduciendo...' : `Traducir a ${idiomasSeleccionados.length || ''} idioma(s)`}
                 </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Importador de carta con foto (IA) — solo si el dueño tiene el módulo activo */}
+        {tieneModulo('importador_carta') && (
+          <div style={{ background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 12, padding: '14px 18px', marginBottom: 20 }}>
+            <div
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+              onClick={() => setShowImportador(!showImportador)}
+            >
+              <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a' }}>Importar carta con foto (IA)</div>
+              <span style={{ color: '#8a7560', fontSize: 12 }}>{showImportador ? '▲ ocultar' : '▼ gestionar'}</span>
+            </div>
+            {showImportador && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 12 }}>
+                  Sube fotos de tu carta impresa (hasta 6) — la IA extrae categorías y platos. Nada se
+                  guarda todavía: podrás revisar y corregir cada plato antes de confirmar. Solo agrega
+                  platos nuevos, nunca borra ni modifica lo que ya tienes.
+                </div>
+
+                {importadorError && <div style={{ ...S.error, marginBottom: 12 }}>{importadorError}</div>}
+                {importadorMsg && <div style={{ fontSize: 12, color: '#7ae8a0', marginBottom: 12 }}>{importadorMsg}</div>}
+
+                {!categoriasExtraidas && (
+                  <>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+                      {imagenesImportador.map((img, idx) => (
+                        <div key={idx} style={{ position: 'relative' }}>
+                          <img src={img.dataUri} alt={img.nombre} style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 8, border: '0.5px solid #3a2e20' }} />
+                          <button
+                            onClick={() => quitarImagenImportador(idx)}
+                            style={{ position: 'absolute', top: -6, right: -6, background: '#e74c3c', color: '#fff', border: 'none', borderRadius: '50%', width: 20, height: 20, fontSize: 12, cursor: 'pointer' }}
+                          >×</button>
+                        </div>
+                      ))}
+                      {imagenesImportador.length < 6 && (
+                        <button
+                          onClick={() => importadorFileRef.current?.click()}
+                          style={{ width: 80, height: 80, background: '#111', border: '1px dashed #3a2e20', borderRadius: 8, color: '#8a7560', fontSize: 24, cursor: 'pointer' }}
+                        >+</button>
+                      )}
+                      <input ref={importadorFileRef} type="file" accept="image/*" multiple hidden onChange={manejarSeleccionImagenes} />
+                    </div>
+                    <button
+                      style={S.addBtn}
+                      onClick={extraerCarta}
+                      disabled={extrayendo || imagenesImportador.length === 0}
+                    >
+                      {extrayendo ? 'Leyendo la carta...' : 'Extraer con IA'}
+                    </button>
+                  </>
+                )}
+
+                {categoriasExtraidas && (
+                  <div>
+                    {categoriasExtraidas.map((cat, catIdx) => (
+                      <div key={catIdx} style={{ marginBottom: 16 }}>
+                        <input
+                          value={cat.nombre}
+                          onChange={e => actualizarCategoriaExtraida(catIdx, e.target.value)}
+                          style={{ ...S.catInput, fontSize: 13, fontWeight: 600, color: '#e8c97a', marginBottom: 8, maxWidth: 260 }}
+                        />
+                        {cat.platos.map((p, platoIdx) => (
+                          <div key={platoIdx} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 0', borderBottom: '0.5px solid #2a2a2a', opacity: p.incluido ? 1 : 0.4 }}>
+                            <input
+                              type="checkbox"
+                              checked={p.incluido}
+                              onChange={e => actualizarPlatoExtraido(catIdx, platoIdx, { incluido: e.target.checked })}
+                            />
+                            <input
+                              value={p.nombre}
+                              onChange={e => actualizarPlatoExtraido(catIdx, platoIdx, { nombre: e.target.value })}
+                              style={{ ...S.catInput, flex: 2, fontSize: 13 }}
+                            />
+                            <input
+                              value={p.descripcion || ''}
+                              placeholder="Descripción (opcional)"
+                              onChange={e => actualizarPlatoExtraido(catIdx, platoIdx, { descripcion: e.target.value })}
+                              style={{ ...S.catInput, flex: 3, fontSize: 13 }}
+                            />
+                            <input
+                              type="number" step="0.01" min="0"
+                              value={p.precio}
+                              onChange={e => actualizarPlatoExtraido(catIdx, platoIdx, { precio: e.target.value })}
+                              style={{ ...S.catInput, width: 80, fontSize: 13 }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                    <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+                      <button style={S.cancelBtn} onClick={cancelarImportacion}>Cancelar</button>
+                      <button style={S.addBtn} onClick={confirmarImportacion} disabled={importando}>
+                        {importando ? 'Importando...' : 'Importar a la carta'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
