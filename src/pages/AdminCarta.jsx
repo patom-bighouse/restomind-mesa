@@ -102,6 +102,7 @@ export default function AdminCarta() {
 
   // Importador de carta con foto (IA)
   const [showImportador, setShowImportador] = useState(false)
+  const [modoImportacion, setModoImportacion] = useState('agregar') // 'agregar' | 'reemplazar'
   const [imagenesImportador, setImagenesImportador] = useState([]) // [{ nombre, dataUri }]
   const [extrayendo, setExtrayendo] = useState(false)
   const [importadorError, setImportadorError] = useState(null)
@@ -373,6 +374,16 @@ export default function AdminCarta() {
     setImagenesImportador(prev => prev.filter((_, i) => i !== idx))
   }
 
+  // Si ya hay un plato con ese nombre en una categoría con ese nombre
+  // (ambos sin distinguir mayúsculas), se considera el mismo plato —
+  // se usa tanto al extraer (para no marcarlo de entrada) como en la
+  // revisión (para avisar aunque el usuario edite los campos después).
+  function platoYaExiste(categoriaNombre, platoNombre) {
+    const cat = categories.find(c => c.nombre.trim().toLowerCase() === categoriaNombre.trim().toLowerCase())
+    if (!cat) return false
+    return items.some(i => i.category_id === cat.id && i.nombre.trim().toLowerCase() === platoNombre.trim().toLowerCase())
+  }
+
   async function extraerCarta() {
     if (!imagenesImportador.length) return
     setExtrayendo(true)
@@ -394,6 +405,8 @@ export default function AdminCarta() {
     // Categoría por plato (no por bloque) — así, si la IA metió todo
     // junto (ej. todas las bebidas bajo "Bebidas"), se puede repartir
     // cada plato a mano a la categoría que le corresponda sin más.
+    // En modo "agregar", los que ya existen (mismo nombre en la misma
+    // categoría) arrancan sin marcar, para no duplicarlos sin querer.
     const flat = (data.categorias || []).flatMap(cat =>
       (cat.platos || []).map(p => ({
         key: crypto.randomUUID(),
@@ -401,7 +414,7 @@ export default function AdminCarta() {
         nombre: p.nombre,
         descripcion: p.descripcion || '',
         precio: p.precio,
-        incluido: true,
+        incluido: modoImportacion === 'reemplazar' || !platoYaExiste(cat.nombre, p.nombre),
       }))
     )
     setPlatosExtraidos(flat)
@@ -420,18 +433,36 @@ export default function AdminCarta() {
   }
 
   async function confirmarImportacion() {
+    const esReemplazo = modoImportacion === 'reemplazar'
+    if (esReemplazo && !window.confirm(
+      '⚠️ Esto BORRARÁ toda tu carta actual (todas las categorías y platos) y la reemplazará por completo ' +
+      'con lo que ves en esta pantalla. No hay "deshacer" para esto — si no descargaste una copia antes, ' +
+      'cancela y hazlo primero. ¿Seguro que quieres continuar?'
+    )) return
+
     setImportando(true)
     setImportadorError(null)
     const categoriaIdsCreadas = []
     const itemIdsCreados = []
     try {
+      let categoriasActuales = [...categories]
+      let itemsBase = items
+
+      if (esReemplazo) {
+        const { error: delItemsErr } = await supabase.from('menu_items').delete().eq('restaurant_id', restaurantId)
+        if (delItemsErr) throw delItemsErr
+        const { error: delCatsErr } = await supabase.from('categories').delete().eq('restaurant_id', restaurantId)
+        if (delCatsErr) throw delCatsErr
+        categoriasActuales = []
+        itemsBase = []
+      }
+
       const incluidos = platosExtraidos.filter(p => p.incluido && p.nombre?.trim() && p.categoria?.trim())
       // Un plato por categoría (según orden de aparición), preservando
       // el orden en que se escribieron para que la carta quede como
       // se ve en la pantalla de revisión.
       const nombresCategorias = [...new Set(incluidos.map(p => p.categoria.trim()))]
 
-      let categoriasActuales = [...categories]
       for (const nombreCat of nombresCategorias) {
         let categoria = categoriasActuales.find(c => c.nombre.trim().toLowerCase() === nombreCat.toLowerCase())
         if (!categoria) {
@@ -449,7 +480,7 @@ export default function AdminCarta() {
         }
 
         const platosDeCat = incluidos.filter(p => p.categoria.trim() === nombreCat)
-        const itemsEnCat = items.filter(i => i.category_id === categoria.id)
+        const itemsEnCat = itemsBase.filter(i => i.category_id === categoria.id)
         let orden = itemsEnCat.length ? Math.max(...itemsEnCat.map(i => i.orden)) : 0
         const filas = platosDeCat.map(p => {
           orden += 1
@@ -469,8 +500,14 @@ export default function AdminCarta() {
         itemIdsCreados.push(...itemsCreados.map(i => i.id))
       }
 
-      setImportadorMsg(`Importado: ${categoriaIdsCreadas.length} categoría(s) nueva(s), ${itemIdsCreados.length} plato(s).`)
-      setUltimaImportacion({ categoriaIds: categoriaIdsCreadas, itemIds: itemIdsCreados })
+      setImportadorMsg(
+        esReemplazo
+          ? `Carta reemplazada: ${categoriaIdsCreadas.length} categoría(s), ${itemIdsCreados.length} plato(s).`
+          : `Importado: ${categoriaIdsCreadas.length} categoría(s) nueva(s), ${itemIdsCreados.length} plato(s).`
+      )
+      // El "deshacer" borra justo lo recién creado — no sirve para un
+      // reemplazo completo, donde además se borró todo lo anterior.
+      setUltimaImportacion(esReemplazo ? null : { categoriaIds: categoriaIdsCreadas, itemIds: itemIdsCreados })
       setPlatosExtraidos(null)
       setCategoriaPadrePorNombre({})
       setImagenesImportador([])
@@ -719,7 +756,7 @@ export default function AdminCarta() {
       <div key={cat.id} style={esSubcategoria ? { ...S.catSection, marginLeft: 24, borderLeft: '2px solid #2a2a2a', paddingLeft: 16 } : S.catSection}>
         <div style={S.catHeader}>
           <input
-            style={{ ...S.catName, background: 'transparent', border: 'none', outline: 'none', fontFamily: "'Playfair Display', serif", width: 'auto', maxWidth: 240, fontSize: esSubcategoria ? 16 : undefined }}
+            style={{ ...S.catName, background: 'transparent', border: 'none', outline: 'none', fontFamily: "'Playfair Display', serif", width: 'auto', maxWidth: 240, fontSize: esSubcategoria ? 13 : undefined }}
             defaultValue={cat.nombre}
             onBlur={e => renameCategory(cat, e.target.value)}
             onKeyDown={e => e.key === 'Enter' && e.target.blur()}
@@ -969,9 +1006,27 @@ export default function AdminCarta() {
               <div style={{ marginTop: 14 }}>
                 <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 12 }}>
                   Sube fotos de tu carta impresa (hasta 6) — la IA extrae categorías y platos. Nada se
-                  guarda todavía: podrás revisar y corregir cada plato antes de confirmar. Solo agrega
-                  platos nuevos, nunca borra ni modifica lo que ya tienes.
+                  guarda todavía: podrás revisar y corregir cada plato antes de confirmar.
                 </div>
+
+                {!platosExtraidos && (
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+                    <button
+                      onClick={() => setModoImportacion('agregar')}
+                      style={{ flex: 1, textAlign: 'left', background: modoImportacion === 'agregar' ? '#1f2a1f' : '#111', border: `0.5px solid ${modoImportacion === 'agregar' ? '#2ecc71' : '#3a2e20'}`, borderRadius: 10, padding: '10px 14px', cursor: 'pointer' }}
+                    >
+                      <div style={{ fontSize: 13, fontWeight: 500, color: modoImportacion === 'agregar' ? '#2ecc71' : '#c4a85a' }}>Agregar solo lo nuevo</div>
+                      <div style={{ fontSize: 11, color: '#7a6a50', marginTop: 2 }}>No toca lo que ya tienes; detecta y desmarca platos repetidos.</div>
+                    </button>
+                    <button
+                      onClick={() => setModoImportacion('reemplazar')}
+                      style={{ flex: 1, textAlign: 'left', background: modoImportacion === 'reemplazar' ? '#2a1a10' : '#111', border: `0.5px solid ${modoImportacion === 'reemplazar' ? '#e8a03a' : '#3a2e20'}`, borderRadius: 10, padding: '10px 14px', cursor: 'pointer' }}
+                    >
+                      <div style={{ fontSize: 13, fontWeight: 500, color: modoImportacion === 'reemplazar' ? '#e8a03a' : '#c4a85a' }}>Reemplazar toda la carta</div>
+                      <div style={{ fontSize: 11, color: '#7a6a50', marginTop: 2 }}>Borra TODO lo actual y lo cambia por esto. Sin deshacer — descarga una copia antes.</div>
+                    </button>
+                  </div>
+                )}
 
                 {importadorError && <div style={{ ...S.error, marginBottom: 12 }}>{importadorError}</div>}
                 {importadorMsg && (
@@ -1076,6 +1131,9 @@ export default function AdminCarta() {
                                 onChange={e => actualizarPlatoExtraido(p.key, { precio: e.target.value })}
                                 style={{ ...S.catInput, width: 80, fontSize: 13 }}
                               />
+                              {modoImportacion === 'agregar' && platoYaExiste(p.categoria, p.nombre) && (
+                                <span style={{ fontSize: 10, color: '#e8a03a', whiteSpace: 'nowrap' }} title="Ya hay un plato con este nombre en esta categoría">ya existe</span>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -1083,8 +1141,12 @@ export default function AdminCarta() {
                     })}
                     <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
                       <button style={S.cancelBtn} onClick={cancelarImportacion}>Cancelar</button>
-                      <button style={S.addBtn} onClick={confirmarImportacion} disabled={importando}>
-                        {importando ? 'Importando...' : 'Importar a la carta'}
+                      <button
+                        style={modoImportacion === 'reemplazar' ? { ...S.addBtn, background: '#e8a03a' } : S.addBtn}
+                        onClick={confirmarImportacion}
+                        disabled={importando}
+                      >
+                        {importando ? 'Guardando...' : modoImportacion === 'reemplazar' ? '⚠ Reemplazar toda la carta' : 'Importar a la carta'}
                       </button>
                     </div>
                   </div>
