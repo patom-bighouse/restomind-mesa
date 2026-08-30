@@ -414,6 +414,7 @@ export default function AdminCarta() {
         nombre: p.nombre,
         descripcion: p.descripcion || '',
         precio: p.precio,
+        emoji: EMOJI_OPTIONS.includes(p.emoji) ? p.emoji : '🍽',
         incluido: modoImportacion === 'reemplazar' || !platoYaExiste(cat.nombre, p.nombre),
       }))
     )
@@ -490,7 +491,7 @@ export default function AdminCarta() {
             nombre: p.nombre.trim(),
             descripcion: p.descripcion?.trim() || null,
             precio: parseFloat(p.precio) || 0,
-            emoji: '🍽',
+            emoji: p.emoji || '🍽',
             disponible: true,
             orden,
           }
@@ -1092,6 +1093,14 @@ export default function AdminCarta() {
                           checked={p.incluido}
                           onChange={e => actualizarPlatoExtraido(p.key, { incluido: e.target.checked })}
                         />
+                        <select
+                          value={p.emoji}
+                          onChange={e => actualizarPlatoExtraido(p.key, { emoji: e.target.value })}
+                          title="Icono del plato"
+                          style={{ ...S.catInput, flex: 'none', width: 46, textAlign: 'center', padding: '4px 2px', fontSize: 16 }}
+                        >
+                          {EMOJI_OPTIONS.map(em => <option key={em} value={em}>{em}</option>)}
+                        </select>
                         <input
                           value={p.categoria}
                           placeholder="Categoría"

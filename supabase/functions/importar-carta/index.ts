@@ -9,6 +9,10 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
+// Misma paleta que EMOJI_OPTIONS en src/pages/AdminCarta.jsx — si se
+// cambia una, hay que actualizar la otra a mano.
+const EMOJI_OPCIONES = ['🍽','🥗','🍖','🐟','🥩','🍝','🍮','🍫','🍷','🍺','🍕','🍔','🍣','🥘','🧀','🥙','🍲','🥟','🌮','🍤','🍰','🥧','🧁','☕','🍹','🥤','🍞','🥖']
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -70,9 +74,13 @@ Deno.serve(async (req) => {
           'símbolo de moneda (ej. 12.50, nunca "12,50€"). Si no hay descripción, deja el campo vacío. ' +
           'Agrupa los platos bajo el nombre de categoría tal como aparece impreso (ej. "Entrantes", ' +
           '"Primeros", "Postres") — si no hay categorías visibles, usa "Carta". No inventes platos ' +
-          'que no estén en la foto. Responde ÚNICAMENTE con un JSON válido, sin texto adicional ni ' +
-          'bloques de código, con este formato exacto: ' +
-          '{"categorias":[{"nombre":"...","platos":[{"nombre":"...","descripcion":"...","precio":0}]}]}',
+          'que no estén en la foto. Además, para cada plato elige el emoji que mejor lo represente, ' +
+          `ÚNICAMENTE de esta lista (usa exactamente uno de estos caracteres, ninguno fuera de la ` +
+          `lista): ${EMOJI_OPCIONES.join(' ')} — por ejemplo pescado/marisco → 🐟 o 🍤, carne → 🥩 o ` +
+          '🍖, ensalada → 🥗, postre → 🍰 o 🍮, bebida → según corresponda (vino 🍷, cerveza 🍺, café ' +
+          '☕, refresco 🥤). Si ninguno encaja bien, usa 🍽. Responde ÚNICAMENTE con un JSON válido, ' +
+          'sin texto adicional ni bloques de código, con este formato exacto: ' +
+          '{"categorias":[{"nombre":"...","platos":[{"nombre":"...","descripcion":"...","precio":0,"emoji":"..."}]}]}',
         messages: [{ role: 'user', content: [...bloquesImagen, { type: 'text', text: 'Extrae la carta de estas fotos.' }] }],
       }),
     })
@@ -83,7 +91,17 @@ Deno.serve(async (req) => {
     const limpio = texto.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '')
     const extraido = JSON.parse(limpio)
 
-    return json({ ok: true, categorias: extraido.categorias || [] })
+    // Por si el modelo devuelve un emoji fuera de la lista pedida —
+    // mejor un genérico conocido que uno que ni siquiera se vea bien.
+    const categorias = (extraido.categorias || []).map((cat: { nombre: string; platos?: { emoji?: string }[] }) => ({
+      ...cat,
+      platos: (cat.platos || []).map((p) => ({
+        ...p,
+        emoji: EMOJI_OPCIONES.includes(p.emoji || '') ? p.emoji : '🍽',
+      })),
+    }))
+
+    return json({ ok: true, categorias })
   } catch (e) {
     return json({ error: String(e?.message || e) }, 500)
   }
