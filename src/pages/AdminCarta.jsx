@@ -1078,17 +1078,59 @@ export default function AdminCarta() {
                   <div>
                     <div style={{ fontSize: 11, color: '#7a6a50', marginBottom: 12 }}>
                       Si la IA juntó platos que quieres en categorías distintas (ej. todas las bebidas
-                      en una sola), cambia el campo "Categoría" del plato — se reagrupa solo. Para una
-                      categoría nueva, puedes marcarla como subcategoría de una que ya tengas.
+                      en una sola), cambia el campo "Categoría" de cada plato — no hace falta que estén
+                      ordenados ni agrupados en esta lista.
                     </div>
-                    {gruposImportador.map(nombreCat => {
-                      const platosDelGrupo = platosExtraidos.filter(p => p.categoria.trim().toLowerCase() === nombreCat.toLowerCase())
-                      const yaExiste = categories.some(c => c.nombre.trim().toLowerCase() === nombreCat.toLowerCase())
-                      return (
-                        <div key={nombreCat} style={{ marginBottom: 16 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                            <span style={{ fontSize: 13, fontWeight: 600, color: '#e8c97a' }}>{nombreCat}</span>
-                            {!yaExiste && (
+
+                    {/* Lista plana a propósito: si se reagrupara por categoría en
+                        vivo, escribir en el campo Categoría movería la fila a otro
+                        bloque en cada letra y React perdería el foco del campo. */}
+                    {platosExtraidos.map(p => (
+                      <div key={p.key} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 0', borderBottom: '0.5px solid #2a2a2a', opacity: p.incluido ? 1 : 0.4 }}>
+                        <input
+                          type="checkbox"
+                          checked={p.incluido}
+                          onChange={e => actualizarPlatoExtraido(p.key, { incluido: e.target.checked })}
+                        />
+                        <input
+                          value={p.categoria}
+                          placeholder="Categoría"
+                          onChange={e => actualizarPlatoExtraido(p.key, { categoria: e.target.value })}
+                          style={{ ...S.catInput, flex: 1.4, fontSize: 12, color: '#c4a85a' }}
+                        />
+                        <input
+                          value={p.nombre}
+                          onChange={e => actualizarPlatoExtraido(p.key, { nombre: e.target.value })}
+                          style={{ ...S.catInput, flex: 2, fontSize: 13 }}
+                        />
+                        <input
+                          value={p.descripcion || ''}
+                          placeholder="Descripción (opcional)"
+                          onChange={e => actualizarPlatoExtraido(p.key, { descripcion: e.target.value })}
+                          style={{ ...S.catInput, flex: 3, fontSize: 13 }}
+                        />
+                        <input
+                          type="number" step="0.01" min="0"
+                          value={p.precio}
+                          onChange={e => actualizarPlatoExtraido(p.key, { precio: e.target.value })}
+                          style={{ ...S.catInput, width: 80, fontSize: 13 }}
+                        />
+                        {modoImportacion === 'agregar' && platoYaExiste(p.categoria, p.nombre) && (
+                          <span style={{ fontSize: 10, color: '#e8a03a', whiteSpace: 'nowrap' }} title="Ya hay un plato con este nombre en esta categoría">ya existe</span>
+                        )}
+                      </div>
+                    ))}
+
+                    {gruposImportador.filter(nombreCat => !categories.some(c => c.nombre.trim().toLowerCase() === nombreCat.toLowerCase())).length > 0 && (
+                      <div style={{ marginTop: 16 }}>
+                        <div style={{ fontSize: 11, color: '#7a6a50', marginBottom: 8 }}>
+                          Categorías nuevas que se crearán — marca si alguna debe ser subcategoría de una que ya tengas:
+                        </div>
+                        {gruposImportador
+                          .filter(nombreCat => !categories.some(c => c.nombre.trim().toLowerCase() === nombreCat.toLowerCase()))
+                          .map(nombreCat => (
+                            <div key={nombreCat} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                              <span style={{ fontSize: 13, fontWeight: 600, color: '#e8c97a', minWidth: 160 }}>{nombreCat}</span>
                               <select
                                 value={categoriaPadrePorNombre[nombreCat] || ''}
                                 onChange={e => setCategoriaPadrePorNombre(prev => ({ ...prev, [nombreCat]: e.target.value }))}
@@ -1099,46 +1141,11 @@ export default function AdminCarta() {
                                   <option key={c.id} value={c.id}>Subcategoría de: {c.nombre}</option>
                                 ))}
                               </select>
-                            )}
-                          </div>
-                          {platosDelGrupo.map(p => (
-                            <div key={p.key} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 0', borderBottom: '0.5px solid #2a2a2a', opacity: p.incluido ? 1 : 0.4 }}>
-                              <input
-                                type="checkbox"
-                                checked={p.incluido}
-                                onChange={e => actualizarPlatoExtraido(p.key, { incluido: e.target.checked })}
-                              />
-                              <input
-                                value={p.categoria}
-                                placeholder="Categoría"
-                                onChange={e => actualizarPlatoExtraido(p.key, { categoria: e.target.value })}
-                                style={{ ...S.catInput, flex: 1.4, fontSize: 12, color: '#c4a85a' }}
-                              />
-                              <input
-                                value={p.nombre}
-                                onChange={e => actualizarPlatoExtraido(p.key, { nombre: e.target.value })}
-                                style={{ ...S.catInput, flex: 2, fontSize: 13 }}
-                              />
-                              <input
-                                value={p.descripcion || ''}
-                                placeholder="Descripción (opcional)"
-                                onChange={e => actualizarPlatoExtraido(p.key, { descripcion: e.target.value })}
-                                style={{ ...S.catInput, flex: 3, fontSize: 13 }}
-                              />
-                              <input
-                                type="number" step="0.01" min="0"
-                                value={p.precio}
-                                onChange={e => actualizarPlatoExtraido(p.key, { precio: e.target.value })}
-                                style={{ ...S.catInput, width: 80, fontSize: 13 }}
-                              />
-                              {modoImportacion === 'agregar' && platoYaExiste(p.categoria, p.nombre) && (
-                                <span style={{ fontSize: 10, color: '#e8a03a', whiteSpace: 'nowrap' }} title="Ya hay un plato con este nombre en esta categoría">ya existe</span>
-                              )}
                             </div>
                           ))}
-                        </div>
-                      )
-                    })}
+                      </div>
+                    )}
+
                     <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
                       <button style={S.cancelBtn} onClick={cancelarImportacion}>Cancelar</button>
                       <button
