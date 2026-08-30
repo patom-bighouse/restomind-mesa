@@ -187,7 +187,7 @@ export default function Mesa() {
   async function loadMenu(restaurantId, zona, idiomasCarta) {
     const { data: cats } = await supabase
       .from('categories')
-      .select('id, nombre, orden')
+      .select('id, nombre, orden, categoria_padre_id')
       .eq('restaurant_id', restaurantId)
       .eq('activa', true)
       .order('orden')
@@ -614,7 +614,12 @@ export default function Mesa() {
   // ítems él mismo — eso lo hace el camarero desde su propia pantalla.
   const esModoCamarero = restaurant?.config?.modo_pedidos === 'camarero'
 
-  const filteredCats = activeCat === 'todos' ? categories : categories.filter(c => c.id === activeCat)
+  // "Todos" itera solo las principales (sus subcategorías se listan
+  // anidadas debajo de cada una); elegir una categoría puntual — sea
+  // principal o subcategoría — la aísla a ella sola.
+  const filteredCats = activeCat === 'todos'
+    ? categories.filter(c => !c.categoria_padre_id)
+    : categories.filter(c => c.id === activeCat)
 
   async function confirmOrder() {
     if (!session) {
@@ -942,6 +947,42 @@ export default function Mesa() {
 
   const alergenosMostrados = traducirAlergenos(ALERGENOS, idiomaActivo)
 
+  function renderItem(item) {
+    const it = aplicarTraduccion(item)
+    return (
+      <div key={item.id} style={S.item}>
+        <div style={S.emoji}>
+          {item.foto_url
+            ? <img src={item.foto_url} alt={it.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }} />
+            : (item.emoji || '🍽')}
+        </div>
+        <div style={S.info}>
+          <div style={S.name}>{it.nombre}</div>
+          {it.descripcion && <div style={S.desc}>{it.descripcion}</div>}
+          <div style={S.price}>{formatMoney(item.precio, restaurant?.moneda)}</div>
+          {item.alergenos && item.alergenos.length > 0 && (
+            <div style={{ fontSize: 13, marginTop: 3 }} title={item.alergenos.map(k => alergenosMostrados.find(a => a.key === k)?.label).join(', ')}>
+              {item.alergenos.map(k => alergenosMostrados.find(a => a.key === k)?.emoji).join(' ')}
+            </div>
+          )}
+        </div>
+        {!esModoCamarero && (
+          itemModifiers[item.id]?.length > 0 ? (
+            <button style={{ ...S.btn, width: 'auto', padding: '0 14px', borderRadius: 16, fontSize: 12 }} onClick={() => change(it, 1)}>
+              Elegir
+            </button>
+          ) : (
+            <div style={S.qty}>
+              <button style={S.btn} onClick={() => change(it, -1)}>−</button>
+              <span style={S.qnum}>{cart[`${item.id}::${comensalTag(selectedComensal)}`]?.qty || 0}</span>
+              <button style={S.btn} onClick={() => change(it, 1)}>+</button>
+            </div>
+          )
+        )}
+      </div>
+    )
+  }
+
   return (
     <div style={S.app}>
       <div style={S.stickyTop}>
@@ -1005,50 +1046,30 @@ export default function Mesa() {
 
       <div style={S.scroll}>
         {filteredCats.map(cat => {
-          const catItems = items
-            .filter(i => i.category_id === cat.id)
-            .filter(i => !alergenosExcluidos.some(k => (i.alergenos || []).includes(k)))
-          if (!catItems.length) return null
+          const filtroAlergenos = i => !alergenosExcluidos.some(k => (i.alergenos || []).includes(k))
+          const catItems = items.filter(i => i.category_id === cat.id).filter(filtroAlergenos)
+          // Una subcategoría es una hoja (no puede tener hijas); una
+          // principal, en cambio, puede tener platos propios además de
+          // subcategorías — ambas cosas se listan, una debajo de otra.
+          const subcats = cat.categoria_padre_id ? [] : categories.filter(c => c.categoria_padre_id === cat.id)
+          const subcatsConItems = subcats
+            .map(sub => ({ sub, subItems: items.filter(i => i.category_id === sub.id).filter(filtroAlergenos) }))
+            .filter(x => x.subItems.length > 0)
+          if (!catItems.length && !subcatsConItems.length) return null
           return (
             <div key={cat.id}>
-              <div style={S.secTitle}>{nombreCategoria(cat)}</div>
-              <div style={S.itemsWrap}>
-                {catItems.map(item => {
-                  const it = aplicarTraduccion(item)
-                  return (
-                  <div key={item.id} style={S.item}>
-                    <div style={S.emoji}>
-                      {item.foto_url
-                        ? <img src={item.foto_url} alt={it.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }} />
-                        : (item.emoji || '🍽')}
-                    </div>
-                    <div style={S.info}>
-                      <div style={S.name}>{it.nombre}</div>
-                      {it.descripcion && <div style={S.desc}>{it.descripcion}</div>}
-                      <div style={S.price}>{formatMoney(item.precio, restaurant?.moneda)}</div>
-                      {item.alergenos && item.alergenos.length > 0 && (
-                        <div style={{ fontSize: 13, marginTop: 3 }} title={item.alergenos.map(k => alergenosMostrados.find(a => a.key === k)?.label).join(', ')}>
-                          {item.alergenos.map(k => alergenosMostrados.find(a => a.key === k)?.emoji).join(' ')}
-                        </div>
-                      )}
-                    </div>
-                    {!esModoCamarero && (
-                      itemModifiers[item.id]?.length > 0 ? (
-                        <button style={{ ...S.btn, width: 'auto', padding: '0 14px', borderRadius: 16, fontSize: 12 }} onClick={() => change(it, 1)}>
-                          Elegir
-                        </button>
-                      ) : (
-                        <div style={S.qty}>
-                          <button style={S.btn} onClick={() => change(it, -1)}>−</button>
-                          <span style={S.qnum}>{cart[`${item.id}::${comensalTag(selectedComensal)}`]?.qty || 0}</span>
-                          <button style={S.btn} onClick={() => change(it, 1)}>+</button>
-                        </div>
-                      )
-                    )}
-                  </div>
-                  )
-                })}
-              </div>
+              {catItems.length > 0 && (
+                <>
+                  <div style={S.secTitle}>{nombreCategoria(cat)}</div>
+                  <div style={S.itemsWrap}>{catItems.map(item => renderItem(item))}</div>
+                </>
+              )}
+              {subcatsConItems.map(({ sub, subItems }) => (
+                <div key={sub.id}>
+                  <div style={{ ...S.secTitle, fontSize: 13, opacity: 0.85, paddingLeft: 10 }}>{nombreCategoria(sub)}</div>
+                  <div style={S.itemsWrap}>{subItems.map(item => renderItem(item))}</div>
+                </div>
+              ))}
             </div>
           )
         })}

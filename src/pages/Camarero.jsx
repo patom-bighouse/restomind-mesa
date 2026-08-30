@@ -459,7 +459,7 @@ export default function Camarero() {
   async function loadMenu(zona) {
     const { data: cats } = await supabase
       .from('categories')
-      .select('id, nombre, orden')
+      .select('id, nombre, orden, categoria_padre_id')
       .eq('restaurant_id', restaurantId)
       .order('orden')
     setCategories(cats || [])
@@ -652,7 +652,6 @@ export default function Camarero() {
   const sugerencias = [...categoriasSugeridas.values()]
     .map(r => ({ ...r, categoria: categories.find(c => c.id === r.sugerida_categoria_id) }))
     .filter(r => r.categoria)
-  const filteredCats = activeCat === 'todos' ? categories : categories.filter(c => c.id === activeCat)
 
   async function confirmarPedido() {
     setSending(true)
@@ -893,6 +892,46 @@ export default function Camarero() {
     )
   }
 
+  // "Todos" itera solo las categorías principales (sus subcategorías
+  // se listan anidadas debajo de cada una); elegir una categoría
+  // puntual — principal o subcategoría — la aísla a ella sola.
+  const filteredCats = activeCat === 'todos'
+    ? categories.filter(c => !c.categoria_padre_id)
+    : categories.filter(c => c.id === activeCat)
+
+  function renderItemPedido(item) {
+    return (
+      <div key={item.id} style={S.item}>
+        <div style={S.emoji}>
+          {item.foto_url
+            ? <img src={item.foto_url} alt={item.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            : (item.emoji || '🍽')}
+        </div>
+        <div style={S.info}>
+          <div style={S.name}>{item.nombre}</div>
+          {item.descripcion && <div style={S.desc}>{item.descripcion}</div>}
+          <div style={S.price}>{formatMoney(item.precio, restaurant?.moneda)}</div>
+          {item.alergenos && item.alergenos.length > 0 && (
+            <div style={{ fontSize: 13, marginTop: 3 }} title={item.alergenos.map(k => ALERGENOS.find(a => a.key === k)?.label).join(', ')}>
+              {item.alergenos.map(k => ALERGENOS.find(a => a.key === k)?.emoji).join(' ')}
+            </div>
+          )}
+        </div>
+        {itemModifiers[item.id]?.length > 0 ? (
+          <button style={{ ...S.btn, width: 'auto', padding: '0 14px', borderRadius: 16, fontSize: 12 }} onClick={() => change(item, 1)}>
+            Elegir
+          </button>
+        ) : (
+          <div style={S.qty}>
+            <button style={S.btn} onClick={() => change(item, -1)}>−</button>
+            <span style={S.qnum}>{cart[`${item.id}::${comensalTag(selectedComensal)}`]?.qty || 0}</span>
+            <button style={S.btn} onClick={() => change(item, 1)}>+</button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // ---------- Render: carta para cargar pedido ----------
   return (
     <div style={S.app}>
@@ -940,41 +979,25 @@ export default function Camarero() {
 
       <div style={S.scroll}>
         {filteredCats.map(cat => {
-          const catItems = items
-            .filter(i => i.category_id === cat.id)
-            .filter(i => !alergenosExcluidos.some(k => (i.alergenos || []).includes(k)))
-          if (!catItems.length) return null
+          const filtroAlergenos = i => !alergenosExcluidos.some(k => (i.alergenos || []).includes(k))
+          const catItems = items.filter(i => i.category_id === cat.id).filter(filtroAlergenos)
+          const subcats = cat.categoria_padre_id ? [] : categories.filter(c => c.categoria_padre_id === cat.id)
+          const subcatsConItems = subcats
+            .map(sub => ({ sub, subItems: items.filter(i => i.category_id === sub.id).filter(filtroAlergenos) }))
+            .filter(x => x.subItems.length > 0)
+          if (!catItems.length && !subcatsConItems.length) return null
           return (
             <div key={cat.id}>
-              <div style={S.secTitle}>{cat.nombre}</div>
-              {catItems.map(item => (
-                <div key={item.id} style={S.item}>
-                  <div style={S.emoji}>
-                    {item.foto_url
-                      ? <img src={item.foto_url} alt={item.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      : (item.emoji || '🍽')}
-                  </div>
-                  <div style={S.info}>
-                    <div style={S.name}>{item.nombre}</div>
-                    {item.descripcion && <div style={S.desc}>{item.descripcion}</div>}
-                    <div style={S.price}>{formatMoney(item.precio, restaurant?.moneda)}</div>
-                    {item.alergenos && item.alergenos.length > 0 && (
-                      <div style={{ fontSize: 13, marginTop: 3 }} title={item.alergenos.map(k => ALERGENOS.find(a => a.key === k)?.label).join(', ')}>
-                        {item.alergenos.map(k => ALERGENOS.find(a => a.key === k)?.emoji).join(' ')}
-                      </div>
-                    )}
-                  </div>
-                  {itemModifiers[item.id]?.length > 0 ? (
-                    <button style={{ ...S.btn, width: 'auto', padding: '0 14px', borderRadius: 16, fontSize: 12 }} onClick={() => change(item, 1)}>
-                      Elegir
-                    </button>
-                  ) : (
-                    <div style={S.qty}>
-                      <button style={S.btn} onClick={() => change(item, -1)}>−</button>
-                      <span style={S.qnum}>{cart[`${item.id}::${comensalTag(selectedComensal)}`]?.qty || 0}</span>
-                      <button style={S.btn} onClick={() => change(item, 1)}>+</button>
-                    </div>
-                  )}
+              {catItems.length > 0 && (
+                <>
+                  <div style={S.secTitle}>{cat.nombre}</div>
+                  {catItems.map(item => renderItemPedido(item))}
+                </>
+              )}
+              {subcatsConItems.map(({ sub, subItems }) => (
+                <div key={sub.id}>
+                  <div style={{ ...S.secTitle, fontSize: 13, opacity: 0.85, paddingLeft: 10 }}>{sub.nombre}</div>
+                  {subItems.map(item => renderItemPedido(item))}
                 </div>
               ))}
             </div>

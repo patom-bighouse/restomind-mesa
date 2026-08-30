@@ -90,6 +90,7 @@ export default function AdminCarta() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [newCatName, setNewCatName] = useState('')
+  const [nuevaCatPadreId, setNuevaCatPadreId] = useState('')
   const [modGrupos, setModGrupos] = useState([]) // [{id, nombre, orden, opciones: [{id, nombre, orden}]}]
   const [showModGestion, setShowModGestion] = useState(false)
   const [showTraducciones, setShowTraducciones] = useState(false)
@@ -98,6 +99,20 @@ export default function AdminCarta() {
   const [traduccionMsg, setTraduccionMsg] = useState(null)
   const [traduccionError, setTraduccionError] = useState(null)
   const [nuevoGrupoNombre, setNuevoGrupoNombre] = useState('')
+
+  // Importador de carta con foto (IA)
+  const [showImportador, setShowImportador] = useState(false)
+  const [modoImportacion, setModoImportacion] = useState('agregar') // 'agregar' | 'reemplazar'
+  const [imagenesImportador, setImagenesImportador] = useState([]) // [{ nombre, dataUri }]
+  const [extrayendo, setExtrayendo] = useState(false)
+  const [importadorError, setImportadorError] = useState(null)
+  const [platosExtraidos, setPlatosExtraidos] = useState(null) // null = todavía no se extrajo nada; si no, [{ key, categoria, nombre, descripcion, precio, incluido }]
+  const [categoriaPadrePorNombre, setCategoriaPadrePorNombre] = useState({}) // { [categoria]: padre_id | '' }
+  const [importando, setImportando] = useState(false)
+  const [importadorMsg, setImportadorMsg] = useState(null)
+  const [ultimaImportacion, setUltimaImportacion] = useState(null) // { categoriaIds, itemIds } | null
+  const [deshaciendo, setDeshaciendo] = useState(false)
+  const importadorFileRef = useRef(null)
 
   // Item modal
   const [editingItem, setEditingItem] = useState(null) // null | 'new' | item object
@@ -120,7 +135,7 @@ export default function AdminCarta() {
     setRestaurant(rest)
 
     const { data: cats, error: catErr } = await supabase
-      .from('categories').select('id, nombre, orden, activa')
+      .from('categories').select('id, nombre, orden, activa, categoria_padre_id')
       .eq('restaurant_id', restaurantId).order('orden')
     if (catErr) { setError(catErr.message); setLoading(false); return }
     setCategories(cats || [])
@@ -159,14 +174,26 @@ export default function AdminCarta() {
   // ---------- Categorías ----------
   async function addCategory() {
     if (!newCatName.trim()) return
-    const orden = categories.length ? Math.max(...categories.map(c => c.orden)) + 1 : 1
+    const padreId = nuevaCatPadreId || null
+    const hermanas = categories.filter(c => (c.categoria_padre_id || null) === padreId)
+    const orden = hermanas.length ? Math.max(...hermanas.map(c => c.orden)) + 1 : 1
     const { data, error: err } = await supabase
       .from('categories')
-      .insert({ restaurant_id: restaurantId, nombre: newCatName.trim(), orden, activa: true })
+      .insert({ restaurant_id: restaurantId, nombre: newCatName.trim(), orden, activa: true, categoria_padre_id: padreId })
       .select().single()
     if (err) { setError(err.message); return }
     setCategories(prev => [...prev, data])
     setNewCatName('')
+    setNuevaCatPadreId('')
+  }
+
+  // Una subcategoría no puede a su vez tener hijas — un solo nivel de
+  // anidado. Por eso, al asignar padre, solo se ofrecen categorías
+  // principales que hoy no sean padre de nadie.
+  async function cambiarCategoriaPadre(cat, nuevoPadreId) {
+    const { error: err } = await supabase.from('categories').update({ categoria_padre_id: nuevoPadreId }).eq('id', cat.id)
+    if (err) { setError(err.message); return }
+    setCategories(prev => prev.map(c => c.id === cat.id ? { ...c, categoria_padre_id: nuevoPadreId } : c))
   }
 
   async function renameCategory(cat, nuevoNombre) {
@@ -189,14 +216,19 @@ export default function AdminCarta() {
       setError(`No se puede eliminar "${cat.nombre}" porque tiene ${itemsInCat.length} ${itemsInCat.length === 1 ? 'plato' : 'platos'}. Elimina o reasigna los platos primero.`)
       return
     }
+    const subcats = categories.filter(c => c.categoria_padre_id === cat.id)
+    if (subcats.length > 0) {
+      setError(`No se puede eliminar "${cat.nombre}" porque tiene ${subcats.length} subcategoría(s). Elimínalas o quítales el padre primero.`)
+      return
+    }
     if (!window.confirm(`¿Eliminar la categoría "${cat.nombre}"?`)) return
     const { error: err } = await supabase.from('categories').delete().eq('id', cat.id)
     if (err) { setError(err.message); return }
     setCategories(prev => prev.filter(c => c.id !== cat.id))
   }
 
-  async function moveCategory(cat, direction) {
-    const sorted = [...categories].sort((a, b) => a.orden - b.orden)
+  async function moveCategory(cat, direction, siblings) {
+    const sorted = [...siblings].sort((a, b) => a.orden - b.orden)
     const idx = sorted.findIndex(c => c.id === cat.id)
     const swapIdx = direction === 'up' ? idx - 1 : idx + 1
     if (swapIdx < 0 || swapIdx >= sorted.length) return
@@ -270,6 +302,250 @@ export default function AdminCarta() {
     setTraduccionMsg(resumen || 'Carta traducida.')
     const { data: rest } = await supabase.from('restaurants').select('nombre, moneda, config').eq('id', restaurantId).single()
     setRestaurant(rest)
+  }
+
+  // ---------- Copia de seguridad de la carta ----------
+  // El importador de fotos solo AGREGA categorías/platos, nunca borra
+  // ni sobreescribe lo que ya había — pero de todas formas conviene
+  // tener un archivo al que volver antes de probarlo.
+  function descargarCopiaCarta() {
+    const contenido = {
+      restaurante: restaurant?.nombre || null,
+      exportado_en: new Date().toISOString(),
+      categorias: categories.map(cat => ({
+        nombre: cat.nombre,
+        orden: cat.orden,
+        activa: cat.activa,
+        platos: items.filter(i => i.category_id === cat.id).map(i => ({
+          nombre: i.nombre,
+          descripcion: i.descripcion,
+          precio: i.precio,
+          precio_costo: i.precio_costo,
+          alergenos: i.alergenos,
+          emoji: i.emoji,
+          foto_url: i.foto_url,
+          disponible: i.disponible,
+          orden: i.orden,
+        })),
+      })),
+    }
+    const blob = new Blob([JSON.stringify(contenido, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `carta-${(restaurant?.nombre || 'restomind').toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // ---------- Importador de carta con foto (IA) ----------
+  function resizeImagen(file, maxAncho = 1400, calidad = 0.75) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onerror = reject
+      reader.onload = () => {
+        const img = new Image()
+        img.onerror = reject
+        img.onload = () => {
+          const escala = Math.min(1, maxAncho / img.width)
+          const canvas = document.createElement('canvas')
+          canvas.width = img.width * escala
+          canvas.height = img.height * escala
+          const ctx = canvas.getContext('2d')
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+          resolve(canvas.toDataURL('image/jpeg', calidad))
+        }
+        img.src = reader.result
+      }
+      reader.readAsDataURL(file)
+    })
+  }
+
+  async function manejarSeleccionImagenes(e) {
+    const files = Array.from(e.target.files || [])
+    if (!files.length) return
+    setImportadorError(null)
+    const nuevas = await Promise.all(files.map(async f => ({ nombre: f.name, dataUri: await resizeImagen(f) })))
+    setImagenesImportador(prev => [...prev, ...nuevas].slice(0, 6))
+    e.target.value = ''
+  }
+
+  function quitarImagenImportador(idx) {
+    setImagenesImportador(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  // Si ya hay un plato con ese nombre en una categoría con ese nombre
+  // (ambos sin distinguir mayúsculas), se considera el mismo plato —
+  // se usa tanto al extraer (para no marcarlo de entrada) como en la
+  // revisión (para avisar aunque el usuario edite los campos después).
+  function platoYaExiste(categoriaNombre, platoNombre) {
+    const cat = categories.find(c => c.nombre.trim().toLowerCase() === categoriaNombre.trim().toLowerCase())
+    if (!cat) return false
+    return items.some(i => i.category_id === cat.id && i.nombre.trim().toLowerCase() === platoNombre.trim().toLowerCase())
+  }
+
+  async function extraerCarta() {
+    if (!imagenesImportador.length) return
+    setExtrayendo(true)
+    setImportadorError(null)
+    setImportadorMsg(null)
+    setUltimaImportacion(null)
+    const { data, error: err } = await supabase.functions.invoke('importar-carta', {
+      body: { restaurant_id: restaurantId, imagenes: imagenesImportador.map(i => i.dataUri) },
+    })
+    setExtrayendo(false)
+    if (err || data?.error) {
+      let msg = data?.error || err.message
+      if (err?.context?.json) {
+        try { const body = await err.context.json(); if (body?.error) msg = body.error } catch { /* noop */ }
+      }
+      setImportadorError(msg)
+      return
+    }
+    // Categoría por plato (no por bloque) — así, si la IA metió todo
+    // junto (ej. todas las bebidas bajo "Bebidas"), se puede repartir
+    // cada plato a mano a la categoría que le corresponda sin más.
+    // En modo "agregar", los que ya existen (mismo nombre en la misma
+    // categoría) arrancan sin marcar, para no duplicarlos sin querer.
+    const flat = (data.categorias || []).flatMap(cat =>
+      (cat.platos || []).map(p => ({
+        key: crypto.randomUUID(),
+        categoria: cat.nombre,
+        nombre: p.nombre,
+        descripcion: p.descripcion || '',
+        precio: p.precio,
+        emoji: EMOJI_OPTIONS.includes(p.emoji) ? p.emoji : '🍽',
+        incluido: modoImportacion === 'reemplazar' || !platoYaExiste(cat.nombre, p.nombre),
+      }))
+    )
+    setPlatosExtraidos(flat)
+    setCategoriaPadrePorNombre({})
+  }
+
+  function actualizarPlatoExtraido(key, patch) {
+    setPlatosExtraidos(prev => prev.map(p => p.key === key ? { ...p, ...patch } : p))
+  }
+
+  function cancelarImportacion() {
+    setPlatosExtraidos(null)
+    setCategoriaPadrePorNombre({})
+    setImagenesImportador([])
+    setImportadorError(null)
+  }
+
+  async function confirmarImportacion() {
+    const esReemplazo = modoImportacion === 'reemplazar'
+    if (esReemplazo && !window.confirm(
+      '⚠️ Esto BORRARÁ toda tu carta actual (todas las categorías y platos) y la reemplazará por completo ' +
+      'con lo que ves en esta pantalla. No hay "deshacer" para esto — si no descargaste una copia antes, ' +
+      'cancela y hazlo primero. ¿Seguro que quieres continuar?'
+    )) return
+
+    setImportando(true)
+    setImportadorError(null)
+    const categoriaIdsCreadas = []
+    const itemIdsCreados = []
+    try {
+      let categoriasActuales = [...categories]
+      let itemsBase = items
+
+      if (esReemplazo) {
+        const { error: delItemsErr } = await supabase.from('menu_items').delete().eq('restaurant_id', restaurantId)
+        if (delItemsErr) throw delItemsErr
+        const { error: delCatsErr } = await supabase.from('categories').delete().eq('restaurant_id', restaurantId)
+        if (delCatsErr) throw delCatsErr
+        categoriasActuales = []
+        itemsBase = []
+      }
+
+      const incluidos = platosExtraidos.filter(p => p.incluido && p.nombre?.trim() && p.categoria?.trim())
+      // Un plato por categoría (según orden de aparición), preservando
+      // el orden en que se escribieron para que la carta quede como
+      // se ve en la pantalla de revisión.
+      const nombresCategorias = [...new Set(incluidos.map(p => p.categoria.trim()))]
+
+      for (const nombreCat of nombresCategorias) {
+        let categoria = categoriasActuales.find(c => c.nombre.trim().toLowerCase() === nombreCat.toLowerCase())
+        if (!categoria) {
+          const padreId = categoriaPadrePorNombre[nombreCat] || null
+          const hermanas = categoriasActuales.filter(c => (c.categoria_padre_id || null) === padreId)
+          const orden = hermanas.length ? Math.max(...hermanas.map(c => c.orden)) + 1 : 1
+          const { data, error: err } = await supabase
+            .from('categories')
+            .insert({ restaurant_id: restaurantId, nombre: nombreCat, orden, activa: true, categoria_padre_id: padreId })
+            .select().single()
+          if (err) throw err
+          categoria = data
+          categoriasActuales = [...categoriasActuales, categoria]
+          categoriaIdsCreadas.push(categoria.id)
+        }
+
+        const platosDeCat = incluidos.filter(p => p.categoria.trim() === nombreCat)
+        const itemsEnCat = itemsBase.filter(i => i.category_id === categoria.id)
+        let orden = itemsEnCat.length ? Math.max(...itemsEnCat.map(i => i.orden)) : 0
+        const filas = platosDeCat.map(p => {
+          orden += 1
+          return {
+            restaurant_id: restaurantId,
+            category_id: categoria.id,
+            nombre: p.nombre.trim(),
+            descripcion: p.descripcion?.trim() || null,
+            precio: parseFloat(p.precio) || 0,
+            emoji: p.emoji || '🍽',
+            disponible: true,
+            orden,
+          }
+        })
+        const { data: itemsCreados, error: insErr } = await supabase.from('menu_items').insert(filas).select('id')
+        if (insErr) throw insErr
+        itemIdsCreados.push(...itemsCreados.map(i => i.id))
+      }
+
+      setImportadorMsg(
+        esReemplazo
+          ? `Carta reemplazada: ${categoriaIdsCreadas.length} categoría(s), ${itemIdsCreados.length} plato(s).`
+          : `Importado: ${categoriaIdsCreadas.length} categoría(s) nueva(s), ${itemIdsCreados.length} plato(s).`
+      )
+      // El "deshacer" borra justo lo recién creado — no sirve para un
+      // reemplazo completo, donde además se borró todo lo anterior.
+      setUltimaImportacion(esReemplazo ? null : { categoriaIds: categoriaIdsCreadas, itemIds: itemIdsCreados })
+      setPlatosExtraidos(null)
+      setCategoriaPadrePorNombre({})
+      setImagenesImportador([])
+      await loadData()
+    } catch (e) {
+      setImportadorError(e.message)
+    } finally {
+      setImportando(false)
+    }
+  }
+
+  // Borra exactamente lo que la última importación creó — y nada más:
+  // ni toca las categorías que ya existían y solo recibieron platos
+  // nuevos, ni nada que hubiera antes. Solo disponible justo después
+  // de importar, mientras siga en esta pantalla.
+  async function deshacerImportacion() {
+    if (!ultimaImportacion) return
+    if (!window.confirm('¿Deshacer la última importación? Se eliminarán los platos y categorías que se acaban de crear.')) return
+    setDeshaciendo(true)
+    setImportadorError(null)
+    try {
+      if (ultimaImportacion.itemIds.length) {
+        const { error: err } = await supabase.from('menu_items').delete().in('id', ultimaImportacion.itemIds)
+        if (err) throw err
+      }
+      if (ultimaImportacion.categoriaIds.length) {
+        const { error: err } = await supabase.from('categories').delete().in('id', ultimaImportacion.categoriaIds)
+        if (err) throw err
+      }
+      setUltimaImportacion(null)
+      setImportadorMsg('Importación deshecha — la carta volvió a como estaba.')
+      await loadData()
+    } catch (e) {
+      setImportadorError(e.message)
+    } finally {
+      setDeshaciendo(false)
+    }
   }
 
   async function addModOpcion(grupo, nombre) {
@@ -455,6 +731,103 @@ export default function AdminCarta() {
   if (loading) return <div style={S.app}><div style={S.loading}>Cargando...</div></div>
 
   const sortedCats = [...categories].sort((a, b) => a.orden - b.orden)
+  const categoriasPrincipales = sortedCats.filter(c => !c.categoria_padre_id)
+
+  // Nombres de categoría distintos entre los platos extraídos por el
+  // importador, en el orden en que aparecieron — cada plato puede
+  // editar el suyo, así que esto se recalcula en cada cambio.
+  const gruposImportador = []
+  if (platosExtraidos) {
+    const vistos = new Set()
+    platosExtraidos.forEach(p => {
+      const clave = p.categoria.trim().toLowerCase()
+      if (!vistos.has(clave)) { vistos.add(clave); gruposImportador.push(p.categoria.trim()) }
+    })
+  }
+
+  // Un solo bloque de categoría (header + grid de platos), reutilizado
+  // tanto para categorías principales como para sus subcategorías —
+  // "siblings" acota subir/bajar a las categorías del mismo nivel
+  // (no tiene sentido comparar el orden de una subcategoría con el de
+  // una principal).
+  function renderCategoria(cat, idx, siblings, esSubcategoria) {
+    const catItems = items.filter(i => i.category_id === cat.id).sort((a, b) => a.orden - b.orden)
+    const tieneHijas = categories.some(c => c.categoria_padre_id === cat.id)
+    return (
+      <div key={cat.id} style={esSubcategoria ? { ...S.catSection, marginLeft: 24, borderLeft: '2px solid #2a2a2a', paddingLeft: 16 } : S.catSection}>
+        <div style={S.catHeader}>
+          <input
+            style={{ ...S.catName, background: 'transparent', border: 'none', outline: 'none', fontFamily: "'Playfair Display', serif", width: 'auto', maxWidth: 240, fontSize: esSubcategoria ? 13 : undefined }}
+            defaultValue={cat.nombre}
+            onBlur={e => renameCategory(cat, e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && e.target.blur()}
+          />
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            {!tieneHijas && (
+              <select
+                value={cat.categoria_padre_id || ''}
+                onChange={e => cambiarCategoriaPadre(cat, e.target.value || null)}
+                style={{ ...S.catInput, flex: 'none', width: 170, padding: '4px 8px', fontSize: 11 }}
+              >
+                <option value="">— categoría principal —</option>
+                {categoriasPrincipales.filter(c => c.id !== cat.id).map(c => (
+                  <option key={c.id} value={c.id}>Subcategoría de: {c.nombre}</option>
+                ))}
+              </select>
+            )}
+            <button style={S.iconBtn} onClick={() => moveCategory(cat, 'up', siblings)} disabled={idx === 0} title="Subir">↑</button>
+            <button style={S.iconBtn} onClick={() => moveCategory(cat, 'down', siblings)} disabled={idx === siblings.length - 1} title="Bajar">↓</button>
+            <div style={S.toggleSwitch(cat.activa)} onClick={() => toggleCategory(cat)} title={cat.activa ? 'Visible para clientes' : 'Oculta para clientes'}>
+              <div style={S.toggleDot(cat.activa)}></div>
+            </div>
+            <button style={S.addItemBtn} onClick={() => openNewItem(cat.id)}>+ Plato</button>
+            <button style={{ ...S.iconBtn, color: '#e74c3c', borderColor: '#3a2020' }} onClick={() => deleteCategory(cat)} title="Eliminar categoría">×</button>
+          </div>
+        </div>
+
+        {catItems.length === 0 ? (
+          <div style={{ fontSize: 13, color: '#555', padding: '8px 0' }}>Sin platos en esta categoría.</div>
+        ) : (
+          <div style={S.itemGrid}>
+            {catItems.map(item => (
+              <div key={item.id} style={S.itemCard(item.disponible)}>
+                <div style={S.itemImg} onClick={() => openEditItem(item)}>
+                  {item.foto_url ? <img src={item.foto_url} alt={item.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }} /> : item.emoji}
+                </div>
+                <div style={S.itemInfo}>
+                  <div style={S.itemName}>{item.nombre}</div>
+                  {item.descripcion && <div style={S.itemDesc}>{item.descripcion}</div>}
+                  <div style={S.itemPrice}>{formatMoney(item.precio, restaurant?.moneda)}</div>
+                  {item.precio_costo != null && item.precio > 0 && (
+                    <div style={{ fontSize: 11, color: '#8a8a8a' }}>
+                      Margen: {formatMoney(item.precio - item.precio_costo, restaurant?.moneda)} ({(((item.precio - item.precio_costo) / item.precio) * 100).toFixed(0)}%)
+                    </div>
+                  )}
+                  {restaurant?.config?.sectores_cocina_activo && item.sector_cocina_id && (
+                    <div style={{ fontSize: 11, color: '#c4a85a', marginTop: 2 }}>
+                      {sectores.find(s => s.id === item.sector_cocina_id)?.nombre || ''}
+                    </div>
+                  )}
+                  {item.alergenos && item.alergenos.length > 0 && (
+                    <div style={{ fontSize: 14, marginTop: 3 }} title={item.alergenos.map(k => ALERGENOS.find(a => a.key === k)?.label).join(', ')}>
+                      {item.alergenos.map(k => ALERGENOS.find(a => a.key === k)?.emoji).join(' ')}
+                    </div>
+                  )}
+                  <div style={S.itemActions}>
+                    <div style={S.toggleSwitch(item.disponible)} onClick={() => toggleDisponible(item)} title={item.disponible ? 'Disponible' : 'No disponible'}>
+                      <div style={S.toggleDot(item.disponible)}></div>
+                    </div>
+                    <span style={{ fontSize: 11, color: '#7a6a50' }}>{item.disponible ? 'Disponible' : 'Agotado'}</span>
+                    <button style={{ ...S.iconBtn, width: 'auto', height: 'auto', padding: '4px 10px', fontSize: 11, marginLeft: 'auto' }} onClick={() => openEditItem(item)}>Editar</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div style={S.app}>
@@ -480,7 +853,15 @@ export default function AdminCarta() {
       </div>
 
       <div style={S.content}>
-        <div style={S.sectionTitle}>Gestión de carta</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <div style={S.sectionTitle}>Gestión de carta</div>
+          <button
+            onClick={descargarCopiaCarta}
+            style={{ background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '6px 12px', fontSize: 12, color: '#8a7560', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+          >
+            ⬇ Descargar copia de la carta
+          </button>
+        </div>
         {error && <div style={S.error}>{error}</div>}
 
         {/* Añadir categoría */}
@@ -492,6 +873,16 @@ export default function AdminCarta() {
             onChange={e => setNewCatName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && addCategory()}
           />
+          <select
+            value={nuevaCatPadreId}
+            onChange={e => setNuevaCatPadreId(e.target.value)}
+            style={{ ...S.catInput, flex: 'none', width: 220 }}
+          >
+            <option value="">— categoría principal —</option>
+            {categories.filter(c => !c.categoria_padre_id).map(c => (
+              <option key={c.id} value={c.id}>Subcategoría de: {c.nombre}</option>
+            ))}
+          </select>
           <button style={S.addBtn} onClick={addCategory}>+ Añadir categoría</button>
         </div>
 
@@ -602,69 +993,192 @@ export default function AdminCarta() {
           </div>
         )}
 
-        {/* Categorías y platos */}
-        {sortedCats.map((cat, idx) => {
-          const catItems = items.filter(i => i.category_id === cat.id).sort((a, b) => a.orden - b.orden)
-          return (
-            <div key={cat.id} style={S.catSection}>
-              <div style={S.catHeader}>
-                <input
-                  style={{ ...S.catName, background: 'transparent', border: 'none', outline: 'none', fontFamily: "'Playfair Display', serif", width: 'auto', maxWidth: 240 }}
-                  defaultValue={cat.nombre}
-                  onBlur={e => renameCategory(cat, e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && e.target.blur()}
-                />
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <button style={S.iconBtn} onClick={() => moveCategory(cat, 'up')} disabled={idx === 0} title="Subir">↑</button>
-                  <button style={S.iconBtn} onClick={() => moveCategory(cat, 'down')} disabled={idx === sortedCats.length - 1} title="Bajar">↓</button>
-                  <div style={S.toggleSwitch(cat.activa)} onClick={() => toggleCategory(cat)} title={cat.activa ? 'Visible para clientes' : 'Oculta para clientes'}>
-                    <div style={S.toggleDot(cat.activa)}></div>
-                  </div>
-                  <button style={S.addItemBtn} onClick={() => openNewItem(cat.id)}>+ Plato</button>
-                  <button style={{ ...S.iconBtn, color: '#e74c3c', borderColor: '#3a2020' }} onClick={() => deleteCategory(cat)} title="Eliminar categoría">×</button>
+        {/* Importador de carta con foto (IA) — solo si el dueño tiene el módulo activo */}
+        {tieneModulo('importador_carta') && (
+          <div style={{ background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 12, padding: '14px 18px', marginBottom: 20 }}>
+            <div
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+              onClick={() => setShowImportador(!showImportador)}
+            >
+              <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a' }}>Importar carta con foto (IA)</div>
+              <span style={{ color: '#8a7560', fontSize: 12 }}>{showImportador ? '▲ ocultar' : '▼ gestionar'}</span>
+            </div>
+            {showImportador && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 12 }}>
+                  Sube fotos de tu carta impresa (hasta 6) — la IA extrae categorías y platos. Nada se
+                  guarda todavía: podrás revisar y corregir cada plato antes de confirmar.
                 </div>
-              </div>
 
-              {catItems.length === 0 ? (
-                <div style={{ fontSize: 13, color: '#555', padding: '8px 0' }}>Sin platos en esta categoría.</div>
-              ) : (
-                <div style={S.itemGrid}>
-                  {catItems.map(item => (
-                    <div key={item.id} style={S.itemCard(item.disponible)}>
-                      <div style={S.itemImg} onClick={() => openEditItem(item)}>
-                        {item.foto_url ? <img src={item.foto_url} alt={item.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }} /> : item.emoji}
-                      </div>
-                      <div style={S.itemInfo}>
-                        <div style={S.itemName}>{item.nombre}</div>
-                        {item.descripcion && <div style={S.itemDesc}>{item.descripcion}</div>}
-                        <div style={S.itemPrice}>{formatMoney(item.precio, restaurant?.moneda)}</div>
-                        {item.precio_costo != null && item.precio > 0 && (
-                          <div style={{ fontSize: 11, color: '#8a8a8a' }}>
-                            Margen: {formatMoney(item.precio - item.precio_costo, restaurant?.moneda)} ({(((item.precio - item.precio_costo) / item.precio) * 100).toFixed(0)}%)
-                          </div>
-                        )}
-                        {restaurant?.config?.sectores_cocina_activo && item.sector_cocina_id && (
-                          <div style={{ fontSize: 11, color: '#c4a85a', marginTop: 2 }}>
-                            {sectores.find(s => s.id === item.sector_cocina_id)?.nombre || ''}
-                          </div>
-                        )}
-                        {item.alergenos && item.alergenos.length > 0 && (
-                          <div style={{ fontSize: 14, marginTop: 3 }} title={item.alergenos.map(k => ALERGENOS.find(a => a.key === k)?.label).join(', ')}>
-                            {item.alergenos.map(k => ALERGENOS.find(a => a.key === k)?.emoji).join(' ')}
-                          </div>
-                        )}
-                        <div style={S.itemActions}>
-                          <div style={S.toggleSwitch(item.disponible)} onClick={() => toggleDisponible(item)} title={item.disponible ? 'Disponible' : 'No disponible'}>
-                            <div style={S.toggleDot(item.disponible)}></div>
-                          </div>
-                          <span style={{ fontSize: 11, color: '#7a6a50' }}>{item.disponible ? 'Disponible' : 'Agotado'}</span>
-                          <button style={{ ...S.iconBtn, width: 'auto', height: 'auto', padding: '4px 10px', fontSize: 11, marginLeft: 'auto' }} onClick={() => openEditItem(item)}>Editar</button>
+                {!platosExtraidos && (
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+                    <button
+                      onClick={() => setModoImportacion('agregar')}
+                      style={{ flex: 1, textAlign: 'left', background: modoImportacion === 'agregar' ? '#1f2a1f' : '#111', border: `0.5px solid ${modoImportacion === 'agregar' ? '#2ecc71' : '#3a2e20'}`, borderRadius: 10, padding: '10px 14px', cursor: 'pointer' }}
+                    >
+                      <div style={{ fontSize: 13, fontWeight: 500, color: modoImportacion === 'agregar' ? '#2ecc71' : '#c4a85a' }}>Agregar solo lo nuevo</div>
+                      <div style={{ fontSize: 11, color: '#7a6a50', marginTop: 2 }}>No toca lo que ya tienes; detecta y desmarca platos repetidos.</div>
+                    </button>
+                    <button
+                      onClick={() => setModoImportacion('reemplazar')}
+                      style={{ flex: 1, textAlign: 'left', background: modoImportacion === 'reemplazar' ? '#2a1a10' : '#111', border: `0.5px solid ${modoImportacion === 'reemplazar' ? '#e8a03a' : '#3a2e20'}`, borderRadius: 10, padding: '10px 14px', cursor: 'pointer' }}
+                    >
+                      <div style={{ fontSize: 13, fontWeight: 500, color: modoImportacion === 'reemplazar' ? '#e8a03a' : '#c4a85a' }}>Reemplazar toda la carta</div>
+                      <div style={{ fontSize: 11, color: '#7a6a50', marginTop: 2 }}>Borra TODO lo actual y lo cambia por esto. Sin deshacer — descarga una copia antes.</div>
+                    </button>
+                  </div>
+                )}
+
+                {importadorError && <div style={{ ...S.error, marginBottom: 12 }}>{importadorError}</div>}
+                {importadorMsg && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                    <div style={{ fontSize: 12, color: '#7ae8a0' }}>{importadorMsg}</div>
+                    {ultimaImportacion && (
+                      <button
+                        onClick={deshacerImportacion}
+                        disabled={deshaciendo}
+                        style={{ background: 'transparent', border: '0.5px solid #6a2e20', borderRadius: 8, padding: '4px 10px', fontSize: 11, color: '#e87a7a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+                      >
+                        {deshaciendo ? 'Deshaciendo...' : '↩ Deshacer esta importación'}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {!platosExtraidos && (
+                  <>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+                      {imagenesImportador.map((img, idx) => (
+                        <div key={idx} style={{ position: 'relative' }}>
+                          <img src={img.dataUri} alt={img.nombre} style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 8, border: '0.5px solid #3a2e20' }} />
+                          <button
+                            onClick={() => quitarImagenImportador(idx)}
+                            style={{ position: 'absolute', top: -6, right: -6, background: '#e74c3c', color: '#fff', border: 'none', borderRadius: '50%', width: 20, height: 20, fontSize: 12, cursor: 'pointer' }}
+                          >×</button>
                         </div>
-                      </div>
+                      ))}
+                      {imagenesImportador.length < 6 && (
+                        <button
+                          onClick={() => importadorFileRef.current?.click()}
+                          style={{ width: 80, height: 80, background: '#111', border: '1px dashed #3a2e20', borderRadius: 8, color: '#8a7560', fontSize: 24, cursor: 'pointer' }}
+                        >+</button>
+                      )}
+                      <input ref={importadorFileRef} type="file" accept="image/*" multiple hidden onChange={manejarSeleccionImagenes} />
                     </div>
-                  ))}
-                </div>
-              )}
+                    <button
+                      style={S.addBtn}
+                      onClick={extraerCarta}
+                      disabled={extrayendo || imagenesImportador.length === 0}
+                    >
+                      {extrayendo ? 'Leyendo la carta...' : 'Extraer con IA'}
+                    </button>
+                  </>
+                )}
+
+                {platosExtraidos && (
+                  <div>
+                    <div style={{ fontSize: 11, color: '#7a6a50', marginBottom: 12 }}>
+                      Si la IA juntó platos que quieres en categorías distintas (ej. todas las bebidas
+                      en una sola), cambia el campo "Categoría" de cada plato — no hace falta que estén
+                      ordenados ni agrupados en esta lista.
+                    </div>
+
+                    {/* Lista plana a propósito: si se reagrupara por categoría en
+                        vivo, escribir en el campo Categoría movería la fila a otro
+                        bloque en cada letra y React perdería el foco del campo. */}
+                    {platosExtraidos.map(p => (
+                      <div key={p.key} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 0', borderBottom: '0.5px solid #2a2a2a', opacity: p.incluido ? 1 : 0.4 }}>
+                        <input
+                          type="checkbox"
+                          checked={p.incluido}
+                          onChange={e => actualizarPlatoExtraido(p.key, { incluido: e.target.checked })}
+                        />
+                        <select
+                          value={p.emoji}
+                          onChange={e => actualizarPlatoExtraido(p.key, { emoji: e.target.value })}
+                          title="Icono del plato"
+                          style={{ ...S.catInput, flex: 'none', width: 46, textAlign: 'center', padding: '4px 2px', fontSize: 16 }}
+                        >
+                          {EMOJI_OPTIONS.map(em => <option key={em} value={em}>{em}</option>)}
+                        </select>
+                        <input
+                          value={p.categoria}
+                          placeholder="Categoría"
+                          onChange={e => actualizarPlatoExtraido(p.key, { categoria: e.target.value })}
+                          style={{ ...S.catInput, flex: 1.4, fontSize: 12, color: '#c4a85a' }}
+                        />
+                        <input
+                          value={p.nombre}
+                          onChange={e => actualizarPlatoExtraido(p.key, { nombre: e.target.value })}
+                          style={{ ...S.catInput, flex: 2, fontSize: 13 }}
+                        />
+                        <input
+                          value={p.descripcion || ''}
+                          placeholder="Descripción (opcional)"
+                          onChange={e => actualizarPlatoExtraido(p.key, { descripcion: e.target.value })}
+                          style={{ ...S.catInput, flex: 3, fontSize: 13 }}
+                        />
+                        <input
+                          type="number" step="0.01" min="0"
+                          value={p.precio}
+                          onChange={e => actualizarPlatoExtraido(p.key, { precio: e.target.value })}
+                          style={{ ...S.catInput, width: 80, fontSize: 13 }}
+                        />
+                        {modoImportacion === 'agregar' && platoYaExiste(p.categoria, p.nombre) && (
+                          <span style={{ fontSize: 10, color: '#e8a03a', whiteSpace: 'nowrap' }} title="Ya hay un plato con este nombre en esta categoría">ya existe</span>
+                        )}
+                      </div>
+                    ))}
+
+                    {gruposImportador.filter(nombreCat => !categories.some(c => c.nombre.trim().toLowerCase() === nombreCat.toLowerCase())).length > 0 && (
+                      <div style={{ marginTop: 16 }}>
+                        <div style={{ fontSize: 11, color: '#7a6a50', marginBottom: 8 }}>
+                          Categorías nuevas que se crearán — marca si alguna debe ser subcategoría de una que ya tengas:
+                        </div>
+                        {gruposImportador
+                          .filter(nombreCat => !categories.some(c => c.nombre.trim().toLowerCase() === nombreCat.toLowerCase()))
+                          .map(nombreCat => (
+                            <div key={nombreCat} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                              <span style={{ fontSize: 13, fontWeight: 600, color: '#e8c97a', minWidth: 160 }}>{nombreCat}</span>
+                              <select
+                                value={categoriaPadrePorNombre[nombreCat] || ''}
+                                onChange={e => setCategoriaPadrePorNombre(prev => ({ ...prev, [nombreCat]: e.target.value }))}
+                                style={{ ...S.catInput, flex: 'none', width: 190, padding: '4px 8px', fontSize: 11 }}
+                              >
+                                <option value="">— categoría principal —</option>
+                                {categoriasPrincipales.map(c => (
+                                  <option key={c.id} value={c.id}>Subcategoría de: {c.nombre}</option>
+                                ))}
+                              </select>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+                      <button style={S.cancelBtn} onClick={cancelarImportacion}>Cancelar</button>
+                      <button
+                        style={modoImportacion === 'reemplazar' ? { ...S.addBtn, background: '#e8a03a' } : S.addBtn}
+                        onClick={confirmarImportacion}
+                        disabled={importando}
+                      >
+                        {importando ? 'Guardando...' : modoImportacion === 'reemplazar' ? '⚠ Reemplazar toda la carta' : 'Importar a la carta'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Categorías y platos */}
+        {categoriasPrincipales.map((cat, idx) => {
+          const subcats = sortedCats.filter(c => c.categoria_padre_id === cat.id)
+          return (
+            <div key={cat.id}>
+              {renderCategoria(cat, idx, categoriasPrincipales, false)}
+              {subcats.map((sub, subIdx) => renderCategoria(sub, subIdx, subcats, true))}
             </div>
           )
         })}
@@ -811,7 +1325,7 @@ export default function AdminCarta() {
               onChange={e => setFormData(prev => ({ ...prev, category_id: e.target.value }))}
             >
               {sortedCats.map(c => (
-                <option key={c.id} value={c.id}>{c.nombre}</option>
+                <option key={c.id} value={c.id}>{c.categoria_padre_id ? `— ${c.nombre}` : c.nombre}</option>
               ))}
             </select>
 
