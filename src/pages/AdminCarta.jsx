@@ -107,6 +107,8 @@ export default function AdminCarta() {
   const [categoriasExtraidas, setCategoriasExtraidas] = useState(null) // null = todavía no se extrajo nada
   const [importando, setImportando] = useState(false)
   const [importadorMsg, setImportadorMsg] = useState(null)
+  const [ultimaImportacion, setUltimaImportacion] = useState(null) // { categoriaIds, itemIds } | null
+  const [deshaciendo, setDeshaciendo] = useState(false)
   const importadorFileRef = useRef(null)
 
   // Item modal
@@ -357,6 +359,7 @@ export default function AdminCarta() {
     setExtrayendo(true)
     setImportadorError(null)
     setImportadorMsg(null)
+    setUltimaImportacion(null)
     const { data, error: err } = await supabase.functions.invoke('importar-carta', {
       body: { restaurant_id: restaurantId, imagenes: imagenesImportador.map(i => i.dataUri) },
     })
@@ -397,8 +400,8 @@ export default function AdminCarta() {
   async function confirmarImportacion() {
     setImportando(true)
     setImportadorError(null)
-    let nuevasCategorias = 0
-    let nuevosPlatos = 0
+    const categoriaIdsCreadas = []
+    const itemIdsCreados = []
     try {
       let categoriasActuales = [...categories]
       for (const cat of categoriasExtraidas) {
@@ -415,7 +418,7 @@ export default function AdminCarta() {
           if (err) throw err
           categoria = data
           categoriasActuales = [...categoriasActuales, categoria]
-          nuevasCategorias++
+          categoriaIdsCreadas.push(categoria.id)
         }
 
         const itemsEnCat = items.filter(i => i.category_id === categoria.id)
@@ -433,12 +436,13 @@ export default function AdminCarta() {
             orden,
           }
         })
-        const { error: insErr } = await supabase.from('menu_items').insert(filas)
+        const { data: itemsCreados, error: insErr } = await supabase.from('menu_items').insert(filas).select('id')
         if (insErr) throw insErr
-        nuevosPlatos += filas.length
+        itemIdsCreados.push(...itemsCreados.map(i => i.id))
       }
 
-      setImportadorMsg(`Importado: ${nuevasCategorias} categoría(s) nueva(s), ${nuevosPlatos} plato(s).`)
+      setImportadorMsg(`Importado: ${categoriaIdsCreadas.length} categoría(s) nueva(s), ${itemIdsCreados.length} plato(s).`)
+      setUltimaImportacion({ categoriaIds: categoriaIdsCreadas, itemIds: itemIdsCreados })
       setCategoriasExtraidas(null)
       setImagenesImportador([])
       await loadData()
@@ -446,6 +450,34 @@ export default function AdminCarta() {
       setImportadorError(e.message)
     } finally {
       setImportando(false)
+    }
+  }
+
+  // Borra exactamente lo que la última importación creó — y nada más:
+  // ni toca las categorías que ya existían y solo recibieron platos
+  // nuevos, ni nada que hubiera antes. Solo disponible justo después
+  // de importar, mientras siga en esta pantalla.
+  async function deshacerImportacion() {
+    if (!ultimaImportacion) return
+    if (!window.confirm('¿Deshacer la última importación? Se eliminarán los platos y categorías que se acaban de crear.')) return
+    setDeshaciendo(true)
+    setImportadorError(null)
+    try {
+      if (ultimaImportacion.itemIds.length) {
+        const { error: err } = await supabase.from('menu_items').delete().in('id', ultimaImportacion.itemIds)
+        if (err) throw err
+      }
+      if (ultimaImportacion.categoriaIds.length) {
+        const { error: err } = await supabase.from('categories').delete().in('id', ultimaImportacion.categoriaIds)
+        if (err) throw err
+      }
+      setUltimaImportacion(null)
+      setImportadorMsg('Importación deshecha — la carta volvió a como estaba.')
+      await loadData()
+    } catch (e) {
+      setImportadorError(e.message)
+    } finally {
+      setDeshaciendo(false)
     }
   }
 
@@ -806,7 +838,20 @@ export default function AdminCarta() {
                 </div>
 
                 {importadorError && <div style={{ ...S.error, marginBottom: 12 }}>{importadorError}</div>}
-                {importadorMsg && <div style={{ fontSize: 12, color: '#7ae8a0', marginBottom: 12 }}>{importadorMsg}</div>}
+                {importadorMsg && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                    <div style={{ fontSize: 12, color: '#7ae8a0' }}>{importadorMsg}</div>
+                    {ultimaImportacion && (
+                      <button
+                        onClick={deshacerImportacion}
+                        disabled={deshaciendo}
+                        style={{ background: 'transparent', border: '0.5px solid #6a2e20', borderRadius: 8, padding: '4px 10px', fontSize: 11, color: '#e87a7a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+                      >
+                        {deshaciendo ? 'Deshaciendo...' : '↩ Deshacer esta importación'}
+                      </button>
+                    )}
+                  </div>
+                )}
 
                 {!categoriasExtraidas && (
                   <>
