@@ -105,7 +105,8 @@ export default function AdminCarta() {
   const [imagenesImportador, setImagenesImportador] = useState([]) // [{ nombre, dataUri }]
   const [extrayendo, setExtrayendo] = useState(false)
   const [importadorError, setImportadorError] = useState(null)
-  const [categoriasExtraidas, setCategoriasExtraidas] = useState(null) // null = todavía no se extrajo nada
+  const [platosExtraidos, setPlatosExtraidos] = useState(null) // null = todavía no se extrajo nada; si no, [{ key, categoria, nombre, descripcion, precio, incluido }]
+  const [categoriaPadrePorNombre, setCategoriaPadrePorNombre] = useState({}) // { [categoria]: padre_id | '' }
   const [importando, setImportando] = useState(false)
   const [importadorMsg, setImportadorMsg] = useState(null)
   const [ultimaImportacion, setUltimaImportacion] = useState(null) // { categoriaIds, itemIds } | null
@@ -390,27 +391,30 @@ export default function AdminCarta() {
       setImportadorError(msg)
       return
     }
-    setCategoriasExtraidas(
-      (data.categorias || []).map(cat => ({
-        nombre: cat.nombre,
-        platos: (cat.platos || []).map(p => ({ ...p, incluido: true })),
+    // Categoría por plato (no por bloque) — así, si la IA metió todo
+    // junto (ej. todas las bebidas bajo "Bebidas"), se puede repartir
+    // cada plato a mano a la categoría que le corresponda sin más.
+    const flat = (data.categorias || []).flatMap(cat =>
+      (cat.platos || []).map(p => ({
+        key: crypto.randomUUID(),
+        categoria: cat.nombre,
+        nombre: p.nombre,
+        descripcion: p.descripcion || '',
+        precio: p.precio,
+        incluido: true,
       }))
     )
+    setPlatosExtraidos(flat)
+    setCategoriaPadrePorNombre({})
   }
 
-  function actualizarCategoriaExtraida(catIdx, nombre) {
-    setCategoriasExtraidas(prev => prev.map((c, i) => i === catIdx ? { ...c, nombre } : c))
-  }
-
-  function actualizarPlatoExtraido(catIdx, platoIdx, patch) {
-    setCategoriasExtraidas(prev => prev.map((c, i) => {
-      if (i !== catIdx) return c
-      return { ...c, platos: c.platos.map((p, j) => j === platoIdx ? { ...p, ...patch } : p) }
-    }))
+  function actualizarPlatoExtraido(key, patch) {
+    setPlatosExtraidos(prev => prev.map(p => p.key === key ? { ...p, ...patch } : p))
   }
 
   function cancelarImportacion() {
-    setCategoriasExtraidas(null)
+    setPlatosExtraidos(null)
+    setCategoriaPadrePorNombre({})
     setImagenesImportador([])
     setImportadorError(null)
   }
@@ -421,17 +425,22 @@ export default function AdminCarta() {
     const categoriaIdsCreadas = []
     const itemIdsCreados = []
     try {
-      let categoriasActuales = [...categories]
-      for (const cat of categoriasExtraidas) {
-        const platosIncluidos = cat.platos.filter(p => p.incluido && p.nombre?.trim())
-        if (!platosIncluidos.length) continue
+      const incluidos = platosExtraidos.filter(p => p.incluido && p.nombre?.trim() && p.categoria?.trim())
+      // Un plato por categoría (según orden de aparición), preservando
+      // el orden en que se escribieron para que la carta quede como
+      // se ve en la pantalla de revisión.
+      const nombresCategorias = [...new Set(incluidos.map(p => p.categoria.trim()))]
 
-        let categoria = categoriasActuales.find(c => c.nombre.trim().toLowerCase() === cat.nombre.trim().toLowerCase())
+      let categoriasActuales = [...categories]
+      for (const nombreCat of nombresCategorias) {
+        let categoria = categoriasActuales.find(c => c.nombre.trim().toLowerCase() === nombreCat.toLowerCase())
         if (!categoria) {
-          const orden = categoriasActuales.length ? Math.max(...categoriasActuales.map(c => c.orden)) + 1 : 1
+          const padreId = categoriaPadrePorNombre[nombreCat] || null
+          const hermanas = categoriasActuales.filter(c => (c.categoria_padre_id || null) === padreId)
+          const orden = hermanas.length ? Math.max(...hermanas.map(c => c.orden)) + 1 : 1
           const { data, error: err } = await supabase
             .from('categories')
-            .insert({ restaurant_id: restaurantId, nombre: cat.nombre.trim(), orden, activa: true })
+            .insert({ restaurant_id: restaurantId, nombre: nombreCat, orden, activa: true, categoria_padre_id: padreId })
             .select().single()
           if (err) throw err
           categoria = data
@@ -439,9 +448,10 @@ export default function AdminCarta() {
           categoriaIdsCreadas.push(categoria.id)
         }
 
+        const platosDeCat = incluidos.filter(p => p.categoria.trim() === nombreCat)
         const itemsEnCat = items.filter(i => i.category_id === categoria.id)
         let orden = itemsEnCat.length ? Math.max(...itemsEnCat.map(i => i.orden)) : 0
-        const filas = platosIncluidos.map(p => {
+        const filas = platosDeCat.map(p => {
           orden += 1
           return {
             restaurant_id: restaurantId,
@@ -461,7 +471,8 @@ export default function AdminCarta() {
 
       setImportadorMsg(`Importado: ${categoriaIdsCreadas.length} categoría(s) nueva(s), ${itemIdsCreados.length} plato(s).`)
       setUltimaImportacion({ categoriaIds: categoriaIdsCreadas, itemIds: itemIdsCreados })
-      setCategoriasExtraidas(null)
+      setPlatosExtraidos(null)
+      setCategoriaPadrePorNombre({})
       setImagenesImportador([])
       await loadData()
     } catch (e) {
@@ -683,6 +694,18 @@ export default function AdminCarta() {
 
   const sortedCats = [...categories].sort((a, b) => a.orden - b.orden)
   const categoriasPrincipales = sortedCats.filter(c => !c.categoria_padre_id)
+
+  // Nombres de categoría distintos entre los platos extraídos por el
+  // importador, en el orden en que aparecieron — cada plato puede
+  // editar el suyo, así que esto se recalcula en cada cambio.
+  const gruposImportador = []
+  if (platosExtraidos) {
+    const vistos = new Set()
+    platosExtraidos.forEach(p => {
+      const clave = p.categoria.trim().toLowerCase()
+      if (!vistos.has(clave)) { vistos.add(clave); gruposImportador.push(p.categoria.trim()) }
+    })
+  }
 
   // Un solo bloque de categoría (header + grid de platos), reutilizado
   // tanto para categorías principales como para sus subcategorías —
@@ -966,7 +989,7 @@ export default function AdminCarta() {
                   </div>
                 )}
 
-                {!categoriasExtraidas && (
+                {!platosExtraidos && (
                   <>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
                       {imagenesImportador.map((img, idx) => (
@@ -996,43 +1019,68 @@ export default function AdminCarta() {
                   </>
                 )}
 
-                {categoriasExtraidas && (
+                {platosExtraidos && (
                   <div>
-                    {categoriasExtraidas.map((cat, catIdx) => (
-                      <div key={catIdx} style={{ marginBottom: 16 }}>
-                        <input
-                          value={cat.nombre}
-                          onChange={e => actualizarCategoriaExtraida(catIdx, e.target.value)}
-                          style={{ ...S.catInput, fontSize: 13, fontWeight: 600, color: '#e8c97a', marginBottom: 8, maxWidth: 260 }}
-                        />
-                        {cat.platos.map((p, platoIdx) => (
-                          <div key={platoIdx} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 0', borderBottom: '0.5px solid #2a2a2a', opacity: p.incluido ? 1 : 0.4 }}>
-                            <input
-                              type="checkbox"
-                              checked={p.incluido}
-                              onChange={e => actualizarPlatoExtraido(catIdx, platoIdx, { incluido: e.target.checked })}
-                            />
-                            <input
-                              value={p.nombre}
-                              onChange={e => actualizarPlatoExtraido(catIdx, platoIdx, { nombre: e.target.value })}
-                              style={{ ...S.catInput, flex: 2, fontSize: 13 }}
-                            />
-                            <input
-                              value={p.descripcion || ''}
-                              placeholder="Descripción (opcional)"
-                              onChange={e => actualizarPlatoExtraido(catIdx, platoIdx, { descripcion: e.target.value })}
-                              style={{ ...S.catInput, flex: 3, fontSize: 13 }}
-                            />
-                            <input
-                              type="number" step="0.01" min="0"
-                              value={p.precio}
-                              onChange={e => actualizarPlatoExtraido(catIdx, platoIdx, { precio: e.target.value })}
-                              style={{ ...S.catInput, width: 80, fontSize: 13 }}
-                            />
+                    <div style={{ fontSize: 11, color: '#7a6a50', marginBottom: 12 }}>
+                      Si la IA juntó platos que quieres en categorías distintas (ej. todas las bebidas
+                      en una sola), cambia el campo "Categoría" del plato — se reagrupa solo. Para una
+                      categoría nueva, puedes marcarla como subcategoría de una que ya tengas.
+                    </div>
+                    {gruposImportador.map(nombreCat => {
+                      const platosDelGrupo = platosExtraidos.filter(p => p.categoria.trim().toLowerCase() === nombreCat.toLowerCase())
+                      const yaExiste = categories.some(c => c.nombre.trim().toLowerCase() === nombreCat.toLowerCase())
+                      return (
+                        <div key={nombreCat} style={{ marginBottom: 16 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: '#e8c97a' }}>{nombreCat}</span>
+                            {!yaExiste && (
+                              <select
+                                value={categoriaPadrePorNombre[nombreCat] || ''}
+                                onChange={e => setCategoriaPadrePorNombre(prev => ({ ...prev, [nombreCat]: e.target.value }))}
+                                style={{ ...S.catInput, flex: 'none', width: 190, padding: '4px 8px', fontSize: 11 }}
+                              >
+                                <option value="">— categoría principal —</option>
+                                {categoriasPrincipales.map(c => (
+                                  <option key={c.id} value={c.id}>Subcategoría de: {c.nombre}</option>
+                                ))}
+                              </select>
+                            )}
                           </div>
-                        ))}
-                      </div>
-                    ))}
+                          {platosDelGrupo.map(p => (
+                            <div key={p.key} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 0', borderBottom: '0.5px solid #2a2a2a', opacity: p.incluido ? 1 : 0.4 }}>
+                              <input
+                                type="checkbox"
+                                checked={p.incluido}
+                                onChange={e => actualizarPlatoExtraido(p.key, { incluido: e.target.checked })}
+                              />
+                              <input
+                                value={p.categoria}
+                                placeholder="Categoría"
+                                onChange={e => actualizarPlatoExtraido(p.key, { categoria: e.target.value })}
+                                style={{ ...S.catInput, flex: 1.4, fontSize: 12, color: '#c4a85a' }}
+                              />
+                              <input
+                                value={p.nombre}
+                                onChange={e => actualizarPlatoExtraido(p.key, { nombre: e.target.value })}
+                                style={{ ...S.catInput, flex: 2, fontSize: 13 }}
+                              />
+                              <input
+                                value={p.descripcion || ''}
+                                placeholder="Descripción (opcional)"
+                                onChange={e => actualizarPlatoExtraido(p.key, { descripcion: e.target.value })}
+                                style={{ ...S.catInput, flex: 3, fontSize: 13 }}
+                              />
+                              <input
+                                type="number" step="0.01" min="0"
+                                value={p.precio}
+                                onChange={e => actualizarPlatoExtraido(p.key, { precio: e.target.value })}
+                                style={{ ...S.catInput, width: 80, fontSize: 13 }}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    })}
                     <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
                       <button style={S.cancelBtn} onClick={cancelarImportacion}>Cancelar</button>
                       <button style={S.addBtn} onClick={confirmarImportacion} disabled={importando}>
