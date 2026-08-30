@@ -90,6 +90,7 @@ export default function AdminCarta() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [newCatName, setNewCatName] = useState('')
+  const [nuevaCatPadreId, setNuevaCatPadreId] = useState('')
   const [modGrupos, setModGrupos] = useState([]) // [{id, nombre, orden, opciones: [{id, nombre, orden}]}]
   const [showModGestion, setShowModGestion] = useState(false)
   const [showTraducciones, setShowTraducciones] = useState(false)
@@ -132,7 +133,7 @@ export default function AdminCarta() {
     setRestaurant(rest)
 
     const { data: cats, error: catErr } = await supabase
-      .from('categories').select('id, nombre, orden, activa')
+      .from('categories').select('id, nombre, orden, activa, categoria_padre_id')
       .eq('restaurant_id', restaurantId).order('orden')
     if (catErr) { setError(catErr.message); setLoading(false); return }
     setCategories(cats || [])
@@ -171,14 +172,26 @@ export default function AdminCarta() {
   // ---------- Categorías ----------
   async function addCategory() {
     if (!newCatName.trim()) return
-    const orden = categories.length ? Math.max(...categories.map(c => c.orden)) + 1 : 1
+    const padreId = nuevaCatPadreId || null
+    const hermanas = categories.filter(c => (c.categoria_padre_id || null) === padreId)
+    const orden = hermanas.length ? Math.max(...hermanas.map(c => c.orden)) + 1 : 1
     const { data, error: err } = await supabase
       .from('categories')
-      .insert({ restaurant_id: restaurantId, nombre: newCatName.trim(), orden, activa: true })
+      .insert({ restaurant_id: restaurantId, nombre: newCatName.trim(), orden, activa: true, categoria_padre_id: padreId })
       .select().single()
     if (err) { setError(err.message); return }
     setCategories(prev => [...prev, data])
     setNewCatName('')
+    setNuevaCatPadreId('')
+  }
+
+  // Una subcategoría no puede a su vez tener hijas — un solo nivel de
+  // anidado. Por eso, al asignar padre, solo se ofrecen categorías
+  // principales que hoy no sean padre de nadie.
+  async function cambiarCategoriaPadre(cat, nuevoPadreId) {
+    const { error: err } = await supabase.from('categories').update({ categoria_padre_id: nuevoPadreId }).eq('id', cat.id)
+    if (err) { setError(err.message); return }
+    setCategories(prev => prev.map(c => c.id === cat.id ? { ...c, categoria_padre_id: nuevoPadreId } : c))
   }
 
   async function renameCategory(cat, nuevoNombre) {
@@ -201,14 +214,19 @@ export default function AdminCarta() {
       setError(`No se puede eliminar "${cat.nombre}" porque tiene ${itemsInCat.length} ${itemsInCat.length === 1 ? 'plato' : 'platos'}. Elimina o reasigna los platos primero.`)
       return
     }
+    const subcats = categories.filter(c => c.categoria_padre_id === cat.id)
+    if (subcats.length > 0) {
+      setError(`No se puede eliminar "${cat.nombre}" porque tiene ${subcats.length} subcategoría(s). Elimínalas o quítales el padre primero.`)
+      return
+    }
     if (!window.confirm(`¿Eliminar la categoría "${cat.nombre}"?`)) return
     const { error: err } = await supabase.from('categories').delete().eq('id', cat.id)
     if (err) { setError(err.message); return }
     setCategories(prev => prev.filter(c => c.id !== cat.id))
   }
 
-  async function moveCategory(cat, direction) {
-    const sorted = [...categories].sort((a, b) => a.orden - b.orden)
+  async function moveCategory(cat, direction, siblings) {
+    const sorted = [...siblings].sort((a, b) => a.orden - b.orden)
     const idx = sorted.findIndex(c => c.id === cat.id)
     const swapIdx = direction === 'up' ? idx - 1 : idx + 1
     if (swapIdx < 0 || swapIdx >= sorted.length) return
@@ -664,6 +682,91 @@ export default function AdminCarta() {
   if (loading) return <div style={S.app}><div style={S.loading}>Cargando...</div></div>
 
   const sortedCats = [...categories].sort((a, b) => a.orden - b.orden)
+  const categoriasPrincipales = sortedCats.filter(c => !c.categoria_padre_id)
+
+  // Un solo bloque de categoría (header + grid de platos), reutilizado
+  // tanto para categorías principales como para sus subcategorías —
+  // "siblings" acota subir/bajar a las categorías del mismo nivel
+  // (no tiene sentido comparar el orden de una subcategoría con el de
+  // una principal).
+  function renderCategoria(cat, idx, siblings, esSubcategoria) {
+    const catItems = items.filter(i => i.category_id === cat.id).sort((a, b) => a.orden - b.orden)
+    const tieneHijas = categories.some(c => c.categoria_padre_id === cat.id)
+    return (
+      <div key={cat.id} style={esSubcategoria ? { ...S.catSection, marginLeft: 24, borderLeft: '2px solid #2a2a2a', paddingLeft: 16 } : S.catSection}>
+        <div style={S.catHeader}>
+          <input
+            style={{ ...S.catName, background: 'transparent', border: 'none', outline: 'none', fontFamily: "'Playfair Display', serif", width: 'auto', maxWidth: 240, fontSize: esSubcategoria ? 16 : undefined }}
+            defaultValue={cat.nombre}
+            onBlur={e => renameCategory(cat, e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && e.target.blur()}
+          />
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            {!tieneHijas && (
+              <select
+                value={cat.categoria_padre_id || ''}
+                onChange={e => cambiarCategoriaPadre(cat, e.target.value || null)}
+                style={{ ...S.catInput, flex: 'none', width: 170, padding: '4px 8px', fontSize: 11 }}
+              >
+                <option value="">— categoría principal —</option>
+                {categoriasPrincipales.filter(c => c.id !== cat.id).map(c => (
+                  <option key={c.id} value={c.id}>Subcategoría de: {c.nombre}</option>
+                ))}
+              </select>
+            )}
+            <button style={S.iconBtn} onClick={() => moveCategory(cat, 'up', siblings)} disabled={idx === 0} title="Subir">↑</button>
+            <button style={S.iconBtn} onClick={() => moveCategory(cat, 'down', siblings)} disabled={idx === siblings.length - 1} title="Bajar">↓</button>
+            <div style={S.toggleSwitch(cat.activa)} onClick={() => toggleCategory(cat)} title={cat.activa ? 'Visible para clientes' : 'Oculta para clientes'}>
+              <div style={S.toggleDot(cat.activa)}></div>
+            </div>
+            <button style={S.addItemBtn} onClick={() => openNewItem(cat.id)}>+ Plato</button>
+            <button style={{ ...S.iconBtn, color: '#e74c3c', borderColor: '#3a2020' }} onClick={() => deleteCategory(cat)} title="Eliminar categoría">×</button>
+          </div>
+        </div>
+
+        {catItems.length === 0 ? (
+          <div style={{ fontSize: 13, color: '#555', padding: '8px 0' }}>Sin platos en esta categoría.</div>
+        ) : (
+          <div style={S.itemGrid}>
+            {catItems.map(item => (
+              <div key={item.id} style={S.itemCard(item.disponible)}>
+                <div style={S.itemImg} onClick={() => openEditItem(item)}>
+                  {item.foto_url ? <img src={item.foto_url} alt={item.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }} /> : item.emoji}
+                </div>
+                <div style={S.itemInfo}>
+                  <div style={S.itemName}>{item.nombre}</div>
+                  {item.descripcion && <div style={S.itemDesc}>{item.descripcion}</div>}
+                  <div style={S.itemPrice}>{formatMoney(item.precio, restaurant?.moneda)}</div>
+                  {item.precio_costo != null && item.precio > 0 && (
+                    <div style={{ fontSize: 11, color: '#8a8a8a' }}>
+                      Margen: {formatMoney(item.precio - item.precio_costo, restaurant?.moneda)} ({(((item.precio - item.precio_costo) / item.precio) * 100).toFixed(0)}%)
+                    </div>
+                  )}
+                  {restaurant?.config?.sectores_cocina_activo && item.sector_cocina_id && (
+                    <div style={{ fontSize: 11, color: '#c4a85a', marginTop: 2 }}>
+                      {sectores.find(s => s.id === item.sector_cocina_id)?.nombre || ''}
+                    </div>
+                  )}
+                  {item.alergenos && item.alergenos.length > 0 && (
+                    <div style={{ fontSize: 14, marginTop: 3 }} title={item.alergenos.map(k => ALERGENOS.find(a => a.key === k)?.label).join(', ')}>
+                      {item.alergenos.map(k => ALERGENOS.find(a => a.key === k)?.emoji).join(' ')}
+                    </div>
+                  )}
+                  <div style={S.itemActions}>
+                    <div style={S.toggleSwitch(item.disponible)} onClick={() => toggleDisponible(item)} title={item.disponible ? 'Disponible' : 'No disponible'}>
+                      <div style={S.toggleDot(item.disponible)}></div>
+                    </div>
+                    <span style={{ fontSize: 11, color: '#7a6a50' }}>{item.disponible ? 'Disponible' : 'Agotado'}</span>
+                    <button style={{ ...S.iconBtn, width: 'auto', height: 'auto', padding: '4px 10px', fontSize: 11, marginLeft: 'auto' }} onClick={() => openEditItem(item)}>Editar</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div style={S.app}>
@@ -709,6 +812,16 @@ export default function AdminCarta() {
             onChange={e => setNewCatName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && addCategory()}
           />
+          <select
+            value={nuevaCatPadreId}
+            onChange={e => setNuevaCatPadreId(e.target.value)}
+            style={{ ...S.catInput, flex: 'none', width: 220 }}
+          >
+            <option value="">— categoría principal —</option>
+            {categories.filter(c => !c.categoria_padre_id).map(c => (
+              <option key={c.id} value={c.id}>Subcategoría de: {c.nombre}</option>
+            ))}
+          </select>
           <button style={S.addBtn} onClick={addCategory}>+ Añadir categoría</button>
         </div>
 
@@ -934,68 +1047,12 @@ export default function AdminCarta() {
         )}
 
         {/* Categorías y platos */}
-        {sortedCats.map((cat, idx) => {
-          const catItems = items.filter(i => i.category_id === cat.id).sort((a, b) => a.orden - b.orden)
+        {categoriasPrincipales.map((cat, idx) => {
+          const subcats = sortedCats.filter(c => c.categoria_padre_id === cat.id)
           return (
-            <div key={cat.id} style={S.catSection}>
-              <div style={S.catHeader}>
-                <input
-                  style={{ ...S.catName, background: 'transparent', border: 'none', outline: 'none', fontFamily: "'Playfair Display', serif", width: 'auto', maxWidth: 240 }}
-                  defaultValue={cat.nombre}
-                  onBlur={e => renameCategory(cat, e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && e.target.blur()}
-                />
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <button style={S.iconBtn} onClick={() => moveCategory(cat, 'up')} disabled={idx === 0} title="Subir">↑</button>
-                  <button style={S.iconBtn} onClick={() => moveCategory(cat, 'down')} disabled={idx === sortedCats.length - 1} title="Bajar">↓</button>
-                  <div style={S.toggleSwitch(cat.activa)} onClick={() => toggleCategory(cat)} title={cat.activa ? 'Visible para clientes' : 'Oculta para clientes'}>
-                    <div style={S.toggleDot(cat.activa)}></div>
-                  </div>
-                  <button style={S.addItemBtn} onClick={() => openNewItem(cat.id)}>+ Plato</button>
-                  <button style={{ ...S.iconBtn, color: '#e74c3c', borderColor: '#3a2020' }} onClick={() => deleteCategory(cat)} title="Eliminar categoría">×</button>
-                </div>
-              </div>
-
-              {catItems.length === 0 ? (
-                <div style={{ fontSize: 13, color: '#555', padding: '8px 0' }}>Sin platos en esta categoría.</div>
-              ) : (
-                <div style={S.itemGrid}>
-                  {catItems.map(item => (
-                    <div key={item.id} style={S.itemCard(item.disponible)}>
-                      <div style={S.itemImg} onClick={() => openEditItem(item)}>
-                        {item.foto_url ? <img src={item.foto_url} alt={item.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }} /> : item.emoji}
-                      </div>
-                      <div style={S.itemInfo}>
-                        <div style={S.itemName}>{item.nombre}</div>
-                        {item.descripcion && <div style={S.itemDesc}>{item.descripcion}</div>}
-                        <div style={S.itemPrice}>{formatMoney(item.precio, restaurant?.moneda)}</div>
-                        {item.precio_costo != null && item.precio > 0 && (
-                          <div style={{ fontSize: 11, color: '#8a8a8a' }}>
-                            Margen: {formatMoney(item.precio - item.precio_costo, restaurant?.moneda)} ({(((item.precio - item.precio_costo) / item.precio) * 100).toFixed(0)}%)
-                          </div>
-                        )}
-                        {restaurant?.config?.sectores_cocina_activo && item.sector_cocina_id && (
-                          <div style={{ fontSize: 11, color: '#c4a85a', marginTop: 2 }}>
-                            {sectores.find(s => s.id === item.sector_cocina_id)?.nombre || ''}
-                          </div>
-                        )}
-                        {item.alergenos && item.alergenos.length > 0 && (
-                          <div style={{ fontSize: 14, marginTop: 3 }} title={item.alergenos.map(k => ALERGENOS.find(a => a.key === k)?.label).join(', ')}>
-                            {item.alergenos.map(k => ALERGENOS.find(a => a.key === k)?.emoji).join(' ')}
-                          </div>
-                        )}
-                        <div style={S.itemActions}>
-                          <div style={S.toggleSwitch(item.disponible)} onClick={() => toggleDisponible(item)} title={item.disponible ? 'Disponible' : 'No disponible'}>
-                            <div style={S.toggleDot(item.disponible)}></div>
-                          </div>
-                          <span style={{ fontSize: 11, color: '#7a6a50' }}>{item.disponible ? 'Disponible' : 'Agotado'}</span>
-                          <button style={{ ...S.iconBtn, width: 'auto', height: 'auto', padding: '4px 10px', fontSize: 11, marginLeft: 'auto' }} onClick={() => openEditItem(item)}>Editar</button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+            <div key={cat.id}>
+              {renderCategoria(cat, idx, categoriasPrincipales, false)}
+              {subcats.map((sub, subIdx) => renderCategoria(sub, subIdx, subcats, true))}
             </div>
           )
         })}
@@ -1142,7 +1199,7 @@ export default function AdminCarta() {
               onChange={e => setFormData(prev => ({ ...prev, category_id: e.target.value }))}
             >
               {sortedCats.map(c => (
-                <option key={c.id} value={c.id}>{c.nombre}</option>
+                <option key={c.id} value={c.id}>{c.categoria_padre_id ? `— ${c.nombre}` : c.nombre}</option>
               ))}
             </select>
 
