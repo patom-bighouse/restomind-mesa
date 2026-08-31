@@ -87,6 +87,7 @@ export default function AdminCarta() {
   const [categories, setCategories] = useState([])
   const [items, setItems] = useState([])
   const [sectores, setSectores] = useState([])
+  const [ingredientes, setIngredientes] = useState([]) // catálogo del restaurante (control de stock)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [newCatName, setNewCatName] = useState('')
@@ -152,6 +153,11 @@ export default function AdminCarta() {
         .eq('restaurant_id', restaurantId).order('orden')
       setSectores(secs || [])
     }
+
+    const { data: ings } = await supabase
+      .from('ingredientes').select('id, nombre, unidad, stock_actual, umbral_alerta, activo')
+      .eq('restaurant_id', restaurantId).eq('activo', true).order('nombre')
+    setIngredientes(ings || [])
 
     await loadModGrupos()
     setLoading(false)
@@ -602,15 +608,23 @@ export default function AdminCarta() {
   function openNewItem(categoryId) {
     setEditingCatId(categoryId)
     setEditingItem('new')
-    setFormData({ nombre: '', descripcion: '', precio: '', precio_costo: '', emoji: '🍽', foto_url: '', disponible: true, sector_cocina_id: '', alergenos: [], modSeleccion: {} })
+    setFormData({ nombre: '', descripcion: '', precio: '', precio_costo: '', emoji: '🍽', foto_url: '', disponible: true, sector_cocina_id: '', alergenos: [], modSeleccion: {}, receta: [] })
+  }
+
+  async function loadRecetaDelItem(item) {
+    const { data } = await supabase
+      .from('receta_items').select('ingrediente_id, cantidad')
+      .eq('menu_item_id', item.id)
+    return (data || []).map(r => ({ ingrediente_id: r.ingrediente_id, cantidad: String(r.cantidad) }))
   }
 
   async function openEditItem(item) {
     setEditingCatId(item.category_id)
     setEditingItem(item)
-    setFormData({ ...item, modSeleccion: {} })
+    setFormData({ ...item, modSeleccion: {}, receta: [] })
     const modSeleccion = await loadModsDelItem(item)
-    setFormData(prev => ({ ...prev, modSeleccion }))
+    const receta = tieneModulo('control_stock') ? await loadRecetaDelItem(item) : []
+    setFormData(prev => ({ ...prev, modSeleccion, receta }))
   }
 
   function closeModal() {
@@ -700,6 +714,18 @@ export default function AdminCarta() {
         if (filasPrecios.length) {
           await supabase.from('menu_item_modificador_precios').insert(filasPrecios)
         }
+      }
+    }
+
+    if (tieneModulo('control_stock')) {
+      // Igual que con los modificadores: se reemplaza toda la receta
+      // de este plato en vez de ir comparando qué cambió.
+      await supabase.from('receta_items').delete().eq('menu_item_id', menuItemId)
+      const filasReceta = (formData.receta || [])
+        .filter(r => r.ingrediente_id && parseFloat(r.cantidad) > 0)
+        .map(r => ({ menu_item_id: menuItemId, ingrediente_id: r.ingrediente_id, cantidad: parseFloat(r.cantidad) }))
+      if (filasReceta.length) {
+        await supabase.from('receta_items').insert(filasReceta)
       }
     }
 
@@ -842,6 +868,7 @@ export default function AdminCarta() {
           <a href={`/admin/mesas/${restaurantId}`} style={S.navTab(false)}>Mesas</a>
           <a href={`/admin/carta/${restaurantId}`} style={S.navTab(true)}>Carta</a>
           <a href={`/admin/menus/${restaurantId}`} style={S.navTab(false)}>Menús</a>
+          {tieneModulo('control_stock') && <a href={`/admin/stock/${restaurantId}`} style={S.navTab(false)}>Stock</a>}
           <a href={`/admin/clientes/${restaurantId}`} style={S.navTab(false)}>Clientes</a>
           <a href={`/admin/upsell/${restaurantId}`} style={S.navTab(false)}>Upsell</a>
           <a href={`/admin/reservas/${restaurantId}`} style={S.navTab(false)}>Reservas</a>
@@ -1249,6 +1276,61 @@ export default function AdminCarta() {
                 )
               })}
             </div>
+
+            {tieneModulo('control_stock') && (
+              <>
+                <label style={S.label}>Ingredientes (receta)</label>
+                <div style={{ fontSize: 11, color: '#7a6a50', marginBottom: 8, marginTop: -4 }}>
+                  Qué ingredientes y en qué cantidad lleva una unidad de este plato — se descuentan solos
+                  del stock con cada pedido, si tienes el control de stock activado en Configuración.
+                </div>
+                {ingredientes.length === 0 ? (
+                  <div style={{ fontSize: 12, color: '#555', marginBottom: 16 }}>
+                    Todavía no diste de alta ningún ingrediente — hazlo desde la pantalla "Stock".
+                  </div>
+                ) : (
+                  <div style={{ marginBottom: 16 }}>
+                    {(formData.receta || []).map((r, idx) => (
+                      <div key={idx} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                        <select
+                          style={{ ...S.input, flex: 2 }}
+                          value={r.ingrediente_id}
+                          onChange={e => setFormData(prev => ({
+                            ...prev,
+                            receta: prev.receta.map((x, i) => i === idx ? { ...x, ingrediente_id: e.target.value } : x),
+                          }))}
+                        >
+                          <option value="">Elige un ingrediente</option>
+                          {ingredientes.map(ing => (
+                            <option key={ing.id} value={ing.id}>{ing.nombre} ({ing.unidad})</option>
+                          ))}
+                        </select>
+                        <input
+                          style={{ ...S.input, flex: 1 }}
+                          type="number" step="0.001" min="0"
+                          placeholder="Cantidad"
+                          value={r.cantidad}
+                          onChange={e => setFormData(prev => ({
+                            ...prev,
+                            receta: prev.receta.map((x, i) => i === idx ? { ...x, cantidad: e.target.value } : x),
+                          }))}
+                        />
+                        <button
+                          style={{ ...S.iconBtn, color: '#e74c3c', borderColor: '#3a2020' }}
+                          onClick={() => setFormData(prev => ({ ...prev, receta: prev.receta.filter((_, i) => i !== idx) }))}
+                        >×</button>
+                      </div>
+                    ))}
+                    <button
+                      style={{ ...S.uploadBtn }}
+                      onClick={() => setFormData(prev => ({ ...prev, receta: [...(prev.receta || []), { ingrediente_id: '', cantidad: '' }] }))}
+                    >
+                      + Añadir ingrediente
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
 
             {modGrupos.length > 0 && (
               <>
