@@ -52,7 +52,7 @@ export default function AdminStock() {
   const [movimientos, setMovimientos] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [showMovimientos, setShowMovimientos] = useState(false)
+  const [vista, setVista] = useState('ingredientes') // 'ingredientes' | 'movimientos'
 
   const [nombre, setNombre] = useState('')
   const [unidad, setUnidad] = useState('unidad')
@@ -172,7 +172,7 @@ export default function AdminStock() {
     if (err2) { setError(err2.message); return }
     setIngredientes(prev => prev.map(i => i.id === movimientoIngrediente.id ? { ...i, stock_actual: nuevoStock } : i))
     setMovimientoIngrediente(null)
-    if (showMovimientos) await loadMovimientos()
+    if (vista === 'movimientos') await loadMovimientos()
   }
 
   async function handleLogout() {
@@ -242,115 +242,121 @@ export default function AdminStock() {
           </div>
         )}
 
-        <div style={S.addBar}>
-          <div style={{ ...S.field, flex: 1 }}>
-            <span style={S.label}>Nombre</span>
-            <input style={S.input} placeholder="Ej. Jamón ibérico" value={nombre} onChange={e => setNombre(e.target.value)} />
-          </div>
-          <div style={S.field}>
-            <span style={S.label}>Unidad</span>
-            <select style={S.select} value={unidad} onChange={e => setUnidad(e.target.value)}>
-              {UNIDADES.map(u => <option key={u} value={u}>{u}</option>)}
-            </select>
-          </div>
-          <div style={S.field}>
-            <span style={S.label}>Stock inicial</span>
-            <input style={{ ...S.input, width: 100 }} type="number" step="0.001" min="0" value={stockInicial} onChange={e => setStockInicial(e.target.value)} />
-          </div>
-          <div style={S.field}>
-            <span style={S.label}>Umbral alerta</span>
-            <input style={{ ...S.input, width: 100 }} type="number" step="0.001" min="0" placeholder="Opcional" value={umbral} onChange={e => setUmbral(e.target.value)} />
-          </div>
-          <button style={S.addBtn} onClick={addIngrediente} disabled={adding || !nombre.trim()}>
-            {adding ? 'Añadiendo...' : '+ Añadir ingrediente'}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+          <button style={S.navTab(vista === 'ingredientes')} onClick={() => setVista('ingredientes')}>Ingredientes</button>
+          <button
+            style={S.navTab(vista === 'movimientos')}
+            onClick={() => { setVista('movimientos'); loadMovimientos() }}
+          >
+            Movimientos
           </button>
         </div>
 
-        {ingredientes.length === 0 ? (
-          <div style={S.empty}>Todavía no diste de alta ningún ingrediente.</div>
-        ) : (
-          <table style={S.table}>
-            <thead>
-              <tr>
-                <th style={S.th}>Ingrediente</th>
-                <th style={S.th}>Stock actual</th>
-                <th style={S.th}>Umbral de alerta</th>
-                <th style={S.th}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {ingredientes.map(ing => {
-                const bajo = ing.umbral_alerta != null && ing.stock_actual <= ing.umbral_alerta
-                return (
-                  <tr key={ing.id} style={S.row(bajo)}>
-                    <td style={S.td}>
-                      <input
-                        style={{ background: 'transparent', border: 'none', color: '#f0e8d8', fontSize: 14, fontFamily: "'Inter', sans-serif", outline: 'none', width: 160 }}
-                        defaultValue={ing.nombre}
-                        onBlur={e => renombrarIngrediente(ing, e.target.value)}
-                      />
-                    </td>
-                    <td style={S.td}>
-                      {ing.stock_actual} {ing.unidad}
-                      {bajo && <div style={S.alertBadge}>⚠ bajo stock</div>}
-                    </td>
-                    <td style={S.td}>
-                      <input
-                        style={{ ...S.input, width: 90, padding: '6px 8px', fontSize: 13 }}
-                        type="number" step="0.001" min="0"
-                        defaultValue={ing.umbral_alerta ?? ''}
-                        placeholder="—"
-                        onBlur={e => cambiarUmbral(ing, e.target.value)}
-                      />
-                    </td>
-                    <td style={{ ...S.td, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                      <button style={S.btnSm} onClick={() => abrirMovimiento(ing, 'reposicion')}>+ Reponer</button>
-                      <button style={{ ...S.btnSm, color: '#e8a03a' }} onClick={() => abrirMovimiento(ing, 'merma')}>− Merma</button>
-                      <button style={S.deleteBtn} onClick={() => eliminarIngrediente(ing)}>Eliminar</button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        )}
+        {vista === 'ingredientes' && (
+          <>
+            <div style={S.addBar}>
+              <div style={{ ...S.field, flex: 1 }}>
+                <span style={S.label}>Nombre</span>
+                <input style={S.input} placeholder="Ej. Jamón ibérico" value={nombre} onChange={e => setNombre(e.target.value)} />
+              </div>
+              <div style={S.field}>
+                <span style={S.label}>Unidad</span>
+                <select style={S.select} value={unidad} onChange={e => setUnidad(e.target.value)}>
+                  {UNIDADES.map(u => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </div>
+              <div style={S.field}>
+                <span style={S.label}>Stock inicial</span>
+                <input style={{ ...S.input, width: 100 }} type="number" step="0.001" min="0" value={stockInicial} onChange={e => setStockInicial(e.target.value)} />
+              </div>
+              <div style={S.field}>
+                <span style={S.label}>Umbral alerta</span>
+                <input style={{ ...S.input, width: 100 }} type="number" step="0.001" min="0" placeholder="Opcional" value={umbral} onChange={e => setUmbral(e.target.value)} />
+              </div>
+              <button style={S.addBtn} onClick={addIngrediente} disabled={adding || !nombre.trim()}>
+                {adding ? 'Añadiendo...' : '+ Añadir ingrediente'}
+              </button>
+            </div>
 
-        <div style={{ marginTop: 24 }}>
-          <button
-            style={S.btnSm}
-            onClick={() => { setShowMovimientos(!showMovimientos); if (!showMovimientos) loadMovimientos() }}
-          >
-            {showMovimientos ? '▲ Ocultar movimientos' : '▼ Ver historial de movimientos'}
-          </button>
-          {showMovimientos && (
-            movimientos.length === 0 ? (
-              <div style={{ ...S.empty, padding: 24 }}>Sin movimientos todavía.</div>
+            {ingredientes.length === 0 ? (
+              <div style={S.empty}>Todavía no diste de alta ningún ingrediente.</div>
             ) : (
-              <table style={{ ...S.table, marginTop: 16 }}>
+              <table style={S.table}>
                 <thead>
                   <tr>
-                    <th style={S.th}>Fecha</th>
                     <th style={S.th}>Ingrediente</th>
-                    <th style={S.th}>Tipo</th>
-                    <th style={S.th}>Cantidad</th>
-                    <th style={S.th}>Motivo</th>
+                    <th style={S.th}>Stock actual</th>
+                    <th style={S.th}>Umbral de alerta</th>
+                    <th style={S.th}></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {movimientos.map(m => (
-                    <tr key={m.id} style={S.row(false)}>
-                      <td style={S.td}>{new Date(m.created_at).toLocaleString('es-ES')}</td>
-                      <td style={S.td}>{nombreIngrediente(m.ingrediente_id)}</td>
-                      <td style={S.td}><span style={S.chip}>{m.tipo}</span></td>
-                      <td style={{ ...S.td, color: m.cantidad < 0 ? '#e87a7a' : '#7ae8a0' }}>{m.cantidad > 0 ? '+' : ''}{m.cantidad}</td>
-                      <td style={S.td}>{m.motivo || '—'}</td>
-                    </tr>
-                  ))}
+                  {ingredientes.map(ing => {
+                    const bajo = ing.umbral_alerta != null && ing.stock_actual <= ing.umbral_alerta
+                    return (
+                      <tr key={ing.id} style={S.row(bajo)}>
+                        <td style={S.td}>
+                          <input
+                            style={{ background: 'transparent', border: 'none', color: '#f0e8d8', fontSize: 14, fontFamily: "'Inter', sans-serif", outline: 'none', width: 160 }}
+                            defaultValue={ing.nombre}
+                            onBlur={e => renombrarIngrediente(ing, e.target.value)}
+                          />
+                        </td>
+                        <td style={S.td}>
+                          {ing.stock_actual} {ing.unidad}
+                          {bajo && <div style={S.alertBadge}>⚠ bajo stock</div>}
+                        </td>
+                        <td style={S.td}>
+                          <input
+                            style={{ ...S.input, width: 90, padding: '6px 8px', fontSize: 13 }}
+                            type="number" step="0.001" min="0"
+                            defaultValue={ing.umbral_alerta ?? ''}
+                            placeholder="—"
+                            onBlur={e => cambiarUmbral(ing, e.target.value)}
+                          />
+                        </td>
+                        <td style={{ ...S.td, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                          <button style={S.btnSm} onClick={() => abrirMovimiento(ing, 'reposicion')}>+ Reponer</button>
+                          <button style={{ ...S.btnSm, color: '#e8a03a' }} onClick={() => abrirMovimiento(ing, 'merma')}>− Merma</button>
+                          <button style={S.deleteBtn} onClick={() => eliminarIngrediente(ing)}>Eliminar</button>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
-            )
-          )}
-        </div>
+            )}
+          </>
+        )}
+
+        {vista === 'movimientos' && (
+          movimientos.length === 0 ? (
+            <div style={S.empty}>Sin movimientos todavía.</div>
+          ) : (
+            <table style={S.table}>
+              <thead>
+                <tr>
+                  <th style={S.th}>Fecha</th>
+                  <th style={S.th}>Ingrediente</th>
+                  <th style={S.th}>Tipo</th>
+                  <th style={S.th}>Cantidad</th>
+                  <th style={S.th}>Motivo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {movimientos.map(m => (
+                  <tr key={m.id} style={S.row(false)}>
+                    <td style={S.td}>{new Date(m.created_at).toLocaleString('es-ES')}</td>
+                    <td style={S.td}>{nombreIngrediente(m.ingrediente_id)}</td>
+                    <td style={S.td}><span style={S.chip}>{m.tipo}</span></td>
+                    <td style={{ ...S.td, color: m.cantidad < 0 ? '#e87a7a' : '#7ae8a0' }}>{m.cantidad > 0 ? '+' : ''}{m.cantidad}</td>
+                    <td style={S.td}>{m.motivo || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )
+        )}
       </div>
 
       {movimientoIngrediente && (
