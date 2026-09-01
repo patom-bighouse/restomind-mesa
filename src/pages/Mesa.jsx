@@ -120,6 +120,13 @@ export default function Mesa() {
   const [clienteError, setClienteError] = useState(null)
   const [fidelizacionEstado, setFidelizacionEstado] = useState(null) // resultado de fn_estado_fidelizacion
   const [premiosEnCarrito, setPremiosEnCarrito] = useState([]) // [{ key, premioId, nombre, tipo, costoPuntos, comensal }]
+  const [showValePanel, setShowValePanel] = useState(false)
+  const [valeCodigoInput, setValeCodigoInput] = useState('')
+  const [valeConsultado, setValeConsultado] = useState(null) // resultado de fn_consultar_vale, o null
+  const [valeImporteInput, setValeImporteInput] = useState('')
+  const [valeError, setValeError] = useState(null)
+  const [consultandoVale, setConsultandoVale] = useState(false)
+  const [valeAplicado, setValeAplicado] = useState(null) // { codigo, importe } | null
   const [cargandoEstadoFidelizacion, setCargandoEstadoFidelizacion] = useState(false)
   const [editandoTelefono, setEditandoTelefono] = useState(false)
   const [lastClosedSessionId, setLastClosedSessionId] = useState(null)
@@ -590,7 +597,45 @@ export default function Mesa() {
 
   const cartCount = Object.values(cart).reduce((a, b) => a + b.qty, 0)
   const descuentoPremios = premiosEnCarrito.reduce((s, p) => s + (p.tipo === 'descuento' ? p.descuentoImporte : 0), 0)
-  const cartTotal = Math.max(0, Object.values(cart).reduce((s, i) => s + i.precio * i.qty, 0) - descuentoPremios)
+  const cartTotal = Math.max(0, Object.values(cart).reduce((s, i) => s + i.precio * i.qty, 0) - descuentoPremios - (valeAplicado?.importe || 0))
+
+  async function consultarVale() {
+    if (!valeCodigoInput.trim()) return
+    setConsultandoVale(true)
+    setValeError(null)
+    setValeConsultado(null)
+    const { data, error: err } = await supabase.rpc('fn_consultar_vale', {
+      p_restaurant_id: table.restaurant_id,
+      p_codigo: valeCodigoInput.trim(),
+    })
+    setConsultandoVale(false)
+    if (err || !data || data.length === 0) {
+      setValeError('No encontramos ningún vale con ese código.')
+      return
+    }
+    const vale = data[0]
+    const hoy = new Date().toISOString().slice(0, 10)
+    if (!vale.activo) { setValeError('Ese vale ya no está activo.'); return }
+    if (vale.fecha_vencimiento < hoy) { setValeError('Ese vale ya venció.'); return }
+    if (vale.saldo_actual <= 0) { setValeError('Ese vale ya no tiene saldo.'); return }
+    setValeConsultado(vale)
+    const subtotalActual = Object.values(cart).reduce((s, i) => s + i.precio * i.qty, 0) - descuentoPremios
+    setValeImporteInput(String(Math.min(vale.saldo_actual, Math.max(0, subtotalActual))))
+  }
+
+  function aplicarVale() {
+    const importe = parseFloat(valeImporteInput)
+    if (!importe || importe <= 0 || importe > valeConsultado.saldo_actual) return
+    setValeAplicado({ codigo: valeCodigoInput.trim(), importe })
+    setShowValePanel(false)
+    setValeConsultado(null)
+    setValeCodigoInput('')
+    setValeImporteInput('')
+  }
+
+  function quitarVale() {
+    setValeAplicado(null)
+  }
 
   // Sugerencias de upsell: reglas cuyo plato disparador está en el
   // carrito, sugiriendo explorar otra categoría — salvo que el
@@ -650,6 +695,8 @@ export default function Mesa() {
         p_items: itemsPayload,
         p_notas: orderNote.trim() || null,
         p_premios_canjeados: premiosPayload,
+        p_vale_codigo: valeAplicado?.codigo || null,
+        p_vale_importe: valeAplicado?.importe || null,
       })
       if (rpcErr) throw rpcErr
 
@@ -658,6 +705,7 @@ export default function Mesa() {
       setOrderNote('')
       setEditingNoteFor(null)
       setPremiosEnCarrito([])
+      setValeAplicado(null)
       // Los puntos ya se descontaron del lado del servidor — si el
       // panel de fidelización llegara a reabrirse, que muestre el
       // saldo real y no el de antes de canjear.
@@ -1022,6 +1070,14 @@ export default function Mesa() {
             >
               🎁 {session?.cliente_telefono ? 'Sumando puntos' : 'Sumar puntos'}
             </button>
+            {!esModoCamarero && (
+              <button
+                onClick={() => { setShowValePanel(true); setValeError(null); setValeConsultado(null) }}
+                style={{ background: valeAplicado ? '#3a2010' : 'transparent', border: `0.5px solid ${valeAplicado ? '#e8c97a' : '#3a2e20'}`, borderRadius: 20, padding: '4px 12px', fontSize: 11, color: '#c4a85a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+              >
+                🎟 {valeAplicado ? `Vale aplicado (${formatMoney(valeAplicado.importe, restaurant?.moneda)})` : 'Vale regalo'}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1131,6 +1187,57 @@ export default function Mesa() {
           >
             Listo
           </button>
+        </div>
+      </div>
+
+      <div style={S.overlay(showValePanel)} onClick={e => { if (e.target === e.currentTarget) setShowValePanel(false) }}>
+        <div style={S.sheet}>
+          <button style={S.closeBtn} onClick={() => setShowValePanel(false)}>×</button>
+          <div style={S.sheetTitle}>🎟 Vale regalo</div>
+          {!valeConsultado ? (
+            <>
+              <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 14 }}>
+                Escribe el código del vale que te dieron.
+              </div>
+              <input
+                style={{ ...S.noteInput, marginTop: 0, padding: '10px 12px', fontSize: 14, textTransform: 'uppercase' }}
+                placeholder="Ej. AB12CD34"
+                value={valeCodigoInput}
+                onChange={e => setValeCodigoInput(e.target.value.toUpperCase())}
+                onKeyDown={e => e.key === 'Enter' && consultarVale()}
+              />
+              {valeError && <div style={{ fontSize: 13, color: '#e87a7a', marginTop: 10 }}>{valeError}</div>}
+              <button
+                onClick={consultarVale}
+                disabled={consultandoVale || !valeCodigoInput.trim()}
+                style={{ background: '#e8c97a', border: 'none', borderRadius: 10, padding: '12px', width: '100%', color: '#1a1410', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif", marginTop: 14 }}
+              >
+                {consultandoVale ? 'Consultando...' : 'Consultar'}
+              </button>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 13, color: '#f0e8d8', marginBottom: 6 }}>
+                Saldo disponible: <strong style={{ color: '#7ae8a0' }}>{formatMoney(valeConsultado.saldo_actual, restaurant?.moneda)}</strong>
+              </div>
+              <div style={{ fontSize: 11, color: '#7a6a50', marginBottom: 14 }}>
+                Vence el {new Date(valeConsultado.fecha_vencimiento + 'T00:00:00').toLocaleDateString('es-ES')}
+              </div>
+              <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 6 }}>¿Cuánto quieres aplicar a este pedido?</div>
+              <input
+                style={{ ...S.noteInput, marginTop: 0, padding: '10px 12px', fontSize: 14 }}
+                type="number" step="0.01" min="0" max={valeConsultado.saldo_actual}
+                value={valeImporteInput}
+                onChange={e => setValeImporteInput(e.target.value)}
+              />
+              <button
+                onClick={aplicarVale}
+                style={{ background: '#e8c97a', border: 'none', borderRadius: 10, padding: '12px', width: '100%', color: '#1a1410', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif", marginTop: 14 }}
+              >
+                Aplicar al pedido
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -1253,6 +1360,18 @@ export default function Mesa() {
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {valeAplicado && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={S.oItem}>
+                    <div style={S.oName}>🎟 Vale {valeAplicado.codigo}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={S.oPrice}>-{formatMoney(valeAplicado.importe, restaurant?.moneda)}</span>
+                      <button style={{ ...S.btn, width: 26, height: 26 }} onClick={quitarVale}>×</button>
+                    </div>
+                  </div>
                 </div>
               )}
 
