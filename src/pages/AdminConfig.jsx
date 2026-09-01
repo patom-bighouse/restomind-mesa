@@ -83,6 +83,7 @@ export default function AdminConfig() {
   const [nuevoCamareroPermisos, setNuevoCamareroPermisos] = useState(['pedidos'])
   const [camareroError, setCamareroError] = useState(null)
   const [sectoresCocinaActivo, setSectoresCocinaActivo] = useState(false)
+  const [controlStockActivo, setControlStockActivo] = useState(false)
   const [envasesSostenibles, setEnvasesSostenibles] = useState(false)
   const [puntosPorEuro, setPuntosPorEuro] = useState(1)
   const [sectores, setSectores] = useState([])
@@ -116,6 +117,7 @@ export default function AdminConfig() {
       setUmbralMargenAlerta(rest.config?.umbral_margen_alerta ?? 20)
       setModoPedidos(rest.config?.modo_pedidos || 'cliente')
       setSectoresCocinaActivo(rest.config?.sectores_cocina_activo || false)
+      setControlStockActivo(rest.config?.control_stock_activo || false)
       setEnvasesSostenibles(rest.config?.envases_sostenibles_takeaway || false)
       setPuntosPorEuro(rest.config?.puntos_por_euro ?? 1)
       // Init horario with defaults for any missing days
@@ -261,7 +263,7 @@ export default function AdminConfig() {
         .update({
           nombre: nombre.trim(),
           whatsapp: whatsapp.trim(),
-          config: { ...restaurant?.config, horario, umbral_margen_alerta: umbral, modo_pedidos: modoPedidos, sectores_cocina_activo: sectoresCocinaActivo, envases_sostenibles_takeaway: envasesSostenibles, puntos_por_euro: parseFloat(puntosPorEuro) || 1 },
+          config: { ...restaurant?.config, horario, umbral_margen_alerta: umbral, modo_pedidos: modoPedidos, sectores_cocina_activo: sectoresCocinaActivo, control_stock_activo: controlStockActivo, envases_sostenibles_takeaway: envasesSostenibles, puntos_por_euro: parseFloat(puntosPorEuro) || 1 },
           modo_cocina: modoCocina,
           minutos_limite_agrupado: minutos,
         })
@@ -296,6 +298,7 @@ export default function AdminConfig() {
           <a href={`/admin/mesas/${restaurantId}`} style={S.navTab(false)}>Mesas</a>
           <a href={`/admin/carta/${restaurantId}`} style={S.navTab(false)}>Carta</a>
           <a href={`/admin/menus/${restaurantId}`} style={S.navTab(false)}>Menús</a>
+          {tieneModulo('control_stock') && <a href={`/admin/stock/${restaurantId}`} style={S.navTab(false)}>Stock</a>}
           <a href={`/admin/clientes/${restaurantId}`} style={S.navTab(false)}>Clientes</a>
           <a href={`/admin/upsell/${restaurantId}`} style={S.navTab(false)}>Upsell</a>
           <a href={`/admin/reservas/${restaurantId}`} style={S.navTab(false)}>Reservas</a>
@@ -524,6 +527,26 @@ export default function AdminConfig() {
             </>
           )}
         </div>
+
+        {/* Control de stock — el toggle es del restaurante, aparte de
+            que el módulo esté pagado/activado desde SuperAdmin: puede
+            tenerlo pagado y no querer usarlo en el día a día. */}
+        {tieneModulo('control_stock') && (
+          <div style={S.infoCard}>
+            <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 4 }}>Control de stock</div>
+            <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 12 }}>
+              Con esto activo, cada pedido descuenta el stock de los ingredientes de la receta de cada
+              plato. Configura ingredientes y recetas desde Carta y Stock — puedes dejarlos preparados
+              y activar esto recién cuando quieras que empiece a descontar de verdad.
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={S.toggleSwitch(controlStockActivo)} onClick={() => setControlStockActivo(!controlStockActivo)}>
+                <div style={S.toggleDot(controlStockActivo)}></div>
+              </div>
+              <span style={{ fontSize: 13, color: '#8a7560' }}>Descontar stock automáticamente con cada pedido</span>
+            </div>
+          </div>
+        )}
 
         {/* Envases (take away) */}
         <div style={S.infoCard}>
