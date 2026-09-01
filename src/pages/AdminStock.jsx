@@ -37,7 +37,10 @@ const S = {
 
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 },
   sheet: { background: '#141414', width: '100%', maxWidth: 380, borderRadius: 16, padding: 24 },
+  sheetWide: { background: '#141414', width: '100%', maxWidth: 640, maxHeight: '85vh', overflowY: 'auto', borderRadius: 16, padding: 24 },
   sheetTitle: { fontFamily: "'Playfair Display', serif", fontSize: 17, color: '#e8c97a', marginBottom: 16 },
+  sheetHint: { fontSize: 12, color: '#7a6a50', marginBottom: 14, lineHeight: 1.5 },
+  textarea: { background: '#111', border: '0.5px solid #3a2e20', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#f0e8d8', fontFamily: "'Inter', monospace", outline: 'none', width: '100%', minHeight: 160, resize: 'vertical' },
   sheetFooter: { display: 'flex', gap: 10, marginTop: 20 },
   cancelBtn: { flex: 1, background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 10, padding: 12, fontSize: 14, color: '#8a7560', cursor: 'pointer', fontFamily: "'Inter', sans-serif" },
   saveBtn: (busy) => ({ flex: 1, background: busy ? '#5a4a2a' : '#e8c97a', color: busy ? '#8a7560' : '#111', border: 'none', borderRadius: 10, padding: 12, fontSize: 14, fontWeight: 500, cursor: busy ? 'not-allowed' : 'pointer', fontFamily: "'Inter', sans-serif" }),
@@ -65,6 +68,16 @@ export default function AdminStock() {
   const [cantidadMovimiento, setCantidadMovimiento] = useState('')
   const [motivoMovimiento, setMotivoMovimiento] = useState('')
   const [guardandoMovimiento, setGuardandoMovimiento] = useState(false)
+
+  const [showCargaMasiva, setShowCargaMasiva] = useState(false)
+  const [textoCargaMasiva, setTextoCargaMasiva] = useState('')
+  const [filasCargaMasiva, setFilasCargaMasiva] = useState(null) // null = sin previsualizar aún
+  const [guardandoCargaMasiva, setGuardandoCargaMasiva] = useState(false)
+
+  const [showReposicionMasiva, setShowReposicionMasiva] = useState(false)
+  const [cantidadesReposicion, setCantidadesReposicion] = useState({}) // { [ingrediente_id]: '12' }
+  const [motivoReposicionMasiva, setMotivoReposicionMasiva] = useState('')
+  const [guardandoReposicionMasiva, setGuardandoReposicionMasiva] = useState(false)
 
   useEffect(() => { checkAuth() }, [])
 
@@ -118,6 +131,93 @@ export default function AdminStock() {
     if (err) { setError(err.message); return }
     setNombre(''); setUnidad('unidad'); setStockInicial('0'); setUmbral('')
     await loadIngredientes()
+  }
+
+  // ---------- Carga masiva (pegar texto tipo CSV) ----------
+  function previsualizarCargaMasiva() {
+    const filas = textoCargaMasiva
+      .split('\n')
+      .map(l => l.trim())
+      .filter(Boolean)
+      .map(linea => {
+        const partes = linea.split(',').map(p => p.trim())
+        const [nom, unid, stock, umb] = partes
+        const yaExiste = ingredientes.some(i => i.nombre.trim().toLowerCase() === (nom || '').toLowerCase())
+        return {
+          key: crypto.randomUUID(),
+          nombre: nom || '',
+          unidad: UNIDADES.includes(unid) ? unid : 'unidad',
+          stock: stock || '0',
+          umbral: umb || '',
+          incluida: !!nom && !yaExiste,
+          yaExiste,
+        }
+      })
+    setFilasCargaMasiva(filas)
+  }
+
+  function actualizarFilaCargaMasiva(key, patch) {
+    setFilasCargaMasiva(prev => prev.map(f => f.key === key ? { ...f, ...patch } : f))
+  }
+
+  async function confirmarCargaMasiva() {
+    const incluidas = filasCargaMasiva.filter(f => f.incluida && f.nombre.trim())
+    if (!incluidas.length) return
+    setGuardandoCargaMasiva(true)
+    setError(null)
+    const filas = incluidas.map(f => ({
+      restaurant_id: restaurantId,
+      nombre: f.nombre.trim(),
+      unidad: f.unidad,
+      stock_actual: parseFloat(f.stock) || 0,
+      umbral_alerta: f.umbral !== '' ? parseFloat(f.umbral) : null,
+    }))
+    const { error: err } = await supabase.from('ingredientes').insert(filas)
+    setGuardandoCargaMasiva(false)
+    if (err) { setError(err.message); return }
+    setShowCargaMasiva(false)
+    setTextoCargaMasiva('')
+    setFilasCargaMasiva(null)
+    await loadIngredientes()
+  }
+
+  // ---------- Reposición masiva ----------
+  async function confirmarReposicionMasiva() {
+    const entradas = Object.entries(cantidadesReposicion).filter(([, v]) => parseFloat(v) > 0)
+    if (!entradas.length) return
+    setGuardandoReposicionMasiva(true)
+    setError(null)
+    try {
+      for (const [ingredienteId, cantidadStr] of entradas) {
+        const cantidad = parseFloat(cantidadStr)
+        const ing = ingredientes.find(i => i.id === ingredienteId)
+        if (!ing) continue
+        const { error: err1 } = await supabase
+          .from('ingredientes')
+          .update({ stock_actual: ing.stock_actual + cantidad })
+          .eq('id', ingredienteId)
+        if (err1) throw err1
+        const { error: err2 } = await supabase
+          .from('stock_movimientos')
+          .insert({
+            restaurant_id: restaurantId,
+            ingrediente_id: ingredienteId,
+            tipo: 'reposicion',
+            cantidad,
+            motivo: motivoReposicionMasiva.trim() || null,
+          })
+        if (err2) throw err2
+      }
+      setShowReposicionMasiva(false)
+      setCantidadesReposicion({})
+      setMotivoReposicionMasiva('')
+      await loadIngredientes()
+      if (vista === 'movimientos') await loadMovimientos()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setGuardandoReposicionMasiva(false)
+    }
   }
 
   async function renombrarIngrediente(ing, nuevoNombre) {
@@ -254,6 +354,15 @@ export default function AdminStock() {
 
         {vista === 'ingredientes' && (
           <>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <button style={S.btnSm} onClick={() => { setTextoCargaMasiva(''); setFilasCargaMasiva(null); setShowCargaMasiva(true) }}>
+                📋 Carga masiva
+              </button>
+              <button style={S.btnSm} onClick={() => { setCantidadesReposicion({}); setMotivoReposicionMasiva(''); setShowReposicionMasiva(true) }}>
+                📦 Reposición masiva
+              </button>
+            </div>
+
             <div style={S.addBar}>
               <div style={{ ...S.field, flex: 1 }}>
                 <span style={S.label}>Nombre</span>
@@ -388,6 +497,126 @@ export default function AdminStock() {
               <button style={S.cancelBtn} onClick={() => setMovimientoIngrediente(null)}>Cancelar</button>
               <button style={S.saveBtn(guardandoMovimiento)} onClick={confirmarMovimiento} disabled={guardandoMovimiento}>
                 {guardandoMovimiento ? 'Guardando...' : 'Confirmar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCargaMasiva && (
+        <div style={S.overlay} onClick={() => setShowCargaMasiva(false)}>
+          <div style={S.sheetWide} onClick={e => e.stopPropagation()}>
+            <div style={S.sheetTitle}>Carga masiva de ingredientes</div>
+
+            {!filasCargaMasiva ? (
+              <>
+                <div style={S.sheetHint}>
+                  Pega una lista, una línea por ingrediente: <code>nombre, unidad, stock inicial, umbral de alerta</code>.
+                  La unidad debe ser una de kg/g/l/ml/unidad (si no, se usa "unidad"); stock y umbral son
+                  opcionales (umbral en blanco = sin alerta). Ejemplo:
+                  <br />
+                  <code>Jamón ibérico, kg, 5, 1{'\n'}Agua mineral, unidad, 48, 12{'\n'}Aceite de oliva, l, 10,</code>
+                </div>
+                <textarea
+                  style={S.textarea}
+                  placeholder={'Jamón ibérico, kg, 5, 1\nAgua mineral, unidad, 48, 12'}
+                  value={textoCargaMasiva}
+                  onChange={e => setTextoCargaMasiva(e.target.value)}
+                />
+                <div style={S.sheetFooter}>
+                  <button style={S.cancelBtn} onClick={() => setShowCargaMasiva(false)}>Cancelar</button>
+                  <button style={S.saveBtn(false)} onClick={previsualizarCargaMasiva} disabled={!textoCargaMasiva.trim()}>
+                    Previsualizar
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                {filasCargaMasiva.length === 0 ? (
+                  <div style={S.empty}>No se pudo leer ninguna fila — revisa el formato.</div>
+                ) : (
+                  filasCargaMasiva.map(f => (
+                    <div key={f.key} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 0', borderBottom: '0.5px solid #2a2a2a', opacity: f.incluida ? 1 : 0.4 }}>
+                      <input
+                        type="checkbox"
+                        checked={f.incluida}
+                        onChange={e => actualizarFilaCargaMasiva(f.key, { incluida: e.target.checked })}
+                      />
+                      <input
+                        style={{ ...S.input, flex: 2 }}
+                        value={f.nombre}
+                        onChange={e => actualizarFilaCargaMasiva(f.key, { nombre: e.target.value })}
+                      />
+                      <select
+                        style={{ ...S.select, flex: 'none', width: 90 }}
+                        value={f.unidad}
+                        onChange={e => actualizarFilaCargaMasiva(f.key, { unidad: e.target.value })}
+                      >
+                        {UNIDADES.map(u => <option key={u} value={u}>{u}</option>)}
+                      </select>
+                      <input
+                        style={{ ...S.input, flex: 'none', width: 80 }}
+                        type="number" step="0.001" min="0"
+                        value={f.stock}
+                        onChange={e => actualizarFilaCargaMasiva(f.key, { stock: e.target.value })}
+                      />
+                      <input
+                        style={{ ...S.input, flex: 'none', width: 80 }}
+                        type="number" step="0.001" min="0"
+                        placeholder="Umbral"
+                        value={f.umbral}
+                        onChange={e => actualizarFilaCargaMasiva(f.key, { umbral: e.target.value })}
+                      />
+                      {f.yaExiste && <span style={{ fontSize: 10, color: '#e8a03a', whiteSpace: 'nowrap' }}>ya existe</span>}
+                    </div>
+                  ))
+                )}
+                <div style={S.sheetFooter}>
+                  <button style={S.cancelBtn} onClick={() => setFilasCargaMasiva(null)}>← Volver</button>
+                  <button style={S.saveBtn(guardandoCargaMasiva)} onClick={confirmarCargaMasiva} disabled={guardandoCargaMasiva}>
+                    {guardandoCargaMasiva ? 'Guardando...' : 'Crear ingredientes'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showReposicionMasiva && (
+        <div style={S.overlay} onClick={() => setShowReposicionMasiva(false)}>
+          <div style={S.sheetWide} onClick={e => e.stopPropagation()}>
+            <div style={S.sheetTitle}>Reposición masiva</div>
+            <div style={S.sheetHint}>
+              Llena solo los ingredientes que llegaron — el resto se deja en blanco y no se toca.
+            </div>
+            <div style={{ ...S.field, marginBottom: 14 }}>
+              <span style={S.label}>Motivo (opcional, se aplica a todos)</span>
+              <input
+                style={S.input}
+                placeholder="Ej. pedido del 1 de septiembre a Proveedor X"
+                value={motivoReposicionMasiva}
+                onChange={e => setMotivoReposicionMasiva(e.target.value)}
+              />
+            </div>
+            {ingredientes.map(ing => (
+              <div key={ing.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 0', borderBottom: '0.5px solid #2a2a2a' }}>
+                <span style={{ flex: 1, fontSize: 13 }}>{ing.nombre}</span>
+                <span style={{ fontSize: 11, color: '#7a6a50', width: 90 }}>actual: {ing.stock_actual} {ing.unidad}</span>
+                <input
+                  style={{ ...S.input, flex: 'none', width: 90 }}
+                  type="number" step="0.001" min="0"
+                  placeholder="0"
+                  value={cantidadesReposicion[ing.id] || ''}
+                  onChange={e => setCantidadesReposicion(prev => ({ ...prev, [ing.id]: e.target.value }))}
+                />
+                <span style={{ fontSize: 12, color: '#7a6a50', width: 40 }}>{ing.unidad}</span>
+              </div>
+            ))}
+            <div style={S.sheetFooter}>
+              <button style={S.cancelBtn} onClick={() => setShowReposicionMasiva(false)}>Cancelar</button>
+              <button style={S.saveBtn(guardandoReposicionMasiva)} onClick={confirmarReposicionMasiva} disabled={guardandoReposicionMasiva}>
+                {guardandoReposicionMasiva ? 'Guardando...' : 'Confirmar reposición'}
               </button>
             </div>
           </div>
