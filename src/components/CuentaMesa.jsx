@@ -58,6 +58,7 @@ const METODOS = [
   { value: 'tarjeta', label: '💳 Tarjeta' },
   { value: 'efectivo', label: '💶 Efectivo' },
   { value: 'bizum', label: '📱 Bizum' },
+  { value: 'vale_regalo', label: '🎟 Vale regalo' },
   { value: 'otro', label: '🔹 Otro' },
 ]
 
