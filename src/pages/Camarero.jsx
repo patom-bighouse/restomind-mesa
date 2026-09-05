@@ -994,7 +994,7 @@ export default function Camarero() {
           <div style={S.logo}>{restaurant?.nombre || 'Restomind'}</div>
           <div style={S.sub}>{camarero.nombre} · Mesa {selectedTable.numero}</div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', gap: 10, maxWidth: '65%' }}>
           {sendSuccess && <span style={{ fontSize: 12, color: '#7ae8a0' }}>✓ Pedido enviado</span>}
           <button
             onClick={() => setShowAlergenosPanel(true)}

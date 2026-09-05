@@ -1045,9 +1045,9 @@ export default function Mesa() {
           <div style={S.logo}>{restaurant?.nombre || 'Restomind'}</div>
           <div style={S.sub}>Bienvenido · Pide desde la mesa</div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, maxWidth: '62%' }}>
           <div style={S.badge}>Mesa {table?.numero} · {table?.zona?.charAt(0).toUpperCase() + table?.zona?.slice(1)}</div>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 6 }}>
             {restaurant?.config?.idiomas_carta?.length > 0 && (
               <select
                 value={idiomaActivo}
