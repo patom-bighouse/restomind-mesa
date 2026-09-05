@@ -317,6 +317,7 @@ export default function AdminStock() {
           <a href={`/admin/menus/${restaurantId}`} style={S.navTab(false)}>Menús</a>
           <a href={`/admin/stock/${restaurantId}`} style={S.navTab(true)}>Stock</a>
           <a href={`/admin/clientes/${restaurantId}`} style={S.navTab(false)}>Clientes</a>
+          <a href={`/admin/vales/${restaurantId}`} style={S.navTab(false)}>Vales</a>
           <a href={`/admin/upsell/${restaurantId}`} style={S.navTab(false)}>Upsell</a>
           <a href={`/admin/reservas/${restaurantId}`} style={S.navTab(false)}>Reservas</a>
           <a href={`/admin/limpieza/${restaurantId}`} style={S.navTab(false)}>Limpieza</a>

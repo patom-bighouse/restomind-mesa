@@ -58,6 +58,7 @@ const METODOS = [
   { value: 'tarjeta', label: '💳 Tarjeta' },
   { value: 'efectivo', label: '💶 Efectivo' },
   { value: 'bizum', label: '📱 Bizum' },
+  { value: 'vale_regalo', label: '🎟 Vale regalo' },
   { value: 'otro', label: '🔹 Otro' },
 ]
 
@@ -88,6 +89,7 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
   const [error, setError] = useState(null)
   const [montoInput, setMontoInput] = useState('')
   const [metodoInput, setMetodoInput] = useState('tarjeta')
+  const [valeCodigoInput, setValeCodigoInput] = useState('')
   const [addingPago, setAddingPago] = useState(false)
   const [showExencion, setShowExencion] = useState(false)
   const [motivoExencion, setMotivoExencion] = useState('')
@@ -203,14 +205,29 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
   async function addPago() {
     const monto = parseFloat(montoInput.replace(',', '.'))
     if (!monto || monto <= 0) return
+    if (metodoInput === 'vale_regalo' && !valeCodigoInput.trim()) {
+      setError('Indica el código del vale.')
+      return
+    }
     setAddingPago(true)
     setError(null)
-    const { error: err } = await supabase
-      .from('table_session_payments')
-      .insert({ table_session_id: session.id, restaurant_id: restaurantId, monto, metodo_pago: metodoInput })
+    // El vale regalo no es un pago suelto: pasa por la misma función
+    // que valida el código, descuenta su saldo y recién ahí registra
+    // el pago — así nunca queda un "vale_regalo" cobrado sin que
+    // ningún vale real haya perdido saldo.
+    const { error: err } = metodoInput === 'vale_regalo'
+      ? (await supabase.rpc('fn_canjear_vale_regalo', {
+          p_table_session_id: session.id,
+          p_vale_codigo: valeCodigoInput.trim(),
+          p_vale_importe: monto,
+        }))
+      : (await supabase
+          .from('table_session_payments')
+          .insert({ table_session_id: session.id, restaurant_id: restaurantId, monto, metodo_pago: metodoInput }))
     setAddingPago(false)
     if (err) { setError(err.message); return }
     setMontoInput('')
+    setValeCodigoInput('')
     await loadPagos()
   }
 
@@ -445,6 +462,14 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
                 <select style={S.addPagoSelect} value={metodoInput} onChange={e => setMetodoInput(e.target.value)}>
                   {METODOS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                 </select>
+                {metodoInput === 'vale_regalo' && (
+                  <input
+                    style={{ ...S.addPagoInput, width: 110, textTransform: 'uppercase' }}
+                    placeholder="Código"
+                    value={valeCodigoInput}
+                    onChange={e => setValeCodigoInput(e.target.value.toUpperCase())}
+                  />
+                )}
                 <button style={S.addPagoBtn} onClick={addPago} disabled={addingPago}>
                   {addingPago ? '...' : '+ Registrar'}
                 </button>

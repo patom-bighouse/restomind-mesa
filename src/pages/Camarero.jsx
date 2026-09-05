@@ -141,6 +141,14 @@ export default function Camarero() {
   const [fidelizacionEstado, setFidelizacionEstado] = useState(null)
   const [cargandoEstadoFidelizacion, setCargandoEstadoFidelizacion] = useState(false)
   const [premiosEnCarrito, setPremiosEnCarrito] = useState([])
+  const [showValePanel, setShowValePanel] = useState(false)
+  const [valeCodigoInput, setValeCodigoInput] = useState('')
+  const [valeConsultado, setValeConsultado] = useState(null)
+  const [valeImporteInput, setValeImporteInput] = useState('')
+  const [valeError, setValeError] = useState(null)
+  const [consultandoVale, setConsultandoVale] = useState(false)
+  const [aplicandoVale, setAplicandoVale] = useState(false)
+  const [valeExito, setValeExito] = useState(null) // { codigo, importe } | null — último vale aplicado con éxito
 
   useEffect(() => {
     loadRestaurant()
@@ -639,6 +647,51 @@ export default function Camarero() {
   const descuentoPremios = premiosEnCarrito.reduce((s, p) => s + (p.tipo === 'descuento' ? p.descuentoImporte : 0), 0)
   const cartTotal = Math.max(0, Object.values(cart).reduce((s, i) => s + i.precio * i.qty, 0) - descuentoPremios)
 
+  async function consultarVale() {
+    if (!valeCodigoInput.trim()) return
+    setConsultandoVale(true)
+    setValeError(null)
+    setValeConsultado(null)
+    const { data, error: err } = await supabase.rpc('fn_consultar_vale', {
+      p_restaurant_id: restaurantId,
+      p_codigo: valeCodigoInput.trim(),
+    })
+    setConsultandoVale(false)
+    if (err || !data || data.length === 0) {
+      setValeError('No encontramos ningún vale con ese código.')
+      return
+    }
+    const vale = data[0]
+    const hoy = new Date().toISOString().slice(0, 10)
+    if (!vale.activo) { setValeError('Ese vale ya no está activo.'); return }
+    if (vale.fecha_vencimiento < hoy) { setValeError('Ese vale ya venció.'); return }
+    if (vale.saldo_actual <= 0) { setValeError('Ese vale ya no tiene saldo.'); return }
+    setValeConsultado(vale)
+    setValeImporteInput(String(vale.saldo_actual))
+  }
+
+  // El vale se canjea al toque, como una forma de pago más contra la
+  // cuenta — no depende de que haya nada en el carrito, se puede
+  // aplicar en cualquier momento mientras la mesa siga abierta.
+  async function aplicarVale() {
+    const importe = parseFloat(valeImporteInput)
+    if (!importe || importe <= 0 || importe > valeConsultado.saldo_actual) return
+    setAplicandoVale(true)
+    setValeError(null)
+    const codigo = valeCodigoInput.trim()
+    const { error: err } = await supabase.rpc('fn_canjear_vale_regalo', {
+      p_table_session_id: selectedTable.session.id,
+      p_vale_codigo: codigo,
+      p_vale_importe: importe,
+    })
+    setAplicandoVale(false)
+    if (err) { setValeError(err.message); return }
+    setValeExito({ codigo, importe })
+    setValeConsultado(null)
+    setValeCodigoInput('')
+    setValeImporteInput('')
+  }
+
   const itemIdsEnCarrito = new Set(Object.values(cart).map(v => v.menuItemId))
   const categoriasEnCarrito = new Set(
     Object.values(cart).map(v => items.find(i => i.id === v.menuItemId)?.category_id).filter(Boolean)
@@ -941,7 +994,7 @@ export default function Camarero() {
           <div style={S.logo}>{restaurant?.nombre || 'Restomind'}</div>
           <div style={S.sub}>{camarero.nombre} · Mesa {selectedTable.numero}</div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', gap: 10, maxWidth: '65%' }}>
           {sendSuccess && <span style={{ fontSize: 12, color: '#7ae8a0' }}>✓ Pedido enviado</span>}
           <button
             onClick={() => setShowAlergenosPanel(true)}
@@ -954,6 +1007,12 @@ export default function Camarero() {
             style={{ background: selectedTable?.session?.cliente_telefono ? '#3a2010' : 'transparent', border: `0.5px solid ${selectedTable?.session?.cliente_telefono ? '#e8c97a' : '#3a2e20'}`, borderRadius: 8, padding: '6px 14px', fontSize: 12, color: '#c4a85a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
           >
             🎁 {selectedTable?.session?.cliente_telefono ? 'Sumando puntos' : 'Sumar puntos'}
+          </button>
+          <button
+            onClick={() => { setShowValePanel(true); setValeError(null); setValeConsultado(null); setValeExito(null) }}
+            style={{ background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '6px 14px', fontSize: 12, color: '#c4a85a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+          >
+            🎟 Vale regalo
           </button>
           <button style={S.logoutBtn} onClick={volverAMesas}>Cambiar de mesa</button>
         </div>
@@ -1179,6 +1238,76 @@ export default function Camarero() {
             <button style={S.confirmBtn(sending)} onClick={confirmarPedido} disabled={sending}>
               {sending ? 'Enviando...' : 'Confirmar y enviar a cocina'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {showValePanel && (
+        <div style={S.overlay} onClick={() => setShowValePanel(false)}>
+          <div style={S.sheet} onClick={e => e.stopPropagation()}>
+            <div style={S.sheetTitle}>🎟 Vale regalo</div>
+            {valeExito ? (
+              <>
+                <div style={{ fontSize: 14, color: '#7ae8a0', marginBottom: 8 }}>
+                  ✓ Vale {valeExito.codigo} aplicado: -{formatMoney(valeExito.importe, restaurant?.moneda)}
+                </div>
+                <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 16 }}>
+                  Ya quedó descontado de la cuenta de esta mesa — se verá reflejado al cerrarla.
+                </div>
+                <button
+                  onClick={() => { setShowValePanel(false); setValeExito(null) }}
+                  style={{ background: '#e8c97a', border: 'none', borderRadius: 10, padding: '12px', width: '100%', color: '#1a1410', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+                >
+                  Listo
+                </button>
+              </>
+            ) : !valeConsultado ? (
+              <>
+                <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 14 }}>
+                  Escribe el código del vale que te muestre el cliente — se puede aplicar en cualquier
+                  momento mientras la mesa siga abierta, aunque sea justo al cobrar.
+                </div>
+                <input
+                  style={{ width: '100%', background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '10px 12px', fontSize: 14, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', boxSizing: 'border-box', textTransform: 'uppercase' }}
+                  placeholder="Ej. AB12CD34"
+                  value={valeCodigoInput}
+                  onChange={e => setValeCodigoInput(e.target.value.toUpperCase())}
+                  onKeyDown={e => e.key === 'Enter' && consultarVale()}
+                />
+                {valeError && <div style={{ fontSize: 13, color: '#e87a7a', marginTop: 10 }}>{valeError}</div>}
+                <button
+                  onClick={consultarVale}
+                  disabled={consultandoVale || !valeCodigoInput.trim()}
+                  style={{ background: '#e8c97a', border: 'none', borderRadius: 10, padding: '12px', width: '100%', color: '#1a1410', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif", marginTop: 14 }}
+                >
+                  {consultandoVale ? 'Consultando...' : 'Consultar'}
+                </button>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 13, color: '#f0e8d8', marginBottom: 6 }}>
+                  Saldo disponible: <strong style={{ color: '#7ae8a0' }}>{formatMoney(valeConsultado.saldo_actual, restaurant?.moneda)}</strong>
+                </div>
+                <div style={{ fontSize: 11, color: '#7a6a50', marginBottom: 14 }}>
+                  Vence el {new Date(valeConsultado.fecha_vencimiento + 'T00:00:00').toLocaleDateString('es-ES')}
+                </div>
+                <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 6 }}>¿Cuánto se aplica a la cuenta?</div>
+                <input
+                  style={{ width: '100%', background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '10px 12px', fontSize: 14, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', boxSizing: 'border-box' }}
+                  type="number" step="0.01" min="0" max={valeConsultado.saldo_actual}
+                  value={valeImporteInput}
+                  onChange={e => setValeImporteInput(e.target.value)}
+                />
+                {valeError && <div style={{ fontSize: 13, color: '#e87a7a', marginTop: 10 }}>{valeError}</div>}
+                <button
+                  onClick={aplicarVale}
+                  disabled={aplicandoVale}
+                  style={{ background: '#e8c97a', border: 'none', borderRadius: 10, padding: '12px', width: '100%', color: '#1a1410', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif", marginTop: 14 }}
+                >
+                  {aplicandoVale ? 'Aplicando...' : 'Aplicar a la cuenta'}
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}

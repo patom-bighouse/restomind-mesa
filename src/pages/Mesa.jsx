@@ -120,6 +120,14 @@ export default function Mesa() {
   const [clienteError, setClienteError] = useState(null)
   const [fidelizacionEstado, setFidelizacionEstado] = useState(null) // resultado de fn_estado_fidelizacion
   const [premiosEnCarrito, setPremiosEnCarrito] = useState([]) // [{ key, premioId, nombre, tipo, costoPuntos, comensal }]
+  const [showValePanel, setShowValePanel] = useState(false)
+  const [valeCodigoInput, setValeCodigoInput] = useState('')
+  const [valeConsultado, setValeConsultado] = useState(null) // resultado de fn_consultar_vale, o null
+  const [valeImporteInput, setValeImporteInput] = useState('')
+  const [valeError, setValeError] = useState(null)
+  const [consultandoVale, setConsultandoVale] = useState(false)
+  const [aplicandoVale, setAplicandoVale] = useState(false)
+  const [valeExito, setValeExito] = useState(null) // { codigo, importe } | null — último vale aplicado con éxito
   const [cargandoEstadoFidelizacion, setCargandoEstadoFidelizacion] = useState(false)
   const [editandoTelefono, setEditandoTelefono] = useState(false)
   const [lastClosedSessionId, setLastClosedSessionId] = useState(null)
@@ -592,6 +600,52 @@ export default function Mesa() {
   const descuentoPremios = premiosEnCarrito.reduce((s, p) => s + (p.tipo === 'descuento' ? p.descuentoImporte : 0), 0)
   const cartTotal = Math.max(0, Object.values(cart).reduce((s, i) => s + i.precio * i.qty, 0) - descuentoPremios)
 
+  async function consultarVale() {
+    if (!valeCodigoInput.trim()) return
+    setConsultandoVale(true)
+    setValeError(null)
+    setValeConsultado(null)
+    const { data, error: err } = await supabase.rpc('fn_consultar_vale', {
+      p_restaurant_id: table.restaurant_id,
+      p_codigo: valeCodigoInput.trim(),
+    })
+    setConsultandoVale(false)
+    if (err || !data || data.length === 0) {
+      setValeError('No encontramos ningún vale con ese código.')
+      return
+    }
+    const vale = data[0]
+    const hoy = new Date().toISOString().slice(0, 10)
+    if (!vale.activo) { setValeError('Ese vale ya no está activo.'); return }
+    if (vale.fecha_vencimiento < hoy) { setValeError('Ese vale ya venció.'); return }
+    if (vale.saldo_actual <= 0) { setValeError('Ese vale ya no tiene saldo.'); return }
+    setValeConsultado(vale)
+    setValeImporteInput(String(vale.saldo_actual))
+  }
+
+  // El vale se canjea al toque, como una forma de pago más contra la
+  // cuenta — no hace falta tener nada en el carrito ni esperar a
+  // enviar un pedido; se puede aplicar en cualquier momento mientras
+  // la mesa siga abierta, aunque sea justo al ir a pagar.
+  async function aplicarVale() {
+    const importe = parseFloat(valeImporteInput)
+    if (!importe || importe <= 0 || importe > valeConsultado.saldo_actual) return
+    setAplicandoVale(true)
+    setValeError(null)
+    const codigo = valeCodigoInput.trim()
+    const { error: err } = await supabase.rpc('fn_canjear_vale_regalo', {
+      p_table_session_id: session.id,
+      p_vale_codigo: codigo,
+      p_vale_importe: importe,
+    })
+    setAplicandoVale(false)
+    if (err) { setValeError(err.message); return }
+    setValeExito({ codigo, importe })
+    setValeConsultado(null)
+    setValeCodigoInput('')
+    setValeImporteInput('')
+  }
+
   // Sugerencias de upsell: reglas cuyo plato disparador está en el
   // carrito, sugiriendo explorar otra categoría — salvo que el
   // cliente ya haya agregado algo de esa categoría sugerida.
@@ -991,9 +1045,9 @@ export default function Mesa() {
           <div style={S.logo}>{restaurant?.nombre || 'Restomind'}</div>
           <div style={S.sub}>Bienvenido · Pide desde la mesa</div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, maxWidth: '62%' }}>
           <div style={S.badge}>Mesa {table?.numero} · {table?.zona?.charAt(0).toUpperCase() + table?.zona?.slice(1)}</div>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 6 }}>
             {restaurant?.config?.idiomas_carta?.length > 0 && (
               <select
                 value={idiomaActivo}
@@ -1022,6 +1076,14 @@ export default function Mesa() {
             >
               🎁 {session?.cliente_telefono ? 'Sumando puntos' : 'Sumar puntos'}
             </button>
+            {!esModoCamarero && (
+              <button
+                onClick={() => { setShowValePanel(true); setValeError(null); setValeConsultado(null); setValeExito(null) }}
+                style={{ background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 20, padding: '4px 12px', fontSize: 11, color: '#c4a85a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+              >
+                🎟 Vale regalo
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1131,6 +1193,74 @@ export default function Mesa() {
           >
             Listo
           </button>
+        </div>
+      </div>
+
+      <div style={S.overlay(showValePanel)} onClick={e => { if (e.target === e.currentTarget) setShowValePanel(false) }}>
+        <div style={S.sheet}>
+          <button style={S.closeBtn} onClick={() => setShowValePanel(false)}>×</button>
+          <div style={S.sheetTitle}>🎟 Vale regalo</div>
+          {valeExito ? (
+            <>
+              <div style={{ fontSize: 14, color: '#7ae8a0', marginBottom: 8 }}>
+                ✓ Vale {valeExito.codigo} aplicado: -{formatMoney(valeExito.importe, restaurant?.moneda)}
+              </div>
+              <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 16 }}>
+                Se descuenta de tu cuenta — el camarero lo verá al cobrar, no hace falta que pidas nada más para que cuente.
+              </div>
+              <button
+                onClick={() => { setShowValePanel(false); setValeExito(null) }}
+                style={{ background: '#e8c97a', border: 'none', borderRadius: 10, padding: '12px', width: '100%', color: '#1a1410', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+              >
+                Listo
+              </button>
+            </>
+          ) : !valeConsultado ? (
+            <>
+              <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 14 }}>
+                Escribe el código del vale que te dieron — puedes aplicarlo cuando quieras, aunque sea al pagar, mientras la mesa siga abierta.
+              </div>
+              <input
+                style={{ ...S.noteInput, marginTop: 0, padding: '10px 12px', fontSize: 14, textTransform: 'uppercase' }}
+                placeholder="Ej. AB12CD34"
+                value={valeCodigoInput}
+                onChange={e => setValeCodigoInput(e.target.value.toUpperCase())}
+                onKeyDown={e => e.key === 'Enter' && consultarVale()}
+              />
+              {valeError && <div style={{ fontSize: 13, color: '#e87a7a', marginTop: 10 }}>{valeError}</div>}
+              <button
+                onClick={consultarVale}
+                disabled={consultandoVale || !valeCodigoInput.trim()}
+                style={{ background: '#e8c97a', border: 'none', borderRadius: 10, padding: '12px', width: '100%', color: '#1a1410', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif", marginTop: 14 }}
+              >
+                {consultandoVale ? 'Consultando...' : 'Consultar'}
+              </button>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 13, color: '#f0e8d8', marginBottom: 6 }}>
+                Saldo disponible: <strong style={{ color: '#7ae8a0' }}>{formatMoney(valeConsultado.saldo_actual, restaurant?.moneda)}</strong>
+              </div>
+              <div style={{ fontSize: 11, color: '#7a6a50', marginBottom: 14 }}>
+                Vence el {new Date(valeConsultado.fecha_vencimiento + 'T00:00:00').toLocaleDateString('es-ES')}
+              </div>
+              <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 6 }}>¿Cuánto quieres aplicar a tu cuenta?</div>
+              <input
+                style={{ ...S.noteInput, marginTop: 0, padding: '10px 12px', fontSize: 14 }}
+                type="number" step="0.01" min="0" max={valeConsultado.saldo_actual}
+                value={valeImporteInput}
+                onChange={e => setValeImporteInput(e.target.value)}
+              />
+              {valeError && <div style={{ fontSize: 13, color: '#e87a7a', marginTop: 10 }}>{valeError}</div>}
+              <button
+                onClick={aplicarVale}
+                disabled={aplicandoVale}
+                style={{ background: '#e8c97a', border: 'none', borderRadius: 10, padding: '12px', width: '100%', color: '#1a1410', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif", marginTop: 14 }}
+              >
+                {aplicandoVale ? 'Aplicando...' : 'Aplicar a la cuenta'}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
