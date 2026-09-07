@@ -73,6 +73,7 @@ export default function AdminConfig() {
   const [horario, setHorario] = useState({})
   const [nombre, setNombre] = useState('')
   const [whatsapp, setWhatsapp] = useState('')
+  const [subdominio, setSubdominio] = useState('')
   const [modoCocina, setModoCocina] = useState('orden_llegada')
   const [minutosLimite, setMinutosLimite] = useState(20)
   const [umbralMargenAlerta, setUmbralMargenAlerta] = useState(20)
@@ -105,13 +106,14 @@ export default function AdminConfig() {
   async function loadData() {
     const { data: rest } = await supabase
       .from('restaurants')
-      .select('nombre, whatsapp, config, modo_cocina, minutos_limite_agrupado')
+      .select('nombre, whatsapp, config, modo_cocina, minutos_limite_agrupado, subdominio')
       .eq('id', restaurantId)
       .single()
     if (rest) {
       setRestaurant(rest)
       setNombre(rest.nombre || '')
       setWhatsapp(rest.whatsapp || '')
+      setSubdominio(rest.subdominio || '')
       setModoCocina(rest.modo_cocina || 'orden_llegada')
       setMinutosLimite(rest.minutos_limite_agrupado ?? 20)
       setUmbralMargenAlerta(rest.config?.umbral_margen_alerta ?? 20)
@@ -256,6 +258,12 @@ export default function AdminConfig() {
       return
     }
 
+    const subdominioLimpio = subdominio.trim().toLowerCase()
+    if (subdominioLimpio && !/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(subdominioLimpio)) {
+      setError('El subdominio solo puede tener minúsculas, números y guiones (sin empezar ni terminar en guión).')
+      return
+    }
+
     setSaving(true)
     try {
       const { error: err } = await supabase
@@ -263,6 +271,7 @@ export default function AdminConfig() {
         .update({
           nombre: nombre.trim(),
           whatsapp: whatsapp.trim(),
+          subdominio: subdominioLimpio || null,
           config: { ...restaurant?.config, horario, umbral_margen_alerta: umbral, modo_pedidos: modoPedidos, sectores_cocina_activo: sectoresCocinaActivo, control_stock_activo: controlStockActivo, envases_sostenibles_takeaway: envasesSostenibles, puntos_por_euro: parseFloat(puntosPorEuro) || 1 },
           modo_cocina: modoCocina,
           minutos_limite_agrupado: minutos,
@@ -270,9 +279,10 @@ export default function AdminConfig() {
         .eq('id', restaurantId)
       if (err) throw err
       setSuccess('Configuración guardada correctamente.')
-      setRestaurant(prev => ({ ...prev, nombre: nombre.trim(), whatsapp: whatsapp.trim() }))
+      setSubdominio(subdominioLimpio)
+      setRestaurant(prev => ({ ...prev, nombre: nombre.trim(), whatsapp: whatsapp.trim(), subdominio: subdominioLimpio || null }))
     } catch (e) {
-      setError(e.message)
+      setError(e.code === '23505' ? 'Ese subdominio ya lo está usando otro restaurante — elige otro.' : e.message)
     } finally {
       setSaving(false)
     }
@@ -325,6 +335,25 @@ export default function AdminConfig() {
           <label style={S.infoLabel}>WhatsApp (con prefijo, sin +)</label>
           <input style={S.infoInput} value={whatsapp} onChange={e => setWhatsapp(e.target.value)} placeholder="34600000000" />
           <div style={{ fontSize: 11, color: '#555', marginTop: 4 }}>El agente de WhatsApp identifica el restaurante por este número.</div>
+        </div>
+
+        {/* Dominio propio para la carta */}
+        <div style={S.infoCard}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 4 }}>Dominio propio</div>
+          <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 10 }}>
+            El QR y el enlace de tus mesas usarán este subdominio en vez del genérico de la plataforma.
+            Solo minúsculas, números y guiones.
+          </div>
+          <label style={S.infoLabel}>Subdominio</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input
+              style={{ ...S.infoInput, flex: 1 }}
+              value={subdominio}
+              onChange={e => setSubdominio(e.target.value.toLowerCase())}
+              placeholder="la-encina"
+            />
+            <span style={{ fontSize: 13, color: '#7a6a50' }}>.restomind.app</span>
+          </div>
         </div>
 
         {/* Modo de cocina */}
