@@ -16,6 +16,7 @@ import AdminCarta from './pages/AdminCarta'
 import AdminMenus from './pages/AdminMenus'
 import AdminStock from './pages/AdminStock'
 import AdminVales from './pages/AdminVales'
+import AdminWebhooks from './pages/AdminWebhooks'
 import AdminDashboard from './pages/AdminDashboard'
 import AdminConfig from './pages/AdminConfig'
 import SuperAdminLogin from './pages/SuperAdminLogin'
@@ -41,6 +42,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/admin/menus/:restaurantId" element={<AdminMenus />} />
         <Route path="/admin/stock/:restaurantId" element={<AdminStock />} />
         <Route path="/admin/vales/:restaurantId" element={<AdminVales />} />
+        <Route path="/admin/webhooks/:restaurantId" element={<AdminWebhooks />} />
         <Route path="/admin/dashboard/:restaurantId" element={<AdminDashboard />} />
         <Route path="/admin/config/:restaurantId" element={<AdminConfig />} />
         <Route path="/superadmin/login" element={<SuperAdminLogin />} />
