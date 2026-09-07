@@ -7,10 +7,13 @@ import { playWaiterBell, unlockAudio } from '../lib/sound'
 import CuentaMesa from '../components/CuentaMesa'
 import QRCode from 'qrcode'
 
-// URL desde donde se está viendo el panel en cada momento (Test o
-// Producción) — así el QR generado siempre apunta al entorno
-// correcto, no queda fijo a un solo dominio.
-const BASE_URL = window.location.origin
+// Dominios reales de producción — si el panel se ve desde cualquier
+// otro host (preview de staging, localhost) seguimos usando ese mismo
+// origen para el QR, para no mezclar datos de prueba con el dominio
+// público. Solo en producción de verdad tiene sentido usar el
+// subdominio propio del restaurante (apunta siempre a la app de
+// producción, sin importar desde qué entorno se genera el QR).
+const HOSTS_PRODUCCION = ['restomind.app', 'restomind-mesa.vercel.app']
 const ZONAS = ['interior', 'terraza', 'privado', 'barra']
 
 // Posición de arranque (en % del lienzo) para una mesa que todavía no
@@ -101,6 +104,18 @@ export default function AdminMesas() {
   const navigate = useNavigate()
   const { tieneModulo } = useRestaurantModulos(restaurantId)
   const [restaurant, setRestaurant] = useState(null)
+
+  // Con subdominio propio configurado y viendo el panel desde producción
+  // de verdad, el QR usa ese dominio de marca en vez del de Vercel —
+  // sigue apuntando siempre a producción, sin importar el entorno desde
+  // el que se genera.
+  function urlBase(rest = restaurant) {
+    if (rest?.subdominio && HOSTS_PRODUCCION.includes(window.location.hostname)) {
+      return `https://${rest.subdominio}.restomind.app`
+    }
+    return window.location.origin
+  }
+
   const [tables, setTables] = useState([])
   const [qrUrls, setQrUrls] = useState({})
   const [sessions, setSessions] = useState({}) // table_id -> sesión activa
@@ -210,14 +225,14 @@ export default function AdminMesas() {
   }
 
   async function loadData() {
-    const { data: rest } = await supabase.from('restaurants').select('nombre, moneda, config').eq('id', restaurantId).single()
+    const { data: rest } = await supabase.from('restaurants').select('nombre, moneda, config, subdominio').eq('id', restaurantId).single()
     setRestaurant(rest)
     const { data: tabs, error: err } = await supabase
       .from('tables').select('id, numero, zona, capacidad, qr_token, activa, pos_x, pos_y, forma, necesita_limpieza, limpieza_progreso')
       .eq('restaurant_id', restaurantId).order('numero')
     if (err) { setError(err.message); setLoading(false); return }
     setTables(tabs || [])
-    generateQRs(tabs || [])
+    generateQRs(tabs || [], rest)
     await loadSessions()
     await loadWaiterCalls()
     await loadReservasHoy()
@@ -450,10 +465,11 @@ export default function AdminMesas() {
     setCuentaModal(null)
   }
 
-  async function generateQRs(tabs) {
+  async function generateQRs(tabs, rest) {
+    const base = urlBase(rest)
     const urls = {}
     for (const t of tabs) {
-      const url = `${BASE_URL}/mesa/${t.qr_token}`
+      const url = `${base}/mesa/${t.qr_token}`
       urls[t.id] = await QRCode.toDataURL(url, { width: 150, margin: 1, color: { dark: '#000', light: '#fff' } })
     }
     setQrUrls(urls)
@@ -472,7 +488,7 @@ export default function AdminMesas() {
       .insert({ restaurant_id: restaurantId, numero: parseInt(newNumero), zona: newZona, capacidad: parseInt(newCapacidad), pos_x, pos_y, forma: newForma })
       .select().single()
     if (err) { setError(err.message); setAdding(false); return }
-    const url = `${BASE_URL}/mesa/${data.qr_token}`
+    const url = `${urlBase()}/mesa/${data.qr_token}`
     const qr = await QRCode.toDataURL(url, { width: 150, margin: 1, color: { dark: '#000', light: '#fff' } })
     setTables(prev => [...prev, data].sort((a, b) => a.numero - b.numero))
     setQrUrls(prev => ({ ...prev, [data.id]: qr }))
@@ -531,7 +547,7 @@ export default function AdminMesas() {
     if (err) { setError(err.message); return }
 
     setTables(prev => prev.map(t => t.id === table.id ? { ...t, qr_token: newToken } : t))
-    const url = `${BASE_URL}/mesa/${newToken}`
+    const url = `${urlBase()}/mesa/${newToken}`
     const qr = await QRCode.toDataURL(url, { width: 150, margin: 1, color: { dark: '#000', light: '#fff' } })
     setQrUrls(prev => ({ ...prev, [table.id]: qr }))
   }
