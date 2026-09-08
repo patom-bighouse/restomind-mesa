@@ -82,7 +82,7 @@ create or replace function fn_disparar_webhooks(p_restaurant_id uuid, p_evento t
 returns void
 language plpgsql
 security definer
-set search_path to 'public'
+set search_path to 'public', 'extensions'
 as $$
 declare
   v_webhook record;
