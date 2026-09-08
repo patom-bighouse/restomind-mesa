@@ -102,7 +102,7 @@ begin
     );
     -- Firma HMAC-SHA256 del cuerpo tal cual se envía, para que quien
     -- lo reciba pueda verificar que viene de verdad de Restomind.
-    v_firma := encode(hmac(v_cuerpo::text, v_webhook.secreto, 'sha256'), 'hex');
+    v_firma := encode(hmac(v_cuerpo::text::bytea, v_webhook.secreto::bytea, 'sha256'), 'hex');
 
     select net.http_post(
       url := v_webhook.url,
