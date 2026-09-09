@@ -404,19 +404,12 @@ export default function Mesa() {
           .single()
         setRestaurant(rest)
 
-        // Antes usábamos .maybeSingle(), que lanza error si llegara a haber
-        // más de una fila 'abierta' para la misma mesa (p. ej. si quedó una
-        // sesión duplicada de una prueba anterior). Ese error no se estaba
-        // capturando, así que la mesa se veía como "sin sesión" aunque sí
-        // hubiera una abierta. Con order+limit(1) nos quedamos siempre con
-        // la más reciente y no rompemos la carga si hay filas duplicadas.
+        // La sesión abierta de esta mesa se resuelve validando el
+        // qr_token del lado del servidor (fn_sesion_abierta_por_token)
+        // en vez de leer table_sessions directo — así nadie puede
+        // listar sesiones de otras mesas sin conocer su token.
         const { data: sessionRows, error: sessErr } = await supabase
-          .from('table_sessions')
-          .select('id, estado, abierta_at, cliente_telefono, cliente_nombre, comensales')
-          .eq('table_id', tableData.id)
-          .eq('estado', 'abierta')
-          .order('abierta_at', { ascending: false })
-          .limit(1)
+          .rpc('fn_sesion_abierta_por_token', { p_qr_token: token })
         if (sessErr) throw sessErr
         setSession(sessionRows && sessionRows.length > 0 ? sessionRows[0] : null)
 
@@ -447,45 +440,44 @@ export default function Mesa() {
         event: 'UPDATE', schema: 'public', table: 'tables',
         filter: `id=eq.${table.id}`
       }, (payload) => setTable(prev => ({ ...prev, ...payload.new })))
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'table_sessions',
-        filter: `table_id=eq.${table.id}`
-      }, (payload) => {
-        // Una sesión borrada (no actualizada a 'cerrada') significa
-        // que se cerró sin ningún pedido — no hay nada que calificar.
-        if (payload.eventType === 'DELETE') { sesionBorradaSinResenaRef.current = true; setSession(null); return }
-        const row = payload.new
-        if (row.estado === 'abierta') setSession(row)
-        else setSession(prev => (prev && prev.id === row.id) ? null : prev)
-      })
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
   }, [table?.restaurant_id, table?.id])
 
-  // Respaldo del cierre de mesa: el cliente anónimo no puede leer
-  // table_sessions una vez cerrada (la política RLS de anon solo
-  // permite estado = 'abierta'), así que ni el Realtime de arriba ni
-  // un select directo le avisan cuando eso pasa. Mientras haya una
-  // sesión que creemos abierta, la re-chequeamos cada 15s vía RPC
-  // (que sí puede ver el estado real, validando el qr_token).
+  // table_sessions ya no tiene una política de SELECT abierta para
+  // anon (para que nadie pueda listar teléfono/nombre de otras mesas
+  // sin conocer su qr_token) — eso significa que tampoco hay Realtime
+  // para esta tabla. Se sondea cada 4s vía fn_sesion_abierta_por_token
+  // (que sí valida el token) para detectar tanto que se abrió una
+  // sesión nueva como que la actual se cerró.
   useEffect(() => {
-    if (!session?.id) return
+    if (!table?.id) return
     const interval = setInterval(async () => {
-      const { data: estado } = await supabase.rpc('fn_estado_sesion_mesa', {
-        p_session_id: session.id,
-        p_qr_token: token,
-      })
-      if (!estado) {
-        // La fila ya no existe: se cerró sin pedidos y se borró.
-        sesionBorradaSinResenaRef.current = true
-        setSession(prev => (prev && prev.id === session.id) ? null : prev)
-      } else if (estado !== 'abierta') {
-        setSession(prev => (prev && prev.id === session.id) ? null : prev)
+      const { data: rows } = await supabase
+        .rpc('fn_sesion_abierta_por_token', { p_qr_token: token })
+      const row = rows && rows.length > 0 ? rows[0] : null
+      if (!row) {
+        if (session) {
+          // Ya no hay sesión abierta para esta mesa: puede ser que se
+          // cerró con pedidos (pedir reseña) o que se borró sin ninguno
+          // (no hay nada que calificar) — fn_sesion_abierta_por_token
+          // no distingue esto (solo devuelve sesiones 'abierta'), así
+          // que en este único momento de transición se confirma con
+          // fn_estado_sesion_mesa, que sí ve el estado real de esa
+          // sesión puntual validando el mismo qr_token.
+          const { data: estado } = await supabase.rpc('fn_estado_sesion_mesa', {
+            p_session_id: session.id, p_qr_token: token,
+          })
+          if (!estado) sesionBorradaSinResenaRef.current = true
+        }
+        setSession(prev => prev ? null : prev)
+      } else {
+        setSession(prev => (prev && prev.id === row.id && prev.cliente_telefono === row.cliente_telefono && prev.cliente_nombre === row.cliente_nombre && prev.comensales === row.comensales) ? prev : row)
       }
-    }, 15000)
+    }, 4000)
     return () => clearInterval(interval)
-  }, [session?.id, token])
+  }, [table?.id, token, session])
 
   // Cada línea del carrito queda atada a un comensal — dos unidades
   // del mismo plato para personas distintas son líneas separadas, no
@@ -728,12 +720,7 @@ export default function Mesa() {
       const esMesaCerrada = /no existe o ya está cerrada/i.test(e.message || '')
       if (esMesaCerrada) {
         const { data: sessionActualRows } = await supabase
-          .from('table_sessions')
-          .select('id, estado, abierta_at, cliente_telefono, cliente_nombre, comensales')
-          .eq('table_id', table.id)
-          .eq('estado', 'abierta')
-          .order('abierta_at', { ascending: false })
-          .limit(1)
+          .rpc('fn_sesion_abierta_por_token', { p_qr_token: token })
         setSession(sessionActualRows && sessionActualRows.length > 0 ? sessionActualRows[0] : null)
         setSendError(null)
         setOverlay(null)
