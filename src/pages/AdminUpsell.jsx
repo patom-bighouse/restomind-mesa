@@ -36,7 +36,7 @@ const S = {
 export default function AdminUpsell() {
   const { restaurantId } = useParams()
   const navigate = useNavigate()
-  const { tieneModulo } = useRestaurantModulos(restaurantId)
+  const { tieneModulo, loading: modulosLoading } = useRestaurantModulos(restaurantId)
   const [restaurant, setRestaurant] = useState(null)
   const [categories, setCategories] = useState([])
   const [items, setItems] = useState([])
@@ -123,7 +123,25 @@ export default function AdminUpsell() {
     navigate('/admin/login')
   }
 
-  if (loading) return <div style={S.app}><div style={S.loading}>Cargando...</div></div>
+  if (loading || modulosLoading) return <div style={S.app}><div style={S.loading}>Cargando...</div></div>
+
+  if (!tieneModulo('marketing_fidelizacion')) {
+    return (
+      <div style={S.app}>
+        <div style={S.header}>
+          <div>
+            <div style={S.logo}>Restomind Admin</div>
+            <div style={S.restName}>{restaurant?.nombre}</div>
+          </div>
+          <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
+        </div>
+        <div style={S.content}>
+          <div style={S.sectionTitle}>Upsell</div>
+          <div style={S.sectionHint}>Este restaurante no tiene activo el módulo de marketing y fidelización.</div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={S.app}>
@@ -137,15 +155,15 @@ export default function AdminUpsell() {
           {tieneModulo('reportes') && <a href={`/admin/dashboard/${restaurantId}`} style={S.navTab(false)}>Dashboard</a>}
           <a href={`/admin/mesas/${restaurantId}`} style={S.navTab(false)}>Mesas</a>
           <a href={`/admin/carta/${restaurantId}`} style={S.navTab(false)}>Carta</a>
-          <a href={`/admin/menus/${restaurantId}`} style={S.navTab(false)}>Menús</a>
+          {tieneModulo('multi_menu') && <a href={`/admin/menus/${restaurantId}`} style={S.navTab(false)}>Menús</a>}
           {tieneModulo('control_stock') && <a href={`/admin/stock/${restaurantId}`} style={S.navTab(false)}>Stock</a>}
           <a href={`/admin/clientes/${restaurantId}`} style={S.navTab(false)}>Clientes</a>
-          <a href={`/admin/vales/${restaurantId}`} style={S.navTab(false)}>Vales</a>
+          {tieneModulo('marketing_fidelizacion') && <a href={`/admin/vales/${restaurantId}`} style={S.navTab(false)}>Vales</a>}
           {tieneModulo('webhooks') && <a href={`/admin/webhooks/${restaurantId}`} style={S.navTab(false)}>Webhooks</a>}
-          <a href={`/admin/upsell/${restaurantId}`} style={S.navTab(true)}>Upsell</a>
-          <a href={`/admin/reservas/${restaurantId}`} style={S.navTab(false)}>Reservas</a>
+          {tieneModulo('marketing_fidelizacion') && <a href={`/admin/upsell/${restaurantId}`} style={S.navTab(true)}>Upsell</a>}
+          {tieneModulo('reservas') && <a href={`/admin/reservas/${restaurantId}`} style={S.navTab(false)}>Reservas</a>}
           <a href={`/admin/limpieza/${restaurantId}`} style={S.navTab(false)}>Limpieza</a>
-          <a href={`/admin/fidelizacion/${restaurantId}`} style={S.navTab(false)}>Fidelización</a>
+          {tieneModulo('marketing_fidelizacion') && <a href={`/admin/fidelizacion/${restaurantId}`} style={S.navTab(false)}>Fidelización</a>}
           <a href={`/admin/config/${restaurantId}`} style={S.navTab(false)}>Configuración</a>
           <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
         </div>
