@@ -254,7 +254,9 @@ export default function Camarero() {
       if (!prev || prev.id !== table.id) return prev
       return completo ? null : { ...prev, ...patch }
     })
-    await supabase.from('tables').update(patch).eq('id', table.id)
+    await supabase.rpc('fn_camarero_toggle_limpieza', {
+      p_table_id: table.id, p_restaurant_id: restaurantId, p_paso_id: pasoId,
+    })
   }
 
   // Avisos de mesas por limpiar / llamadas al camarero pendientes: como
