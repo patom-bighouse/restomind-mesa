@@ -225,10 +225,7 @@ export default function Camarero() {
     setTables(tabs || [])
 
     const { data: sess } = await supabase
-      .from('table_sessions')
-      .select('id, table_id, comensales, camarero_id, cliente_telefono, cliente_nombre')
-      .eq('restaurant_id', restaurantId)
-      .eq('estado', 'abierta')
+      .rpc('fn_camarero_listar_sesiones', { p_restaurant_id: restaurantId })
     const map = {}
     ;(sess || []).forEach(s => { map[s.table_id] = s })
     setSessions(map)
@@ -315,16 +312,25 @@ export default function Camarero() {
     await loadAlertas()
   }
 
-  // Realtime: refresca la lista de mesas cuando cambian sesiones (otra
-  // mesa se abre/cierra, o se la toma otro camarero) sin necesitar F5.
+  // table_sessions ya no tiene una política de SELECT abierta para
+  // anon (para que un cliente no pueda listar sesiones de otra mesa
+  // sin su qr_token) — eso también le quita el Realtime a esta tabla,
+  // así que la lista de mesas se refresca por sondeo cada 5s en vez
+  // de por evento (otra mesa se abre/cierra, o se la toma otro
+  // camarero).
+  useEffect(() => {
+    if (!camarero || !restaurantId) return
+    const interval = setInterval(() => { loadTablas() }, 5000)
+    return () => clearInterval(interval)
+  }, [camarero, restaurantId])
+
+  // Realtime que sigue funcionando (tables sí tiene SELECT abierto
+  // para anon): mantiene sincronizado el checklist de limpieza entre
+  // pestañas/dispositivos distintos.
   useEffect(() => {
     if (!camarero || !restaurantId) return
     const channel = supabase
       .channel(`camarero-mesas-${restaurantId}`)
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'table_sessions',
-        filter: `restaurant_id=eq.${restaurantId}`,
-      }, () => { loadTablas() })
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'tables',
         filter: `restaurant_id=eq.${restaurantId}`,
@@ -361,18 +367,18 @@ export default function Camarero() {
       if (!session) {
         // Mesa sin sesión: el camarero la abre él mismo, asignándosela.
         const { data, error: err } = await supabase
-          .from('table_sessions')
-          .insert({ table_id: table.id, restaurant_id: restaurantId, comensales: table.capacidad, camarero_id: camarero.id })
-          .select('id, table_id, comensales, camarero_id, cliente_telefono, cliente_nombre')
-          .single()
+          .rpc('fn_camarero_abrir_mesa', {
+            p_table_id: table.id, p_restaurant_id: restaurantId,
+            p_camarero_id: camarero.id, p_comensales: table.capacidad,
+          })
         if (err) throw err
-        setSelectedTable({ ...table, session: data })
+        setSelectedTable({ ...table, session: data && data[0] })
       } else if (!session.camarero_id) {
         // Mesa abierta desde el Dashboard, sin dueño: la toma este camarero.
         const { error: err } = await supabase
-          .from('table_sessions')
-          .update({ camarero_id: camarero.id })
-          .eq('id', session.id)
+          .rpc('fn_camarero_tomar_mesa', {
+            p_table_session_id: session.id, p_restaurant_id: restaurantId, p_camarero_id: camarero.id,
+          })
         if (err) throw err
         setSelectedTable({ ...table, session: { ...session, camarero_id: camarero.id } })
       } else if (session.camarero_id === camarero.id) {
@@ -452,9 +458,10 @@ export default function Camarero() {
     setClienteError(null)
     const nuevoNombre = nombreInput.trim() || selectedTable.session.cliente_nombre || null
     const { error: err } = await supabase
-      .from('table_sessions')
-      .update({ cliente_telefono: telefono, cliente_nombre: nuevoNombre })
-      .eq('id', selectedTable.session.id)
+      .rpc('fn_camarero_editar_cliente_sesion', {
+        p_table_session_id: selectedTable.session.id, p_restaurant_id: restaurantId, p_camarero_id: camarero.id,
+        p_telefono: telefono, p_nombre: nuevoNombre,
+      })
     setGuardandoCliente(false)
     if (err) { setClienteError(err.message); return }
     setSelectedTable(prev => prev ? { ...prev, session: { ...prev.session, cliente_telefono: telefono, cliente_nombre: nuevoNombre } } : prev)
