@@ -22,10 +22,11 @@ const S = {
   closeBtn: { width: '100%', background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 10, padding: 12, fontSize: 14, color: '#8a7560', cursor: 'pointer', fontFamily: "'Inter', sans-serif", marginTop: 16 },
 }
 
-// El checklist ya se podía marcar de forma anónima desde que se
-// construyó (sql/checklist_limpieza.sql) — acá solo se filtra la vista
-// según el permiso 'limpieza' que le diste a esta persona en AdminConfig,
-// no hace falta ninguna función "caja fuerte" nueva para esto.
+// El checklist se puede marcar de forma anónima desde que se construyó
+// (sql/checklist_limpieza.sql), acotado a las mesas de este restaurante
+// vía fn_camarero_toggle_limpieza (security definer) — acá solo se
+// filtra la vista según el permiso 'limpieza' que le diste a esta
+// persona en AdminConfig.
 export default function CamareroLimpieza({ restaurantId, onVolver }) {
   const [tables, setTables] = useState([])
   const [pasos, setPasos] = useState([])
@@ -80,7 +81,9 @@ export default function CamareroLimpieza({ restaurantId, onVolver }) {
       setTables(prev => prev.map(t => t.id === table.id ? { ...t, ...patch } : t))
       setModalTable(prev => prev && prev.id === table.id ? { ...prev, ...patch } : prev)
     }
-    await supabase.from('tables').update(patch).eq('id', table.id)
+    await supabase.rpc('fn_camarero_toggle_limpieza', {
+      p_table_id: table.id, p_restaurant_id: restaurantId, p_paso_id: pasoId,
+    })
   }
 
   if (loading) return <div style={S.app}><div style={S.loading}>Cargando...</div></div>

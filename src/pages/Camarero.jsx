@@ -101,6 +101,8 @@ export default function Camarero() {
   const [restaurant, setRestaurant] = useState(null)
   const [camarero, setCamarero] = useState(null) // { id, nombre, permisos }
   const [seccionActiva, setSeccionActiva] = useState(null) // 'pedidos' | 'clientes' | null (selector)
+  const [listaCamareros, setListaCamareros] = useState([]) // [{id, nombre}] para la pantalla "¿quién eres?"
+  const [loginSel, setLoginSel] = useState(null) // {id, nombre} elegido, antes de pedir el PIN
   const [pinInput, setPinInput] = useState('')
   const [pinError, setPinError] = useState(null)
   const [verificando, setVerificando] = useState(false)
@@ -152,7 +154,13 @@ export default function Camarero() {
 
   useEffect(() => {
     loadRestaurant()
+    loadListaCamareros()
   }, [restaurantId])
+
+  async function loadListaCamareros() {
+    const { data } = await supabase.rpc('fn_listar_camareros_nombres', { p_restaurant_id: restaurantId })
+    setListaCamareros(data || [])
+  }
 
   async function loadRestaurant() {
     const { data } = await supabase.from('restaurants').select('nombre, moneda, config').eq('id', restaurantId).single()
@@ -178,10 +186,19 @@ export default function Camarero() {
     setVerificando(true)
     const { data, error: err } = await supabase.rpc('fn_verificar_camarero_pin', {
       p_restaurant_id: restaurantId,
+      p_camarero_id: loginSel.id,
       p_pin: pin,
     })
     setVerificando(false)
-    if (err || !data || data.length === 0) {
+    if (err) {
+      // Mensajes propios de la función (PIN incorrecto no lanza
+      // excepción, solo no devuelve fila — esto es "demasiados
+      // intentos" u otro error real).
+      setPinError(err.message)
+      setPinInput('')
+      return
+    }
+    if (!data || data.length === 0) {
       setPinError('PIN incorrecto.')
       setPinInput('')
       return
@@ -201,9 +218,22 @@ export default function Camarero() {
 
   function cambiarCamarero() {
     setCamarero(null)
+    setLoginSel(null)
     setSeccionActiva(null)
     setSelectedTable(null)
     setPinInput('')
+  }
+
+  function elegirLogin(persona) {
+    setLoginSel(persona)
+    setPinInput('')
+    setPinError(null)
+  }
+
+  function volverAlSelectorLogin() {
+    setLoginSel(null)
+    setPinInput('')
+    setPinError(null)
   }
 
   // Si tenía más de un permiso, vuelve al selector; si era el único,
@@ -254,7 +284,9 @@ export default function Camarero() {
       if (!prev || prev.id !== table.id) return prev
       return completo ? null : { ...prev, ...patch }
     })
-    await supabase.from('tables').update(patch).eq('id', table.id)
+    await supabase.rpc('fn_camarero_toggle_limpieza', {
+      p_table_id: table.id, p_restaurant_id: restaurantId, p_paso_id: pasoId,
+    })
   }
 
   // Avisos de mesas por limpiar / llamadas al camarero pendientes: como
@@ -745,8 +777,12 @@ export default function Camarero() {
     }
   }
 
-  // ---------- Render: login ----------
-  if (!camarero) {
+  // ---------- Render: login — paso 1, elegir quién sos ----------
+  // Se pide el nombre antes que el PIN para que un bloqueo por
+  // intentos fallidos afecte solo a esa persona, no a todo el
+  // restaurante (fn_verificar_camarero_pin cuenta los fallos por
+  // camarero_id).
+  if (!camarero && !loginSel) {
     return (
       <div style={S.app}>
         <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
@@ -757,7 +793,35 @@ export default function Camarero() {
           </div>
         </div>
         <div style={S.center}>
-          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: '#e8c97a' }}>Introduce tu PIN</div>
+          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: '#e8c97a', marginBottom: 6 }}>¿Quién eres?</div>
+          {listaCamareros.length === 0 ? (
+            <div style={{ fontSize: 13, color: '#8a7560', textAlign: 'center' }}>Todavía no hay personal cargado. Pídele al dueño que te dé de alta desde Configuración.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', maxWidth: 280 }}>
+              {listaCamareros.map(p => (
+                <button key={p.id} onClick={() => elegirLogin(p)} style={S.sectionBtn}>{p.nombre}</button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ---------- Render: login — paso 2, PIN de la persona elegida ----------
+  if (!camarero) {
+    return (
+      <div style={S.app}>
+        <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
+        <div style={S.header}>
+          <div>
+            <div style={S.logo}>{restaurant?.nombre || 'Restomind'}</div>
+            <div style={S.sub}>Pantalla de camarero</div>
+          </div>
+          <button style={S.logoutBtn} onClick={volverAlSelectorLogin}>← No soy yo</button>
+        </div>
+        <div style={S.center}>
+          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: '#e8c97a' }}>PIN de {loginSel.nombre}</div>
           <div style={S.pinDots}>
             {[0, 1, 2, 3].map(i => <div key={i} style={S.pinDot(i < pinInput.length)} />)}
           </div>

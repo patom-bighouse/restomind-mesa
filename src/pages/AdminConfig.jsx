@@ -173,7 +173,7 @@ export default function AdminConfig() {
   async function loadCamareros() {
     const { data } = await supabase
       .from('camareros')
-      .select('id, nombre, pin, activo, permisos')
+      .select('id, nombre, activo, permisos')
       .eq('restaurant_id', restaurantId)
       .order('nombre')
     setCamareros(data || [])
@@ -190,17 +190,24 @@ export default function AdminConfig() {
     if (!nombre) { setCamareroError('Introduce el nombre del camarero.'); return }
     if (!/^\d{4}$/.test(pin)) { setCamareroError('El PIN debe ser de 4 dígitos numéricos.'); return }
     if (nuevoCamareroPermisos.length === 0) { setCamareroError('Marca al menos un permiso.'); return }
-    const { error: err } = await supabase
-      .from('camareros')
-      .insert({ restaurant_id: restaurantId, nombre, pin, permisos: nuevoCamareroPermisos })
-    if (err) {
-      setCamareroError(err.code === '23505' ? 'Ya existe un camarero con ese PIN. Elige otro.' : err.message)
-      return
-    }
+    const { error: err } = await supabase.rpc('fn_crear_camarero', {
+      p_restaurant_id: restaurantId, p_nombre: nombre, p_pin: pin, p_permisos: nuevoCamareroPermisos,
+    })
+    if (err) { setCamareroError(err.message); return }
     setNuevoCamareroNombre('')
     setNuevoCamareroPin('')
     setNuevoCamareroPermisos(['pedidos'])
     await loadCamareros()
+  }
+
+  async function resetearPinCamarero(camarero) {
+    const nuevoPin = prompt(`Nuevo PIN de 4 dígitos para ${camarero.nombre}:`)
+    if (nuevoPin === null) return
+    const { error: err } = await supabase.rpc('fn_resetear_pin_camarero', {
+      p_camarero_id: camarero.id, p_restaurant_id: restaurantId, p_pin_nuevo: nuevoPin.trim(),
+    })
+    if (err) { alert(err.message); return }
+    alert('PIN actualizado.')
   }
 
   async function toggleCamareroActivo(camarero) {
@@ -444,10 +451,12 @@ export default function AdminConfig() {
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                     <div>
                       <span style={{ fontSize: 14, color: c.activo ? '#f0e8d8' : '#666' }}>{c.nombre}</span>
-                      <span style={{ fontSize: 12, color: '#7a6a50', marginLeft: 10 }}>PIN: {c.pin}</span>
                       {!c.activo && <span style={{ fontSize: 11, color: '#e87a7a', marginLeft: 10 }}>Inactivo</span>}
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
+                      <button style={S.franjaToggle(false)} onClick={() => resetearPinCamarero(c)}>
+                        Restablecer PIN
+                      </button>
                       <button style={S.franjaToggle(c.activo)} onClick={() => toggleCamareroActivo(c)}>
                         {c.activo ? 'Desactivar' : 'Activar'}
                       </button>
