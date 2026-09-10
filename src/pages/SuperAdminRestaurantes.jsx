@@ -198,8 +198,8 @@ export default function SuperAdminRestaurantes() {
       setError('Nombre, email y contraseña son obligatorios.')
       return
     }
-    if (form.password.length < 6) {
-      setError('La contraseña debe tener al menos 6 caracteres.')
+    if (form.password.length < 8) {
+      setError('La contraseña debe tener al menos 8 caracteres.')
       return
     }
     if (form.iban.trim() && !isValidIban(form.iban)) {
@@ -465,7 +465,7 @@ export default function SuperAdminRestaurantes() {
                     <input style={S.input} type="email" value={form.email} onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))} placeholder="dueno@restaurante.com" />
 
                     <label style={S.label}>Contraseña inicial *</label>
-                    <input style={S.input} type="text" value={form.password} onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))} placeholder="mínimo 6 caracteres" />
+                    <input style={S.input} type="text" value={form.password} onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))} placeholder="mínimo 8 caracteres, con letras y números" />
                     <div style={S.hint}>Compártesela al cliente; podrá usarla en /admin/login</div>
                   </>
                 ) : (
