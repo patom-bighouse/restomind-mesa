@@ -137,7 +137,7 @@ begin
   select * into v_bloqueo from camarero_pin_intentos where restaurant_id = p_restaurant_id;
 
   if v_bloqueo.bloqueado_hasta is not null and v_bloqueo.bloqueado_hasta > now() then
-    raise exception 'Demasiados intentos fallidos. Probá de nuevo en unos minutos.';
+    raise exception 'Demasiados intentos fallidos. Inténtalo de nuevo en unos minutos.';
   end if;
 
   select c.id, c.nombre, c.permisos into v_match

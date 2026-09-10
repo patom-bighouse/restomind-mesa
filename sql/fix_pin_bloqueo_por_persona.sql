@@ -66,7 +66,7 @@ begin
   select * into v_bloqueo from camarero_pin_intentos where camarero_id = p_camarero_id;
 
   if v_bloqueo.bloqueado_hasta is not null and v_bloqueo.bloqueado_hasta > now() then
-    raise exception 'Demasiados intentos fallidos. Probá de nuevo en unos minutos.';
+    raise exception 'Demasiados intentos fallidos. Inténtalo de nuevo en unos minutos.';
   end if;
 
   if crypt(p_pin, v_match.pin_hash) = v_match.pin_hash then
