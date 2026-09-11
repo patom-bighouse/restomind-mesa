@@ -18,6 +18,7 @@ const S = {
   planesRow: { display: 'flex', gap: 14, marginBottom: 28, flexWrap: 'wrap' },
   planCard: { flex: '1 1 220px', background: '#161616', border: '0.5px solid #2a2a2a', borderRadius: 12, padding: 16 },
   planNombre: { fontFamily: "'Playfair Display', serif", fontSize: 15, color: '#e8c97a', marginBottom: 6 },
+  planPrecio: { fontSize: 20, fontWeight: 600, color: '#f0f0f0', marginBottom: 6 },
   planDesc: { fontSize: 12, color: '#8a8a8a', lineHeight: 1.5 },
 
   table: { width: '100%', borderCollapse: 'collapse' },
@@ -48,7 +49,7 @@ export default function SuperAdminPlanes() {
 
   async function loadTodo() {
     const [{ data: pl }, { data: mo }] = await Promise.all([
-      supabase.from('planes').select('key, nombre, descripcion, orden').order('orden'),
+      supabase.from('planes').select('key, nombre, descripcion, orden, precio').order('orden'),
       supabase.from('modulos').select('key, nombre, descripcion, requiere, plan').order('orden'),
     ])
     setPlanes(pl || [])
@@ -102,6 +103,7 @@ export default function SuperAdminPlanes() {
           {planes.map(p => (
             <div key={p.key} style={S.planCard}>
               <div style={S.planNombre}>{p.nombre}</div>
+              {p.precio != null && <div style={S.planPrecio}>{p.precio}€<span style={{ fontSize: 12, color: '#8a8a8a', fontWeight: 400 }}>/mes</span></div>}
               <div style={S.planDesc}>{p.descripcion}</div>
             </div>
           ))}
