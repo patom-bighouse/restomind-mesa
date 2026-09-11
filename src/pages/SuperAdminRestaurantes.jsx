@@ -82,13 +82,36 @@ export default function SuperAdminRestaurantes() {
   const [modulosCatalogo, setModulosCatalogo] = useState([])
   const [modulosActivos, setModulosActivos] = useState(new Set())
   const [editTab, setEditTab] = useState('datos') // 'datos' | 'facturacion' | 'modulos'
+  const [planes, setPlanes] = useState([])
+  const [aplicandoPlan, setAplicandoPlan] = useState(null) // key del plan que se está aplicando, o null
 
   useEffect(() => { checkAuth() }, [])
-  useEffect(() => { loadModulosCatalogo() }, [])
+  useEffect(() => { loadModulosCatalogo(); loadPlanes() }, [])
 
   async function loadModulosCatalogo() {
-    const { data } = await supabase.from('modulos').select('key, nombre, descripcion, requiere').order('orden')
+    const { data } = await supabase.from('modulos').select('key, nombre, descripcion, requiere, plan').order('orden')
     setModulosCatalogo(data || [])
+  }
+
+  async function loadPlanes() {
+    const { data } = await supabase.from('planes').select('key, nombre, descripcion, orden').order('orden')
+    setPlanes(data || [])
+  }
+
+  async function aplicarPlan(planKey) {
+    if (!editingId) return
+    setAplicandoPlan(planKey)
+    const { error: err } = await supabase.rpc('fn_asignar_plan', {
+      p_restaurant_id: editingId, p_plan_key: planKey,
+    })
+    if (err) { setError(err.message); setAplicandoPlan(null); return }
+    const { data: modActivos } = await supabase
+      .from('restaurant_modulos')
+      .select('modulo_key')
+      .eq('restaurant_id', editingId)
+      .eq('activo', true)
+    setModulosActivos(new Set((modActivos || []).map(m => m.modulo_key)))
+    setAplicandoPlan(null)
   }
 
   async function checkAuth() {
@@ -390,7 +413,10 @@ export default function SuperAdminRestaurantes() {
           <div style={S.logo}>Restomind</div>
           <div style={S.sub}>Super Admin</div>
         </div>
-        <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <a href="/superadmin/planes" style={S.linkBtn}>Planes</a>
+          <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
+        </div>
       </div>
 
       <div style={S.content}>
@@ -529,6 +555,23 @@ export default function SuperAdminRestaurantes() {
 
             {editTab === 'modulos' && (
               <>
+                {modalMode === 'edit' && planes.length > 0 && (
+                  <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '0.5px solid #2a2a2a' }}>
+                    <div style={S.hint}>Aplicar un plan activa de golpe sus módulos y desactiva el resto — los toggles de abajo siguen disponibles para excepciones puntuales.</div>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                      {planes.map(p => (
+                        <button
+                          key={p.key}
+                          style={{ ...S.linkBtn, cursor: aplicandoPlan ? 'not-allowed' : 'pointer', opacity: aplicandoPlan ? 0.6 : 1 }}
+                          disabled={!!aplicandoPlan}
+                          onClick={() => aplicarPlan(p.key)}
+                        >
+                          {aplicandoPlan === p.key ? 'Aplicando...' : `Aplicar ${p.nombre}`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {modulosCatalogo.map(m => {
                   const activo = modulosActivos.has(m.key)
                   const bloqueadoPorDependencia = m.key !== 'nucleo' && m.requiere && !modulosActivos.has(m.requiere) && !activo
