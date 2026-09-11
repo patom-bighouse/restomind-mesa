@@ -598,15 +598,15 @@ export default function AdminMesas() {
           {tieneModulo('reportes') && <a href={`/admin/dashboard/${restaurantId}`} style={S.navTab(false)}>Dashboard</a>}
           <a href={`/admin/mesas/${restaurantId}`} style={S.navTab(true)}>Mesas</a>
           <a href={`/admin/carta/${restaurantId}`} style={S.navTab(false)}>Carta</a>
-          <a href={`/admin/menus/${restaurantId}`} style={S.navTab(false)}>Menús</a>
+          {tieneModulo('multi_menu') && <a href={`/admin/menus/${restaurantId}`} style={S.navTab(false)}>Menús</a>}
           {tieneModulo('control_stock') && <a href={`/admin/stock/${restaurantId}`} style={S.navTab(false)}>Stock</a>}
           <a href={`/admin/clientes/${restaurantId}`} style={S.navTab(false)}>Clientes</a>
-          <a href={`/admin/vales/${restaurantId}`} style={S.navTab(false)}>Vales</a>
+          {tieneModulo('marketing_fidelizacion') && <a href={`/admin/vales/${restaurantId}`} style={S.navTab(false)}>Vales</a>}
           {tieneModulo('webhooks') && <a href={`/admin/webhooks/${restaurantId}`} style={S.navTab(false)}>Webhooks</a>}
-          <a href={`/admin/upsell/${restaurantId}`} style={S.navTab(false)}>Upsell</a>
-          <a href={`/admin/reservas/${restaurantId}`} style={S.navTab(false)}>Reservas</a>
+          {tieneModulo('marketing_fidelizacion') && <a href={`/admin/upsell/${restaurantId}`} style={S.navTab(false)}>Upsell</a>}
+          {tieneModulo('reservas') && <a href={`/admin/reservas/${restaurantId}`} style={S.navTab(false)}>Reservas</a>}
           <a href={`/admin/limpieza/${restaurantId}`} style={S.navTab(false)}>Limpieza</a>
-          <a href={`/admin/fidelizacion/${restaurantId}`} style={S.navTab(false)}>Fidelización</a>
+          {tieneModulo('marketing_fidelizacion') && <a href={`/admin/fidelizacion/${restaurantId}`} style={S.navTab(false)}>Fidelización</a>}
           <a href={`/admin/config/${restaurantId}`} style={S.navTab(false)}>Configuración</a>
           {restaurant?.config?.modo_pedidos === 'camarero' && (
             <a href={`/camarero/${restaurantId}`} target="_blank" rel="noreferrer" style={S.navTab(false)}>Pantalla camarero ↗</a>

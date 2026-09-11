@@ -21,6 +21,7 @@ import AdminDashboard from './pages/AdminDashboard'
 import AdminConfig from './pages/AdminConfig'
 import SuperAdminLogin from './pages/SuperAdminLogin'
 import SuperAdminRestaurantes from './pages/SuperAdminRestaurantes'
+import SuperAdminPlanes from './pages/SuperAdminPlanes'
 import NotFound from './pages/NotFound'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -47,6 +48,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/admin/config/:restaurantId" element={<AdminConfig />} />
         <Route path="/superadmin/login" element={<SuperAdminLogin />} />
         <Route path="/superadmin/restaurantes" element={<SuperAdminRestaurantes />} />
+        <Route path="/superadmin/planes" element={<SuperAdminPlanes />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>

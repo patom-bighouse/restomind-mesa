@@ -314,15 +314,15 @@ export default function AdminConfig() {
           {tieneModulo('reportes') && <a href={`/admin/dashboard/${restaurantId}`} style={S.navTab(false)}>Dashboard</a>}
           <a href={`/admin/mesas/${restaurantId}`} style={S.navTab(false)}>Mesas</a>
           <a href={`/admin/carta/${restaurantId}`} style={S.navTab(false)}>Carta</a>
-          <a href={`/admin/menus/${restaurantId}`} style={S.navTab(false)}>Menús</a>
+          {tieneModulo('multi_menu') && <a href={`/admin/menus/${restaurantId}`} style={S.navTab(false)}>Menús</a>}
           {tieneModulo('control_stock') && <a href={`/admin/stock/${restaurantId}`} style={S.navTab(false)}>Stock</a>}
           <a href={`/admin/clientes/${restaurantId}`} style={S.navTab(false)}>Clientes</a>
-          <a href={`/admin/vales/${restaurantId}`} style={S.navTab(false)}>Vales</a>
+          {tieneModulo('marketing_fidelizacion') && <a href={`/admin/vales/${restaurantId}`} style={S.navTab(false)}>Vales</a>}
           {tieneModulo('webhooks') && <a href={`/admin/webhooks/${restaurantId}`} style={S.navTab(false)}>Webhooks</a>}
-          <a href={`/admin/upsell/${restaurantId}`} style={S.navTab(false)}>Upsell</a>
-          <a href={`/admin/reservas/${restaurantId}`} style={S.navTab(false)}>Reservas</a>
+          {tieneModulo('marketing_fidelizacion') && <a href={`/admin/upsell/${restaurantId}`} style={S.navTab(false)}>Upsell</a>}
+          {tieneModulo('reservas') && <a href={`/admin/reservas/${restaurantId}`} style={S.navTab(false)}>Reservas</a>}
           <a href={`/admin/limpieza/${restaurantId}`} style={S.navTab(false)}>Limpieza</a>
-          <a href={`/admin/fidelizacion/${restaurantId}`} style={S.navTab(false)}>Fidelización</a>
+          {tieneModulo('marketing_fidelizacion') && <a href={`/admin/fidelizacion/${restaurantId}`} style={S.navTab(false)}>Fidelización</a>}
           <a href={`/admin/config/${restaurantId}`} style={S.navTab(true)}>Configuración</a>
           <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
         </div>
@@ -346,23 +346,25 @@ export default function AdminConfig() {
         </div>
 
         {/* Dominio propio para la carta */}
-        <div style={S.infoCard}>
-          <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 4 }}>Dominio propio</div>
-          <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 10 }}>
-            El QR y el enlace de tus mesas usarán este subdominio en vez del genérico de la plataforma.
-            Solo minúsculas, números y guiones.
+        {tieneModulo('marca_propia') && (
+          <div style={S.infoCard}>
+            <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 4 }}>Dominio propio</div>
+            <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 10 }}>
+              El QR y el enlace de tus mesas usarán este subdominio en vez del genérico de la plataforma.
+              Solo minúsculas, números y guiones.
+            </div>
+            <label style={S.infoLabel}>Subdominio</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input
+                style={{ ...S.infoInput, flex: 1 }}
+                value={subdominio}
+                onChange={e => setSubdominio(e.target.value.toLowerCase())}
+                placeholder="la-encina"
+              />
+              <span style={{ fontSize: 13, color: '#7a6a50' }}>.restomind.app</span>
+            </div>
           </div>
-          <label style={S.infoLabel}>Subdominio</label>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <input
-              style={{ ...S.infoInput, flex: 1 }}
-              value={subdominio}
-              onChange={e => setSubdominio(e.target.value.toLowerCase())}
-              placeholder="la-encina"
-            />
-            <span style={{ fontSize: 13, color: '#7a6a50' }}>.restomind.app</span>
-          </div>
-        </div>
+        )}
 
         {/* Modo de cocina */}
         <div style={S.infoCard}>
@@ -435,6 +437,8 @@ export default function AdminConfig() {
         {/* Personal con PIN: camareros, cocina, encargados — cada uno con
             los permisos que le marques. Ya no depende del modo de pedidos,
             porque el PIN ahora sirve para más que solo tomar pedidos. */}
+        {tieneModulo('gestion_equipo') && (
+        <>
         <div style={S.infoCard}>
           <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 4 }}>Personal con PIN</div>
           <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 12 }}>
@@ -567,6 +571,8 @@ export default function AdminConfig() {
             </>
           )}
         </div>
+        </>
+        )}
 
         {/* Control de stock — el toggle es del restaurante, aparte de
             que el módulo esté pagado/activado desde SuperAdmin: puede
