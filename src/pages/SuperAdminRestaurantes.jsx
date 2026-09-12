@@ -84,6 +84,10 @@ export default function SuperAdminRestaurantes() {
   const [editTab, setEditTab] = useState('datos') // 'datos' | 'facturacion' | 'modulos'
   const [planes, setPlanes] = useState([])
   const [aplicandoPlan, setAplicandoPlan] = useState(null) // key del plan que se está aplicando, o null
+  const [trialInfo, setTrialInfo] = useState({ trial_termina_en: null, precio_override: null, precio_override_hasta: null })
+  const [descuentoPrecio, setDescuentoPrecio] = useState('')
+  const [descuentoDias, setDescuentoDias] = useState('30')
+  const [guardandoTrial, setGuardandoTrial] = useState(false)
 
   useEffect(() => { checkAuth() }, [])
   useEffect(() => { loadModulosCatalogo(); loadPlanes() }, [])
@@ -114,6 +118,57 @@ export default function SuperAdminRestaurantes() {
     setAplicandoPlan(null)
   }
 
+  async function iniciarTrial() {
+    if (!editingId) return
+    setGuardandoTrial(true)
+    const { error: err } = await supabase.rpc('fn_iniciar_trial', { p_restaurant_id: editingId, p_dias: 14 })
+    setGuardandoTrial(false)
+    if (err) { setError(err.message); return }
+    const fecha = new Date()
+    fecha.setDate(fecha.getDate() + 14)
+    setTrialInfo(prev => ({ ...prev, trial_termina_en: fecha.toISOString().slice(0, 10) }))
+    await loadRestaurants()
+  }
+
+  async function limpiarTrial() {
+    if (!editingId) return
+    setGuardandoTrial(true)
+    const { error: err } = await supabase.rpc('fn_limpiar_trial', { p_restaurant_id: editingId })
+    setGuardandoTrial(false)
+    if (err) { setError(err.message); return }
+    setTrialInfo(prev => ({ ...prev, trial_termina_en: null }))
+    await loadRestaurants()
+  }
+
+  async function aplicarDescuento() {
+    if (!editingId) return
+    const precio = parseFloat(descuentoPrecio)
+    const dias = parseInt(descuentoDias, 10)
+    if (isNaN(precio) || precio < 0) { setError('Indica un precio válido para el descuento.'); return }
+    if (isNaN(dias) || dias <= 0) { setError('Indica cuántos días dura el descuento.'); return }
+    setGuardandoTrial(true)
+    const { error: err } = await supabase.rpc('fn_aplicar_descuento', {
+      p_restaurant_id: editingId, p_precio: precio, p_dias: dias,
+    })
+    setGuardandoTrial(false)
+    if (err) { setError(err.message); return }
+    const fecha = new Date()
+    fecha.setDate(fecha.getDate() + dias)
+    setTrialInfo(prev => ({ ...prev, precio_override: precio, precio_override_hasta: fecha.toISOString().slice(0, 10) }))
+    setDescuentoPrecio('')
+    await loadRestaurants()
+  }
+
+  async function limpiarDescuento() {
+    if (!editingId) return
+    setGuardandoTrial(true)
+    const { error: err } = await supabase.rpc('fn_limpiar_descuento', { p_restaurant_id: editingId })
+    setGuardandoTrial(false)
+    if (err) { setError(err.message); return }
+    setTrialInfo(prev => ({ ...prev, precio_override: null, precio_override_hasta: null }))
+    await loadRestaurants()
+  }
+
   async function checkAuth() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { navigate('/superadmin/login'); return }
@@ -125,7 +180,7 @@ export default function SuperAdminRestaurantes() {
   async function loadRestaurants() {
     const { data, error: err } = await supabase
       .from('restaurants')
-      .select('id, nombre, slug, whatsapp, activo, created_at, user_id, pais, moneda, direccion, email_dueno')
+      .select('id, nombre, slug, whatsapp, activo, created_at, user_id, pais, moneda, direccion, email_dueno, plan, trial_termina_en, precio_override, precio_override_hasta')
       .order('created_at', { ascending: false })
     if (err) { setError(err.message); setLoading(false); return }
     setRestaurants(data || [])
@@ -162,6 +217,13 @@ export default function SuperAdminRestaurantes() {
       .eq('restaurant_id', rest.id)
       .eq('activo', true)
     setModulosActivos(new Set((modActivos || []).map(m => m.modulo_key)))
+    setTrialInfo({
+      trial_termina_en: rest.trial_termina_en || null,
+      precio_override: rest.precio_override ?? null,
+      precio_override_hasta: rest.precio_override_hasta || null,
+    })
+    setDescuentoPrecio('')
+    setDescuentoDias('30')
     setEditTab('datos')
     setForm({
       nombre: rest.nombre || '',
@@ -432,6 +494,7 @@ export default function SuperAdminRestaurantes() {
               <th style={S.th}>Restaurante</th>
               <th style={S.th}>País / Moneda</th>
               <th style={S.th}>WhatsApp</th>
+              <th style={S.th}>Plan</th>
               <th style={S.th}>Estado</th>
               <th style={S.th}>Accesos</th>
             </tr>
@@ -445,6 +508,19 @@ export default function SuperAdminRestaurantes() {
                 </td>
                 <td style={S.td}>{PAISES.find(p => p.code === rest.pais)?.label || rest.pais || '—'} · {rest.moneda || '—'}</td>
                 <td style={S.td}>{rest.whatsapp || '—'}</td>
+                <td style={S.td}>
+                  <div style={{ fontSize: 13, color: '#f0f0f0', textTransform: 'capitalize' }}>{rest.plan || '—'}</div>
+                  {rest.trial_termina_en && (
+                    <div style={{ fontSize: 11, color: new Date(rest.trial_termina_en) < new Date() ? '#e74c3c' : '#e8c97a', marginTop: 2 }}>
+                      Trial hasta {new Date(rest.trial_termina_en + 'T00:00:00').toLocaleDateString('es-ES')}
+                    </div>
+                  )}
+                  {rest.precio_override_hasta && (
+                    <div style={{ fontSize: 11, color: new Date(rest.precio_override_hasta) < new Date() ? '#e74c3c' : '#7ae8a0', marginTop: 2 }}>
+                      {rest.precio_override}€ hasta {new Date(rest.precio_override_hasta + 'T00:00:00').toLocaleDateString('es-ES')}
+                    </div>
+                  )}
+                </td>
                 <td style={S.td}>
                   <span style={S.badge(rest.activo)} onClick={() => toggleActivo(rest)} role="button" title="Click para cambiar">
                     {rest.activo ? 'Activo' : 'Inactivo'}
@@ -555,6 +631,42 @@ export default function SuperAdminRestaurantes() {
 
             {editTab === 'modulos' && (
               <>
+                {modalMode === 'edit' && (
+                  <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '0.5px solid #2a2a2a' }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: '#e8c97a', marginBottom: 8 }}>Trial y descuentos</div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+                      {trialInfo.trial_termina_en ? (
+                        <>
+                          <span style={{ fontSize: 12, color: new Date(trialInfo.trial_termina_en) < new Date() ? '#e74c3c' : '#e8c97a' }}>
+                            Trial hasta {new Date(trialInfo.trial_termina_en + 'T00:00:00').toLocaleDateString('es-ES')}
+                          </span>
+                          <button style={{ ...S.linkBtn, cursor: 'pointer' }} disabled={guardandoTrial} onClick={limpiarTrial}>Quitar trial</button>
+                        </>
+                      ) : (
+                        <button style={{ ...S.linkBtn, cursor: 'pointer' }} disabled={guardandoTrial} onClick={iniciarTrial}>Iniciar trial de 14 días</button>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      {trialInfo.precio_override_hasta ? (
+                        <>
+                          <span style={{ fontSize: 12, color: new Date(trialInfo.precio_override_hasta) < new Date() ? '#e74c3c' : '#7ae8a0' }}>
+                            {trialInfo.precio_override}€ hasta {new Date(trialInfo.precio_override_hasta + 'T00:00:00').toLocaleDateString('es-ES')}
+                          </span>
+                          <button style={{ ...S.linkBtn, cursor: 'pointer' }} disabled={guardandoTrial} onClick={limpiarDescuento}>Quitar descuento</button>
+                        </>
+                      ) : (
+                        <>
+                          <input style={{ ...S.input, width: 90 }} type="number" min="0" step="0.01" placeholder="Precio €" value={descuentoPrecio} onChange={e => setDescuentoPrecio(e.target.value)} />
+                          <input style={{ ...S.input, width: 70 }} type="number" min="1" placeholder="Días" value={descuentoDias} onChange={e => setDescuentoDias(e.target.value)} />
+                          <button style={{ ...S.linkBtn, cursor: 'pointer' }} disabled={guardandoTrial} onClick={aplicarDescuento}>Aplicar descuento</button>
+                        </>
+                      )}
+                    </div>
+                    <div style={S.hint}>Esto no cobra ni descuenta nada solo — es para que sepas qué precio y hasta cuándo le corresponde a este restaurante quien lo facture a mano.</div>
+                  </div>
+                )}
                 {modalMode === 'edit' && planes.length > 0 && (
                   <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '0.5px solid #2a2a2a' }}>
                     <div style={S.hint}>Aplicar un plan activa de golpe sus módulos y desactiva el resto — los toggles de abajo siguen disponibles para excepciones puntuales.</div>
