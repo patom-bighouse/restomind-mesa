@@ -296,7 +296,14 @@ export default function SuperAdminRestaurantes() {
 
     try {
       // Cliente Supabase separado para no afectar la sesión del superadmin
-      const tempClient = createClient(supabaseUrl, supabaseAnonKey)
+      // persistSession/autoRefreshToken en false: sin esto, el signUp()
+      // de más abajo pisa en localStorage la sesión del superadmin (los
+      // dos clientes comparten la misma clave de storage por defecto),
+      // y el insert en "restaurants" que sigue se ejecuta como el
+      // dueño recién creado en vez de como superadmin — rompe la RLS.
+      const tempClient = createClient(supabaseUrl, supabaseAnonKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      })
 
       const { data: signUpData, error: signUpErr } = await tempClient.auth.signUp({
         email: form.email.trim(),
