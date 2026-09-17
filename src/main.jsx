@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import Landing from './pages/Landing'
 import Mesa from './pages/Mesa'
 import Camarero from './pages/Camarero'
 import Cocina from './pages/Cocina'
@@ -28,6 +29,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
       <Routes>
+        <Route path="/" element={<Landing />} />
         <Route path="/mesa/:token" element={<Mesa />} />
         <Route path="/camarero/:restaurantId" element={<Camarero />} />
         <Route path="/cocina/:restaurantId" element={<Cocina />} />
