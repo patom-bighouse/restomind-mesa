@@ -6,6 +6,20 @@ function linkWhatsapp(mensaje) {
   return `https://wa.me/${NUMERO_WHATSAPP}?text=${encodeURIComponent(mensaje)}`
 }
 
+const C = {
+  bg: '#ffffff',
+  bgSoft: '#faf6ee',
+  border: '#ece1cc',
+  text: '#241c14',
+  textBody: '#5c5044',
+  textMuted: '#9b8b70',
+  gold: '#c99a35',
+  goldSoft: 'rgba(201,154,53,0.12)',
+  terracotta: '#c1502e',
+  terracottaSoft: 'rgba(193,80,46,0.09)',
+  creamMuted: '#cbbfa8',
+}
+
 const FEATURES = [
   {
     emoji: '📱',
@@ -33,12 +47,6 @@ const FEATURES = [
   },
 ]
 
-const PASOS = [
-  { emoji: '📱', titulo: 'El cliente escanea y pide', texto: 'Abre la carta desde su móvil y hace el pedido sin esperar al camarero.' },
-  { emoji: '🍳', titulo: 'Llega directo a cocina', texto: 'El pedido aparece al instante en la pantalla de cocina, sin papelitos.' },
-  { emoji: '💻', titulo: 'El admin lo ve en el panel', texto: 'Mesas, pedidos y cuentas, todo en un mismo panel en tiempo real.' },
-]
-
 const MAS_FUNCIONES = [
   '🌍 Multi-idioma', '🎁 Fidelización y vales regalo', '🍽 Varios menús', '🤖 Carta generada con IA',
   '🔐 Gestión de equipo con PIN', '🌐 Dominio y marca propia', '🔗 Integraciones y webhooks',
@@ -48,106 +56,225 @@ const PLANES = [
   {
     nombre: 'Básico',
     precio: 35,
+    variante: 'basico',
     bullets: ['Carta digital con QR', 'Pedidos desde la mesa, sin esperar al camarero', 'Panel de administración'],
   },
   {
     nombre: 'Profesional',
     precio: 89,
-    destacado: true,
+    variante: 'pro',
     bullets: ['Todo lo de Básico', 'Reservas, stock y varios menús', 'Reportes y gestión de equipo'],
   },
   {
     nombre: 'Premium',
     precio: 169,
+    variante: 'premium',
     bullets: ['Todo lo de Profesional', 'Pedidos y reservas por WhatsApp', 'Dominio propio y marca personalizada'],
   },
 ]
 
 const S = {
-  page: { minHeight: '100vh', background: '#1a1410', color: '#f0e8d8', fontFamily: "'Inter', sans-serif" },
-  nav: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px clamp(20px, 5vw, 60px)' },
-  logo: { fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 600, color: '#e8c97a' },
-  navBtn: { background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 10, padding: '9px 18px', fontSize: 13, color: '#e8c97a', textDecoration: 'none', fontWeight: 500 },
+  page: { minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'Inter', sans-serif" },
+  nav: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '22px clamp(20px, 5vw, 60px)' },
+  logo: { fontFamily: "'Playfair Display', serif", fontSize: 24, fontWeight: 600, color: C.text },
+  navBtn: { background: 'transparent', border: `1.5px solid ${C.terracotta}`, borderRadius: 30, padding: '10px 22px', fontSize: 14, color: C.terracotta, textDecoration: 'none', fontWeight: 600 },
 
-  hero: { textAlign: 'center', padding: 'clamp(50px, 10vw, 110px) clamp(20px, 5vw, 60px) clamp(40px, 8vw, 80px)', maxWidth: 760, margin: '0 auto' },
-  h1: { fontFamily: "'Playfair Display', serif", fontSize: 'clamp(28px, 5vw, 46px)', color: '#f0e8d8', lineHeight: 1.25, marginBottom: 18 },
-  heroSub: { fontSize: 'clamp(14px, 2vw, 17px)', color: '#a89678', lineHeight: 1.6, marginBottom: 34, maxWidth: 560, marginLeft: 'auto', marginRight: 'auto' },
-  ctaBtn: { display: 'inline-block', background: '#e8c97a', color: '#1a1410', border: 'none', borderRadius: 10, padding: '15px 32px', fontSize: 15, fontWeight: 600, textDecoration: 'none' },
-
-  comoSection: { padding: 'clamp(10px, 3vw, 20px) clamp(20px, 5vw, 60px) clamp(50px, 8vw, 80px)', maxWidth: 900, margin: '0 auto' },
-  comoHeader: { textAlign: 'center', maxWidth: 480, margin: '0 auto 46px' },
-  cfRow: { display: 'flex', alignItems: 'flex-start', justifyContent: 'center' },
-  cfStep: { display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', width: 150, flexShrink: 0 },
-  cfIcon: {
-    width: 62, height: 62, borderRadius: '50%', background: 'rgba(232,201,122,0.08)',
-    border: '1px solid rgba(232,201,122,0.28)', display: 'flex', alignItems: 'center',
-    justifyContent: 'center', fontSize: 26, marginBottom: 14,
+  heroWrap: {
+    backgroundImage: "url('/hero-restaurante.jpg')",
+    backgroundSize: 'cover', backgroundPosition: 'center',
+    padding: 'clamp(50px, 10vw, 110px) clamp(16px, 5vw, 60px)',
+    display: 'flex', justifyContent: 'center',
   },
-  cfNumero: { fontSize: 11, color: '#5a4a2a', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 6, fontWeight: 600 },
-  cfTitulo: { fontFamily: "'Playfair Display', serif", fontSize: 14.5, color: '#e8c97a', marginBottom: 6, lineHeight: 1.35 },
-  cfTexto: { fontSize: 12, color: '#8a7560', lineHeight: 1.55 },
-  cfConnector: { flex: '1 1 50px', height: 62, minWidth: 24, display: 'flex', alignItems: 'center', position: 'relative' },
-  cfLinea: { width: '100%', height: 2, background: '#3a2e20' },
+  hero: {
+    textAlign: 'center', maxWidth: 720, width: '100%',
+    background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+    borderRadius: 28, padding: 'clamp(36px, 6vw, 60px) clamp(24px, 5vw, 56px)',
+    boxShadow: '0 30px 70px rgba(36,28,20,0.25)',
+  },
+  h1: { fontFamily: "'Playfair Display', serif", fontSize: 'clamp(34px, 6vw, 58px)', color: C.text, lineHeight: 1.18, marginBottom: 22 },
+  heroSub: { fontSize: 'clamp(16px, 2.2vw, 19px)', color: C.textBody, lineHeight: 1.6, marginBottom: 38, maxWidth: 600, marginLeft: 'auto', marginRight: 'auto' },
+  ctaBtn: {
+    display: 'inline-block', background: C.terracotta, color: '#fff', border: 'none', borderRadius: 40,
+    padding: '17px 38px', fontSize: 16, fontWeight: 700, textDecoration: 'none',
+    boxShadow: '0 10px 24px rgba(193,80,46,0.28)',
+  },
 
-  featuresSection: { padding: '30px clamp(20px, 5vw, 60px) 80px', maxWidth: 1140, margin: '0 auto' },
-  featuresHeader: { textAlign: 'center', maxWidth: 560, margin: '0 auto 48px' },
-  eyebrow: { fontSize: 12, letterSpacing: 2, textTransform: 'uppercase', color: '#8a7560', fontWeight: 600, marginBottom: 12 },
-  featuresTitulo: { fontFamily: "'Playfair Display', serif", fontSize: 'clamp(22px, 3vw, 28px)', color: '#f0e8d8', marginBottom: 12 },
-  featuresSub: { fontSize: 14, color: '#8a7560', lineHeight: 1.6 },
-  features: { display: 'flex', flexWrap: 'wrap', gap: 22, justifyContent: 'center' },
+  comoSection: { background: C.bgSoft, padding: 'clamp(60px, 8vw, 90px) clamp(20px, 5vw, 60px)' },
+  comoInner: { maxWidth: 1100, margin: '0 auto' },
+  comoHeader: { textAlign: 'center', maxWidth: 560, margin: '0 auto 54px' },
+  eyebrow: { fontSize: 13.5, letterSpacing: 2, textTransform: 'uppercase', color: C.terracotta, fontWeight: 700, marginBottom: 14 },
+  h2: { fontFamily: "'Playfair Display', serif", fontSize: 'clamp(26px, 3.6vw, 36px)', color: C.text, marginBottom: 14, lineHeight: 1.25 },
+  h2Sub: { fontSize: 16, color: C.textBody, lineHeight: 1.6 },
+  cfRow: { display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: 8 },
+  cfStep: { display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', width: 250, flexShrink: 0 },
+  cfIlustracion: { width: '100%', maxWidth: 190, marginBottom: 22 },
+  cfSvg: { width: '100%', height: 'auto', display: 'block' },
+  cfNumero: {
+    fontSize: 12.5, color: C.terracotta, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 8, fontWeight: 700,
+  },
+  cfTitulo: { fontFamily: "'Playfair Display', serif", fontSize: 19, color: C.text, marginBottom: 8, lineHeight: 1.3 },
+  cfTexto: { fontSize: 14.5, color: C.textBody, lineHeight: 1.55 },
+  cfArrow: { flexShrink: 0, fontSize: 26, color: C.terracotta, marginTop: 60, opacity: 0.55 },
+
+  featuresSection: { padding: 'clamp(60px, 8vw, 90px) clamp(20px, 5vw, 60px) clamp(50px, 7vw, 80px)', maxWidth: 1160, margin: '0 auto' },
+  featuresHeader: { textAlign: 'center', maxWidth: 600, margin: '0 auto 50px' },
+  features: { display: 'flex', flexWrap: 'wrap', gap: 24, justifyContent: 'center' },
   featureCard: {
-    flex: '1 1 250px', maxWidth: 270, background: '#221c14',
-    border: '1px solid #3a2e20', borderRadius: 6, padding: '10px',
-    boxShadow: '0 10px 30px rgba(0,0,0,0.25)', position: 'relative', textAlign: 'center',
+    flex: '1 1 260px', maxWidth: 280, background: C.bgSoft,
+    border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px',
+    boxShadow: '0 12px 28px rgba(36,28,20,0.06)', position: 'relative', textAlign: 'center',
   },
   featureCardInner: {
-    border: '1px solid #3a2e20', borderRadius: 4, padding: '26px 22px 24px',
+    border: `1px solid ${C.border}`, borderRadius: 5, padding: '28px 22px 26px',
   },
-  featureIndice: { position: 'absolute', top: 18, right: 20, fontSize: 11, color: '#4a3d2a', fontWeight: 600, letterSpacing: 1 },
+  featureIndice: { position: 'absolute', top: 18, right: 20, fontSize: 12, color: C.textMuted, fontWeight: 700, letterSpacing: 1 },
   featureIconWrap: {
-    width: 48, height: 48, borderRadius: '50%', background: 'rgba(232,201,122,0.08)',
-    border: '1px solid rgba(232,201,122,0.28)', display: 'flex', alignItems: 'center',
-    justifyContent: 'center', fontSize: 21, margin: '0 auto 16px',
+    width: 56, height: 56, borderRadius: '50%', background: C.goldSoft,
+    border: `1px solid ${C.gold}`, display: 'flex', alignItems: 'center',
+    justifyContent: 'center', fontSize: 24, margin: '0 auto 18px',
   },
-  featureTitulo: { fontFamily: "'Playfair Display', serif", fontSize: 16.5, color: '#e8c97a', letterSpacing: 0.3, marginBottom: 12 },
-  ornamento: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, margin: '0 0 14px' },
-  ornamentoLinea: { width: 26, height: 1, background: '#4a3d2a' },
-  ornamentoDiamante: { color: '#e8c97a', fontSize: 9 },
-  featureTexto: { fontSize: 12.5, color: '#c2ab85', lineHeight: 1.65, fontStyle: 'italic', marginBottom: 18 },
-  featureIncluyeLabel: { fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: '#5a4a2a', fontWeight: 600, textAlign: 'left', marginBottom: 8 },
-  featurePuntos: { listStyle: 'none', padding: 0, margin: 0, fontSize: 12.5, color: '#8a7560', lineHeight: 1.9, textAlign: 'left' },
+  featureTitulo: { fontFamily: "'Playfair Display', serif", fontSize: 18, color: C.text, letterSpacing: 0.2, marginBottom: 12 },
+  ornamento: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, margin: '0 0 16px' },
+  ornamentoLinea: { width: 28, height: 1, background: C.border },
+  ornamentoDiamante: { color: C.gold, fontSize: 10 },
+  featureTexto: { fontSize: 14, color: C.textBody, lineHeight: 1.6, fontStyle: 'italic', marginBottom: 18 },
+  featureIncluyeLabel: { fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: C.textMuted, fontWeight: 700, textAlign: 'left', marginBottom: 10 },
+  featurePuntos: { listStyle: 'none', padding: 0, margin: 0, fontSize: 13.5, color: C.textBody, lineHeight: 1.85, textAlign: 'left' },
   featurePunto: { display: 'flex', gap: 8 },
-  featurePuntoMarca: { color: '#e8c97a', flexShrink: 0 },
+  featurePuntoMarca: { color: C.terracotta, flexShrink: 0, fontWeight: 700 },
 
-  masSection: { padding: '0 clamp(20px, 5vw, 60px) 80px', maxWidth: 860, margin: '0 auto', textAlign: 'center' },
-  masCard: { background: '#221c14', border: '0.5px solid #3a2e20', borderRadius: 16, padding: 'clamp(32px, 6vw, 48px) clamp(24px, 5vw, 50px)' },
-  masTitulo: { fontFamily: "'Playfair Display', serif", fontSize: 'clamp(19px, 2.6vw, 24px)', color: '#f0e8d8', marginBottom: 12 },
-  masSub: { fontSize: 13.5, color: '#8a7560', lineHeight: 1.6, marginBottom: 26, maxWidth: 520, marginLeft: 'auto', marginRight: 'auto' },
-  masTags: { display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center', marginBottom: 28 },
-  masTag: { fontSize: 12.5, color: '#c2ab85', background: 'rgba(232,201,122,0.06)', border: '0.5px solid #3a2e20', borderRadius: 20, padding: '7px 15px' },
-  masBtn: { display: 'inline-block', textDecoration: 'none', color: '#e8c97a', border: '0.5px solid #e8c97a', borderRadius: 10, padding: '12px 26px', fontSize: 13.5, fontWeight: 600 },
-
-  pricing: { padding: '20px clamp(20px, 5vw, 60px) 90px', maxWidth: 1080, margin: '0 auto' },
-  h2: { fontFamily: "'Playfair Display', serif", fontSize: 'clamp(22px, 3vw, 30px)', color: '#f0e8d8', textAlign: 'center', marginBottom: 40 },
-  pricingGrid: { display: 'flex', flexWrap: 'wrap', gap: 20, justifyContent: 'center' },
-  planCard: (destacado) => ({
-    flex: '1 1 260px', maxWidth: 300, background: destacado ? '#2a2116' : '#221c14',
-    border: destacado ? '1px solid #e8c97a' : '0.5px solid #3a2e20', borderRadius: 16,
-    padding: '28px 26px', display: 'flex', flexDirection: 'column',
+  masWrap: {
+    backgroundImage: "linear-gradient(rgba(255,255,255,0.18), rgba(255,255,255,0.22)), url('/mesa-restaurante.jpg')",
+    backgroundSize: 'cover', backgroundPosition: 'center',
+    padding: 'clamp(50px, 8vw, 90px) clamp(16px, 5vw, 60px)',
+    display: 'flex', justifyContent: 'center',
+  },
+  masSection: { maxWidth: 920, width: '100%', textAlign: 'center' },
+  masCard: {
+    background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+    border: `1px solid rgba(255,255,255,0.6)`, borderRadius: 24,
+    padding: 'clamp(36px, 6vw, 54px) clamp(24px, 5vw, 54px)',
+    boxShadow: '0 24px 60px rgba(36,28,20,0.18)',
+  },
+  masTitulo: { fontFamily: "'Playfair Display', serif", fontSize: 'clamp(22px, 3vw, 28px)', color: C.text, marginBottom: 14 },
+  masSub: { fontSize: 15, color: C.textBody, lineHeight: 1.65, marginBottom: 34, maxWidth: 540, marginLeft: 'auto', marginRight: 'auto' },
+  masTags: { display: 'flex', flexWrap: 'wrap', gap: 18, justifyContent: 'center', marginBottom: 38, padding: '10px 4px' },
+  masTag: (deg) => ({
+    position: 'relative', fontFamily: "'Kalam', cursive", fontWeight: 700, fontSize: 16.5,
+    color: '#f2ecd8', background: '#2e2419',
+    border: '2px solid #6b4a30', borderRadius: 7,
+    padding: '13px 18px 11px', boxShadow: '0 10px 20px rgba(36,28,20,0.3)',
+    transform: `rotate(${deg}deg)`,
   }),
-  planNombre: { fontFamily: "'Playfair Display', serif", fontSize: 18, color: '#e8c97a', marginBottom: 10 },
-  planPrecio: { fontSize: 32, fontWeight: 600, color: '#f0e8d8', marginBottom: 18 },
-  planPrecioSub: { fontSize: 14, color: '#8a7560', fontWeight: 400 },
-  planBullets: { listStyle: 'none', padding: 0, margin: '0 0 24px', fontSize: 13, color: '#a89678', lineHeight: 2, flex: 1 },
-  planBtn: (destacado) => ({
-    textAlign: 'center', display: 'block', textDecoration: 'none',
-    background: destacado ? '#e8c97a' : 'transparent', color: destacado ? '#1a1410' : '#e8c97a',
-    border: destacado ? 'none' : '0.5px solid #3a2e20', borderRadius: 10, padding: '12px 0',
-    fontSize: 14, fontWeight: 600,
-  }),
+  masTagClip: { position: 'absolute', top: -9, left: '50%', transform: 'translateX(-50%)', width: 22, height: 12, background: '#b9ab8f', borderRadius: 3, boxShadow: '0 2px 4px rgba(0,0,0,0.3)' },
+  masBtn: { display: 'inline-block', textDecoration: 'none', color: '#fff', background: C.terracotta, borderRadius: 30, padding: '13px 28px', fontSize: 14.5, fontWeight: 700 },
 
-  footer: { textAlign: 'center', padding: '30px 20px 40px', fontSize: 12, color: '#5a4a2a' },
+  pricing: { padding: '10px clamp(20px, 5vw, 60px) 100px', maxWidth: 1100, margin: '0 auto' },
+  pricingGrid: { display: 'flex', flexWrap: 'wrap', gap: 22, justifyContent: 'center' },
+  planCard: (variante) => ({
+    flex: '1 1 270px', maxWidth: 310, borderRadius: 18, padding: '30px 28px',
+    display: 'flex', flexDirection: 'column',
+    ...(variante === 'basico' && { background: C.goldSoft, border: `1px solid ${C.gold}` }),
+    ...(variante === 'pro' && { background: C.terracottaSoft, border: `2px solid ${C.terracotta}` }),
+    ...(variante === 'premium' && { background: C.text, border: `1px solid ${C.text}` }),
+  }),
+  planNombre: (variante) => ({
+    fontFamily: "'Playfair Display', serif", fontSize: 20, marginBottom: 12,
+    color: variante === 'premium' ? C.gold : C.text,
+  }),
+  planPrecio: (variante) => ({
+    fontSize: 36, fontWeight: 700, marginBottom: 20,
+    color: variante === 'premium' ? '#fff' : C.text,
+  }),
+  planPrecioSub: (variante) => ({ fontSize: 15, fontWeight: 400, color: variante === 'premium' ? C.creamMuted : C.textMuted }),
+  planBullets: (variante) => ({
+    listStyle: 'none', padding: 0, margin: '0 0 26px', fontSize: 14.5, lineHeight: 2, flex: 1,
+    color: variante === 'premium' ? C.creamMuted : C.textBody,
+  }),
+  planBtn: (variante) => {
+    if (variante === 'basico') return { textAlign: 'center', display: 'block', textDecoration: 'none', background: 'transparent', color: C.gold, border: `1.5px solid ${C.gold}`, borderRadius: 30, padding: '13px 0', fontSize: 15, fontWeight: 700 }
+    if (variante === 'premium') return { textAlign: 'center', display: 'block', textDecoration: 'none', background: C.gold, color: C.text, border: 'none', borderRadius: 30, padding: '13px 0', fontSize: 15, fontWeight: 700 }
+    return { textAlign: 'center', display: 'block', textDecoration: 'none', background: C.terracotta, color: '#fff', border: 'none', borderRadius: 30, padding: '13px 0', fontSize: 15, fontWeight: 700 }
+  },
+
+  footer: { textAlign: 'center', padding: '34px 20px 44px', fontSize: 13, color: C.textMuted, borderTop: `1px solid ${C.border}` },
 }
+
+function IlustracionEscanear() {
+  return (
+    <svg viewBox="0 0 220 200" style={S.cfSvg}>
+      <rect x="140" y="60" width="56" height="72" rx="6" fill="#fff" stroke={C.border} strokeWidth="2" />
+      <g fill={C.text}>
+        <rect x="152" y="74" width="10" height="10" />
+        <rect x="172" y="74" width="10" height="10" />
+        <rect x="152" y="94" width="10" height="10" />
+        <rect x="172" y="114" width="10" height="10" />
+        <rect x="162" y="94" width="10" height="10" />
+        <rect x="152" y="114" width="10" height="10" />
+      </g>
+      <circle className="rm-ill-pulse" cx="168" cy="96" r="34" fill="none" stroke={C.gold} strokeWidth="3" />
+
+      <circle cx="55" cy="80" r="24" fill="#f2c9a0" />
+      <path d="M31 80a24 24 0 0 1 48 0" fill={C.text} />
+      <rect x="32" y="118" width="60" height="70" rx="22" fill={C.terracotta} />
+      <g className="rm-ill-arm">
+        <rect x="80" y="108" width="46" height="15" rx="7" fill={C.terracotta} />
+        <rect x="118" y="86" width="20" height="34" rx="4" fill={C.text} />
+        <rect x="122" y="92" width="12" height="18" rx="1.5" fill={C.gold} />
+      </g>
+    </svg>
+  )
+}
+
+function IlustracionCocina() {
+  return (
+    <svg viewBox="0 0 220 200" style={S.cfSvg}>
+      <path className="rm-ill-steam rm-ill-steam-1" d="M75 95 q-8 -16 0 -30" stroke={C.textMuted} strokeWidth="4" fill="none" strokeLinecap="round" />
+      <path className="rm-ill-steam rm-ill-steam-2" d="M108 95 q8 -18 0 -34" stroke={C.textMuted} strokeWidth="4" fill="none" strokeLinecap="round" />
+      <path className="rm-ill-steam rm-ill-steam-3" d="M141 95 q-8 -16 0 -30" stroke={C.textMuted} strokeWidth="4" fill="none" strokeLinecap="round" />
+
+      <ellipse cx="108" cy="128" rx="62" ry="18" fill={C.text} />
+      <rect x="46" y="112" width="124" height="30" rx="15" fill={C.terracotta} />
+      <rect x="24" y="118" width="20" height="10" rx="5" fill={C.terracotta} />
+      <rect x="176" y="118" width="20" height="10" rx="5" fill={C.terracotta} />
+      <rect x="70" y="146" width="76" height="10" rx="3" fill={C.border} />
+
+      <g className="rm-ill-ticket">
+        <rect x="10" y="30" width="58" height="42" rx="5" fill="#fff" stroke={C.border} strokeWidth="2" />
+        <rect x="18" y="40" width="42" height="5" rx="2" fill={C.gold} />
+        <rect x="18" y="50" width="30" height="5" rx="2" fill={C.border} />
+        <rect x="18" y="59" width="34" height="5" rx="2" fill={C.border} />
+      </g>
+    </svg>
+  )
+}
+
+function IlustracionPanel() {
+  return (
+    <svg viewBox="0 0 220 200" style={S.cfSvg}>
+      <rect x="30" y="40" width="160" height="104" rx="8" fill={C.text} />
+      <rect x="40" y="50" width="140" height="84" rx="4" fill={C.bgSoft} />
+      <g>
+        <rect className="rm-ill-bar rm-ill-bar-1" x="60" y="110" width="16" height="18" rx="3" fill={C.gold} />
+        <rect className="rm-ill-bar rm-ill-bar-2" x="86" y="95" width="16" height="33" rx="3" fill={C.terracotta} />
+        <rect className="rm-ill-bar rm-ill-bar-3" x="112" y="80" width="16" height="48" rx="3" fill={C.gold} />
+        <rect className="rm-ill-bar rm-ill-bar-4" x="138" y="100" width="16" height="28" rx="3" fill={C.terracotta} />
+      </g>
+      <rect x="10" y="144" width="200" height="10" rx="5" fill={C.text} />
+
+      <g className="rm-ill-check">
+        <circle cx="178" cy="46" r="18" fill={C.terracotta} />
+        <path d="M170 46l5 5 10 -11" stroke="#fff" strokeWidth="3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      </g>
+    </svg>
+  )
+}
+
+const PASOS = [
+  { Ilustracion: IlustracionEscanear, titulo: 'El cliente escanea y pide', texto: 'Abre la carta desde su móvil y hace el pedido sin esperar al camarero.' },
+  { Ilustracion: IlustracionCocina, titulo: 'Llega directo a cocina', texto: 'El pedido aparece al instante en la pantalla de cocina, sin papelitos.' },
+  { Ilustracion: IlustracionPanel, titulo: 'El admin lo ve en el panel', texto: 'Mesas, pedidos y cuentas, todo en un mismo panel en tiempo real.' },
+]
 
 export default function Landing() {
   const mensajeGeneral = 'Hola, me gustaría saber más sobre Restomind'
@@ -155,25 +282,32 @@ export default function Landing() {
   return (
     <div style={S.page}>
       <style>{`
-        .rm-cf-dot {
-          position: absolute; top: 50%; left: 0%; width: 8px; height: 8px; border-radius: 50%;
-          background: #e8c97a; box-shadow: 0 0 8px rgba(232,201,122,0.75);
-          transform: translate(-50%, -50%);
-          animation: rmCfTravel 2.4s ease-in-out infinite;
-        }
-        .rm-cf-dot-2 { animation-delay: 2.2s; }
-        @keyframes rmCfTravel {
-          0% { left: 0%; opacity: 0; }
-          8% { opacity: 1; }
-          92% { opacity: 1; }
-          100% { left: 100%; opacity: 0; }
-        }
-        @media (max-width: 640px) {
-          .rm-cf-row { flex-direction: column; gap: 26px; }
-          .rm-cf-connector { display: none; }
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .rm-cf-dot { animation: none; opacity: 0.7; }
+        @keyframes rmPulse { 0% { opacity: 0; transform: scale(0.7); } 40% { opacity: 1; } 100% { opacity: 0; transform: scale(1.25); } }
+        .rm-ill-pulse { animation: rmPulse 2.2s ease-out infinite; transform-origin: center; transform-box: fill-box; }
+
+        @keyframes rmArmTap { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-8deg); } }
+        .rm-ill-arm { animation: rmArmTap 1.8s ease-in-out infinite; transform-origin: 82px 116px; }
+
+        @keyframes rmSteam { 0% { opacity: 0; transform: translateY(0); } 30% { opacity: 0.8; } 100% { opacity: 0; transform: translateY(-18px); } }
+        .rm-ill-steam { animation: rmSteam 2.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+        .rm-ill-steam-2 { animation-delay: 0.4s; }
+        .rm-ill-steam-3 { animation-delay: 0.8s; }
+
+        @keyframes rmTicket { 0% { opacity: 0; transform: translate(-10px, 40px) rotate(-6deg); } 35% { opacity: 1; transform: translate(0, 55px) rotate(-2deg); } 70% { opacity: 1; transform: translate(0, 55px) rotate(-2deg); } 100% { opacity: 0; transform: translate(10px, 70px) rotate(4deg); } }
+        .rm-ill-ticket { animation: rmTicket 3s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+
+        @keyframes rmBar { 0%, 100% { transform: scaleY(0.75); } 50% { transform: scaleY(1); } }
+        .rm-ill-bar { animation: rmBar 1.8s ease-in-out infinite; transform-box: fill-box; transform-origin: bottom; }
+        .rm-ill-bar-2 { animation-delay: 0.2s; }
+        .rm-ill-bar-3 { animation-delay: 0.4s; }
+        .rm-ill-bar-4 { animation-delay: 0.6s; }
+
+        @keyframes rmCheck { 0%, 60% { opacity: 0; transform: scale(0.4); } 75% { opacity: 1; transform: scale(1.15); } 90%, 100% { opacity: 1; transform: scale(1); } }
+        .rm-ill-check { animation: rmCheck 3s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+
+        @media (max-width: 780px) {
+          .rm-cf-row { flex-direction: column; align-items: center; gap: 44px; }
+          .rm-cf-arrow { display: none; }
         }
       `}</style>
 
@@ -182,47 +316,47 @@ export default function Landing() {
         <a href={linkWhatsapp(mensajeGeneral)} style={S.navBtn} target="_blank" rel="noreferrer">WhatsApp</a>
       </header>
 
-      <section style={S.hero}>
-        <h1 style={S.h1}>La gestión de tu restaurante, en un solo lugar</h1>
-        <p style={S.heroSub}>
-          Carta digital, pedidos, reservas y mucho más — todo conectado, para que dediques
-          tu tiempo a lo que importa.
-        </p>
-        <a href={linkWhatsapp(mensajeGeneral)} style={S.ctaBtn} target="_blank" rel="noreferrer">
-          Hablar por WhatsApp
-        </a>
+      <section style={S.heroWrap}>
+        <div style={S.hero}>
+          <h1 style={S.h1}>La gestión de tu restaurante, en un solo lugar</h1>
+          <p style={S.heroSub}>
+            Carta digital, pedidos, reservas y mucho más — todo conectado, para que dediques
+            tu tiempo a lo que importa.
+          </p>
+          <a href={linkWhatsapp(mensajeGeneral)} style={S.ctaBtn} target="_blank" rel="noreferrer">
+            Hablar por WhatsApp
+          </a>
+        </div>
       </section>
 
       <section style={S.comoSection}>
-        <div style={S.comoHeader}>
-          <div style={S.eyebrow}>Cómo funciona</div>
-          <h2 style={S.featuresTitulo}>De la mesa a la cocina, en segundos</h2>
-        </div>
-        <div className="rm-cf-row" style={S.cfRow}>
-          {PASOS.map((p, i) => (
-            <Fragment key={p.titulo}>
-              <div style={S.cfStep}>
-                <div style={S.cfIcon}>{p.emoji}</div>
-                <div style={S.cfNumero}>Paso {i + 1}</div>
-                <div style={S.cfTitulo}>{p.titulo}</div>
-                <div style={S.cfTexto}>{p.texto}</div>
-              </div>
-              {i < PASOS.length - 1 && (
-                <div className="rm-cf-connector" style={S.cfConnector}>
-                  <div style={S.cfLinea} />
-                  <span className={i === 0 ? 'rm-cf-dot' : 'rm-cf-dot rm-cf-dot-2'} />
+        <div style={S.comoInner}>
+          <div style={S.comoHeader}>
+            <div style={S.eyebrow}>Cómo funciona</div>
+            <h2 style={S.h2}>De la mesa a la cocina, en segundos</h2>
+            <p style={S.h2Sub}>Así se ve un pedido real, de punta a punta.</p>
+          </div>
+          <div className="rm-cf-row" style={S.cfRow}>
+            {PASOS.map((p, i) => (
+              <Fragment key={p.titulo}>
+                <div style={S.cfStep}>
+                  <div style={S.cfIlustracion}><p.Ilustracion /></div>
+                  <div style={S.cfNumero}>Paso {i + 1}</div>
+                  <div style={S.cfTitulo}>{p.titulo}</div>
+                  <div style={S.cfTexto}>{p.texto}</div>
                 </div>
-              )}
-            </Fragment>
-          ))}
+                {i < PASOS.length - 1 && <div className="rm-cf-arrow" style={S.cfArrow}>→</div>}
+              </Fragment>
+            ))}
+          </div>
         </div>
       </section>
 
       <section style={S.featuresSection}>
         <div style={S.featuresHeader}>
           <div style={S.eyebrow}>Funcionalidades</div>
-          <h2 style={S.featuresTitulo}>Todo lo que tu restaurante necesita, en un solo sistema</h2>
-          <p style={S.featuresSub}>Cada módulo funciona solo o combinado con el resto, según lo que tu negocio necesite hoy.</p>
+          <h2 style={S.h2}>Todo lo que tu restaurante necesita, en un solo sistema</h2>
+          <p style={S.h2Sub}>Cada módulo funciona solo o combinado con el resto, según lo que tu negocio necesite hoy.</p>
         </div>
         <div style={S.features}>
           {FEATURES.map((f, i) => (
@@ -252,7 +386,8 @@ export default function Landing() {
         </div>
       </section>
 
-      <section style={S.masSection}>
+      <section style={S.masWrap}>
+        <div style={S.masSection}>
         <div style={S.masCard}>
           <div style={S.masTitulo}>Y esto es solo una parte</div>
           <p style={S.masSub}>
@@ -260,27 +395,36 @@ export default function Landing() {
             y siempre puedes sumar más sobre la marcha, sin cambiar de sistema.
           </p>
           <div style={S.masTags}>
-            {MAS_FUNCIONES.map((t) => <span key={t} style={S.masTag}>{t}</span>)}
+            {MAS_FUNCIONES.map((t, i) => (
+              <span key={t} style={S.masTag([-3, 2, -1.5, 2.5, -2, 1.5, -2.5][i % 7])}>
+                <span style={S.masTagClip} />
+                {t}
+              </span>
+            ))}
           </div>
           <a href={linkWhatsapp('Hola, quiero saber qué otras funciones tiene Restomind')} style={S.masBtn} target="_blank" rel="noreferrer">
             Cuéntanos qué necesitas
           </a>
         </div>
+        </div>
       </section>
 
       <section style={S.pricing}>
-        <h2 style={S.h2}>Planes</h2>
+        <div style={S.featuresHeader}>
+          <div style={S.eyebrow}>Planes</div>
+          <h2 style={S.h2}>Elige según lo que tu restaurante necesita</h2>
+        </div>
         <div style={S.pricingGrid}>
           {PLANES.map((p) => (
-            <div key={p.nombre} style={S.planCard(p.destacado)}>
-              <div style={S.planNombre}>{p.nombre}</div>
-              <div style={S.planPrecio}>{p.precio}€<span style={S.planPrecioSub}>/mes</span></div>
-              <ul style={S.planBullets}>
+            <div key={p.nombre} style={S.planCard(p.variante)}>
+              <div style={S.planNombre(p.variante)}>{p.nombre}</div>
+              <div style={S.planPrecio(p.variante)}>{p.precio}€<span style={S.planPrecioSub(p.variante)}>/mes</span></div>
+              <ul style={S.planBullets(p.variante)}>
                 {p.bullets.map((b) => <li key={b}>{b}</li>)}
               </ul>
               <a
                 href={linkWhatsapp(`Hola, me interesa el plan ${p.nombre} de Restomind`)}
-                style={S.planBtn(p.destacado)}
+                style={S.planBtn(p.variante)}
                 target="_blank"
                 rel="noreferrer"
               >
