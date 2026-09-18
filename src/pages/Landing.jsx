@@ -1,3 +1,5 @@
+import { Fragment } from 'react'
+
 const NUMERO_WHATSAPP = '34678237019'
 
 function linkWhatsapp(mensaje) {
@@ -29,6 +31,12 @@ const FEATURES = [
     texto: 'Mesas, stock, equipo y fidelización de clientes, centralizados en un solo sitio.',
     puntos: ['Control de stock por ingrediente, con avisos cuando algo se agota', 'Reportes con datos reales para decidir, no a ojo'],
   },
+]
+
+const PASOS = [
+  { emoji: '📱', titulo: 'El cliente escanea y pide', texto: 'Abre la carta desde su móvil y hace el pedido sin esperar al camarero.' },
+  { emoji: '🍳', titulo: 'Llega directo a cocina', texto: 'El pedido aparece al instante en la pantalla de cocina, sin papelitos.' },
+  { emoji: '💻', titulo: 'El admin lo ve en el panel', texto: 'Mesas, pedidos y cuentas, todo en un mismo panel en tiempo real.' },
 ]
 
 const MAS_FUNCIONES = [
@@ -65,6 +73,21 @@ const S = {
   h1: { fontFamily: "'Playfair Display', serif", fontSize: 'clamp(28px, 5vw, 46px)', color: '#f0e8d8', lineHeight: 1.25, marginBottom: 18 },
   heroSub: { fontSize: 'clamp(14px, 2vw, 17px)', color: '#a89678', lineHeight: 1.6, marginBottom: 34, maxWidth: 560, marginLeft: 'auto', marginRight: 'auto' },
   ctaBtn: { display: 'inline-block', background: '#e8c97a', color: '#1a1410', border: 'none', borderRadius: 10, padding: '15px 32px', fontSize: 15, fontWeight: 600, textDecoration: 'none' },
+
+  comoSection: { padding: 'clamp(10px, 3vw, 20px) clamp(20px, 5vw, 60px) clamp(50px, 8vw, 80px)', maxWidth: 900, margin: '0 auto' },
+  comoHeader: { textAlign: 'center', maxWidth: 480, margin: '0 auto 46px' },
+  cfRow: { display: 'flex', alignItems: 'flex-start', justifyContent: 'center' },
+  cfStep: { display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', width: 150, flexShrink: 0 },
+  cfIcon: {
+    width: 62, height: 62, borderRadius: '50%', background: 'rgba(232,201,122,0.08)',
+    border: '1px solid rgba(232,201,122,0.28)', display: 'flex', alignItems: 'center',
+    justifyContent: 'center', fontSize: 26, marginBottom: 14,
+  },
+  cfNumero: { fontSize: 11, color: '#5a4a2a', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 6, fontWeight: 600 },
+  cfTitulo: { fontFamily: "'Playfair Display', serif", fontSize: 14.5, color: '#e8c97a', marginBottom: 6, lineHeight: 1.35 },
+  cfTexto: { fontSize: 12, color: '#8a7560', lineHeight: 1.55 },
+  cfConnector: { flex: '1 1 50px', height: 62, minWidth: 24, display: 'flex', alignItems: 'center', position: 'relative' },
+  cfLinea: { width: '100%', height: 2, background: '#3a2e20' },
 
   featuresSection: { padding: '30px clamp(20px, 5vw, 60px) 80px', maxWidth: 1140, margin: '0 auto' },
   featuresHeader: { textAlign: 'center', maxWidth: 560, margin: '0 auto 48px' },
@@ -131,6 +154,29 @@ export default function Landing() {
 
   return (
     <div style={S.page}>
+      <style>{`
+        .rm-cf-dot {
+          position: absolute; top: 50%; left: 0%; width: 8px; height: 8px; border-radius: 50%;
+          background: #e8c97a; box-shadow: 0 0 8px rgba(232,201,122,0.75);
+          transform: translate(-50%, -50%);
+          animation: rmCfTravel 2.4s ease-in-out infinite;
+        }
+        .rm-cf-dot-2 { animation-delay: 2.2s; }
+        @keyframes rmCfTravel {
+          0% { left: 0%; opacity: 0; }
+          8% { opacity: 1; }
+          92% { opacity: 1; }
+          100% { left: 100%; opacity: 0; }
+        }
+        @media (max-width: 640px) {
+          .rm-cf-row { flex-direction: column; gap: 26px; }
+          .rm-cf-connector { display: none; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .rm-cf-dot { animation: none; opacity: 0.7; }
+        }
+      `}</style>
+
       <header style={S.nav}>
         <span style={S.logo}>Restomind</span>
         <a href={linkWhatsapp(mensajeGeneral)} style={S.navBtn} target="_blank" rel="noreferrer">WhatsApp</a>
@@ -145,6 +191,31 @@ export default function Landing() {
         <a href={linkWhatsapp(mensajeGeneral)} style={S.ctaBtn} target="_blank" rel="noreferrer">
           Hablar por WhatsApp
         </a>
+      </section>
+
+      <section style={S.comoSection}>
+        <div style={S.comoHeader}>
+          <div style={S.eyebrow}>Cómo funciona</div>
+          <h2 style={S.featuresTitulo}>De la mesa a la cocina, en segundos</h2>
+        </div>
+        <div className="rm-cf-row" style={S.cfRow}>
+          {PASOS.map((p, i) => (
+            <Fragment key={p.titulo}>
+              <div style={S.cfStep}>
+                <div style={S.cfIcon}>{p.emoji}</div>
+                <div style={S.cfNumero}>Paso {i + 1}</div>
+                <div style={S.cfTitulo}>{p.titulo}</div>
+                <div style={S.cfTexto}>{p.texto}</div>
+              </div>
+              {i < PASOS.length - 1 && (
+                <div className="rm-cf-connector" style={S.cfConnector}>
+                  <div style={S.cfLinea} />
+                  <span className={i === 0 ? 'rm-cf-dot' : 'rm-cf-dot rm-cf-dot-2'} />
+                </div>
+              )}
+            </Fragment>
+          ))}
+        </div>
       </section>
 
       <section style={S.featuresSection}>
