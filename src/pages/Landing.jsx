@@ -320,7 +320,7 @@ export default function Landing() {
         <div style={S.hero}>
           <h1 style={S.h1}>La gestión de tu restaurante, en un solo lugar</h1>
           <p style={S.heroSub}>
-            Carta digital, pedidos, reservas y mucho más — todo conectado, para que dediques
+            Carta digital, pedidos, reservas y mucho más. Todo conectado, para que dediques
             tu tiempo a lo que importa.
           </p>
           <a href={linkWhatsapp(mensajeGeneral)} style={S.ctaBtn} target="_blank" rel="noreferrer">
@@ -391,8 +391,8 @@ export default function Landing() {
         <div style={S.masCard}>
           <div style={S.masTitulo}>Y esto es solo una parte</div>
           <p style={S.masSub}>
-            Restomind se organiza en módulos, así que tu restaurante solo paga por lo que usa —
-            y siempre puedes sumar más sobre la marcha, sin cambiar de sistema.
+            Restomind se organiza en módulos, así que tu restaurante solo paga por lo que usa.
+            Y siempre puedes sumar más sobre la marcha, sin cambiar de sistema.
           </p>
           <div style={S.masTags}>
             {MAS_FUNCIONES.map((t, i) => (
