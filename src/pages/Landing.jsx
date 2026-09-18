@@ -309,6 +309,18 @@ export default function Landing() {
           .rm-cf-row { flex-direction: column; align-items: center; gap: 44px; }
           .rm-cf-arrow { display: none; }
         }
+
+        /* En móvil, la tarjeta translúcida no debe tapar casi toda la foto de
+           fondo — le damos más aire arriba/abajo/costados y la achicamos un
+           poco para que la foto se note. */
+        @media (max-width: 640px) {
+          .rm-hero-wrap { padding: 60px 10px 76px !important; }
+          .rm-hero-card { width: 92% !important; padding: 30px 22px !important; border-radius: 22px !important; }
+          .rm-hero-h1 { font-size: 30px !important; margin-bottom: 16px !important; }
+          .rm-hero-sub { margin-bottom: 26px !important; }
+          .rm-mas-wrap { padding: 56px 10px 64px !important; }
+          .rm-mas-card { width: 92% !important; padding: 30px 22px !important; }
+        }
       `}</style>
 
       <header style={S.nav}>
@@ -316,10 +328,10 @@ export default function Landing() {
         <a href={linkWhatsapp(mensajeGeneral)} style={S.navBtn} target="_blank" rel="noreferrer">WhatsApp</a>
       </header>
 
-      <section style={S.heroWrap}>
-        <div style={S.hero}>
-          <h1 style={S.h1}>La gestión de tu restaurante, en un solo lugar</h1>
-          <p style={S.heroSub}>
+      <section className="rm-hero-wrap" style={S.heroWrap}>
+        <div className="rm-hero-card" style={S.hero}>
+          <h1 className="rm-hero-h1" style={S.h1}>La gestión de tu restaurante, en un solo lugar</h1>
+          <p className="rm-hero-sub" style={S.heroSub}>
             Carta digital, pedidos, reservas y mucho más. Todo conectado, para que dediques
             tu tiempo a lo que importa.
           </p>
@@ -386,9 +398,9 @@ export default function Landing() {
         </div>
       </section>
 
-      <section style={S.masWrap}>
+      <section className="rm-mas-wrap" style={S.masWrap}>
         <div style={S.masSection}>
-        <div style={S.masCard}>
+        <div className="rm-mas-card" style={S.masCard}>
           <div style={S.masTitulo}>Y esto es solo una parte</div>
           <p style={S.masSub}>
             Restomind se organiza en módulos, así que tu restaurante solo paga por lo que usa.
