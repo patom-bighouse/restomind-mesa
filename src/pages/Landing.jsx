@@ -74,7 +74,7 @@ const PLANES = [
 ]
 
 const S = {
-  page: { minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'Inter', sans-serif" },
+  page: { minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'Inter', sans-serif", overflowX: 'hidden' },
   nav: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '22px clamp(20px, 5vw, 60px)' },
   logo: { fontFamily: "'Playfair Display', serif", fontSize: 24, fontWeight: 600, color: C.text },
   navBtn: { background: 'transparent', border: `1.5px solid ${C.terracotta}`, borderRadius: 30, padding: '10px 22px', fontSize: 14, color: C.terracotta, textDecoration: 'none', fontWeight: 600 },
@@ -306,8 +306,9 @@ export default function Landing() {
         .rm-ill-check { animation: rmCheck 3s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
 
         @media (max-width: 780px) {
-          .rm-cf-row { flex-direction: column !important; align-items: center !important; gap: 44px !important; }
-          .rm-cf-arrow { display: none; }
+          .rm-cf-row { flex-direction: column !important; align-items: center !important; gap: 44px !important; width: 100% !important; }
+          .rm-cf-step { width: 100% !important; max-width: 260px !important; margin: 0 auto !important; }
+          .rm-cf-arrow { display: none !important; }
         }
 
         /* En móvil, la tarjeta translúcida no debe tapar casi toda la foto de
@@ -351,7 +352,7 @@ export default function Landing() {
           <div className="rm-cf-row" style={S.cfRow}>
             {PASOS.map((p, i) => (
               <Fragment key={p.titulo}>
-                <div style={S.cfStep}>
+                <div className="rm-cf-step" style={S.cfStep}>
                   <div style={S.cfIlustracion}><p.Ilustracion /></div>
                   <div style={S.cfNumero}>Paso {i + 1}</div>
                   <div style={S.cfTitulo}>{p.titulo}</div>
