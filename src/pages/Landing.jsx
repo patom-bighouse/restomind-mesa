@@ -306,7 +306,7 @@ export default function Landing() {
         .rm-ill-check { animation: rmCheck 3s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
 
         @media (max-width: 780px) {
-          .rm-cf-row { flex-direction: column; align-items: center; gap: 44px; }
+          .rm-cf-row { flex-direction: column !important; align-items: center !important; gap: 44px !important; }
           .rm-cf-arrow { display: none; }
         }
 
