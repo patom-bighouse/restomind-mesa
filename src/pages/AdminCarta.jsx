@@ -48,8 +48,12 @@ const S = {
   addBtn: { background: '#e8c97a', color: '#111', border: 'none', borderRadius: 10, padding: '10px 20px', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif", whiteSpace: 'nowrap' },
 
   catSection: { marginBottom: 32 },
-  catHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingBottom: 10, borderBottom: '0.5px solid #2a2a2a' },
-  catName: { fontSize: 15, fontWeight: 600, color: '#e8c97a', fontFamily: "'Playfair Display', serif" },
+  catHeader: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18,
+    padding: '14px 18px', background: 'rgba(232,201,122,0.10)', border: '1px solid rgba(232,201,122,0.35)',
+    borderLeft: '4px solid #e8c97a', borderRadius: 10,
+  },
+  catName: { fontSize: 28, fontWeight: 700, color: '#e8c97a', fontFamily: "'Playfair Display', serif", letterSpacing: 0.3 },
   addItemBtn: { background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '6px 12px', fontSize: 12, color: '#e8c97a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" },
 
   itemGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 },
@@ -781,9 +785,9 @@ export default function AdminCarta() {
     const tieneHijas = categories.some(c => c.categoria_padre_id === cat.id)
     return (
       <div key={cat.id} style={esSubcategoria ? { ...S.catSection, marginLeft: 24, borderLeft: '2px solid #2a2a2a', paddingLeft: 16 } : S.catSection}>
-        <div style={S.catHeader}>
+        <div style={esSubcategoria ? { ...S.catHeader, background: 'transparent', border: 'none', borderLeft: 'none', borderBottom: '1px solid #2a2a2a', borderRadius: 0, padding: '0 0 10px' } : S.catHeader}>
           <input
-            style={{ ...S.catName, background: 'transparent', border: 'none', outline: 'none', fontFamily: "'Playfair Display', serif", width: 'auto', maxWidth: 240, fontSize: esSubcategoria ? 13 : undefined }}
+            style={{ ...S.catName, background: 'transparent', border: 'none', outline: 'none', fontFamily: "'Playfair Display', serif", width: 'auto', maxWidth: 240, fontSize: esSubcategoria ? 14 : undefined }}
             defaultValue={cat.nombre}
             onBlur={e => renameCategory(cat, e.target.value)}
             onKeyDown={e => e.key === 'Enter' && e.target.blur()}
@@ -866,17 +870,17 @@ export default function AdminCarta() {
         <div style={S.navTabs}>
           {tieneModulo('reportes') && <a href={`/admin/dashboard/${restaurantId}`} style={S.navTab(false)}>Dashboard</a>}
           <a href={`/admin/mesas/${restaurantId}`} style={S.navTab(false)}>Mesas</a>
+          {tieneModulo('reservas') && <a href={`/admin/reservas/${restaurantId}`} style={S.navTab(false)}>Reservas</a>}
           <a href={`/admin/carta/${restaurantId}`} style={S.navTab(true)}>Carta</a>
           {tieneModulo('multi_menu') && <a href={`/admin/menus/${restaurantId}`} style={S.navTab(false)}>Menús</a>}
+          {tieneModulo('marketing_fidelizacion') && <a href={`/admin/upsell/${restaurantId}`} style={S.navTab(false)}>Upsell</a>}
           {tieneModulo('control_stock') && <a href={`/admin/stock/${restaurantId}`} style={S.navTab(false)}>Stock</a>}
           <a href={`/admin/clientes/${restaurantId}`} style={S.navTab(false)}>Clientes</a>
-          {tieneModulo('marketing_fidelizacion') && <a href={`/admin/vales/${restaurantId}`} style={S.navTab(false)}>Vales</a>}
-          {tieneModulo('webhooks') && <a href={`/admin/webhooks/${restaurantId}`} style={S.navTab(false)}>Webhooks</a>}
-          {tieneModulo('marketing_fidelizacion') && <a href={`/admin/upsell/${restaurantId}`} style={S.navTab(false)}>Upsell</a>}
-          {tieneModulo('reservas') && <a href={`/admin/reservas/${restaurantId}`} style={S.navTab(false)}>Reservas</a>}
-          <a href={`/admin/limpieza/${restaurantId}`} style={S.navTab(false)}>Limpieza</a>
           {tieneModulo('marketing_fidelizacion') && <a href={`/admin/fidelizacion/${restaurantId}`} style={S.navTab(false)}>Fidelización</a>}
+          {tieneModulo('marketing_fidelizacion') && <a href={`/admin/vales/${restaurantId}`} style={S.navTab(false)}>Vales</a>}
+          <a href={`/admin/limpieza/${restaurantId}`} style={S.navTab(false)}>Limpieza</a>
           <a href={`/admin/config/${restaurantId}`} style={S.navTab(false)}>Configuración</a>
+          {tieneModulo('webhooks') && <a href={`/admin/webhooks/${restaurantId}`} style={S.navTab(false)}>Webhooks</a>}
           <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
         </div>
       </div>
