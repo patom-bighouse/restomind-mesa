@@ -73,6 +73,18 @@ const PLANES = [
   },
 ]
 
+// Borde inferior "rasgado" de las comandas de papel (dientes de sierra).
+const dientes = (n) => {
+  const pts = ['0% 0%', '100% 0%', '100% 30%']
+  for (let k = n - 1; k >= 0; k--) {
+    pts.push(`${(((k + 0.5) / n) * 100).toFixed(2)}% 100%`)
+    pts.push(`${((k / n) * 100).toFixed(2)}% 30%`)
+  }
+  return `polygon(${pts.join(',')})`
+}
+const CLIP_RASGADO = dientes(12)
+const PAPEL = '#fbf5e3'
+
 const S = {
   page: { minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'Inter', sans-serif", overflowX: 'hidden' },
   nav: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '22px clamp(20px, 5vw, 60px)' },
@@ -170,17 +182,17 @@ const S = {
   },
   masTitulo: { fontFamily: "'Playfair Display', serif", fontSize: 'clamp(22px, 3vw, 28px)', color: C.text, marginBottom: 14 },
   masSub: { fontSize: 15, color: C.textBody, lineHeight: 1.65, margin: 0 },
-  masTags: { display: 'flex', flexWrap: 'wrap', gap: '26px 22px', justifyContent: 'center', marginBottom: 46, padding: '14px 4px 6px' },
+  masTags: { display: 'flex', flexWrap: 'wrap', gap: '34px 24px', justifyContent: 'center', marginBottom: 46, padding: '10px 4px 14px' },
   masTag: (deg) => ({
-    position: 'relative', fontFamily: "'Kalam', cursive", fontWeight: 700, fontSize: 19,
-    color: '#f6f0dc', background: 'linear-gradient(160deg, #3a2e22 0%, #241b13 100%)',
-    border: '4px solid #f3ebd3', borderRadius: 9,
-    padding: '16px 24px 13px',
-    // marco crema tipo tiza + halo de luz: separa la pizarra oscura de la madera de la foto
-    boxShadow: '0 0 0 1px rgba(0,0,0,0.28), 0 0 26px 5px rgba(255,244,214,0.5), 0 16px 30px rgba(0,0,0,0.45), inset 0 0 0 2px #2a2016, inset 0 0 14px rgba(0,0,0,0.35)',
+    position: 'relative', display: 'block', fontFamily: "'Kalam', cursive", fontWeight: 700, fontSize: 19,
+    color: '#2b2118', background: PAPEL,
+    borderRadius: '6px 6px 0 0', padding: '20px 24px 15px',
+    // drop-shadow (no box-shadow) para que la sombra siga el borde rasgado
+    filter: 'drop-shadow(0 12px 12px rgba(0,0,0,0.42))',
     transform: `rotate(${deg}deg)`,
   }),
-  masTagClip: { position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', width: 26, height: 14, background: '#b9ab8f', borderRadius: 3, boxShadow: '0 2px 4px rgba(0,0,0,0.3)' },
+  masTagBanda: { position: 'absolute', top: 0, left: 0, right: 0, height: 8, background: C.terracotta, borderRadius: '6px 6px 0 0' },
+  masTagRasgado: { position: 'absolute', left: 0, right: 0, bottom: -9, height: 10, background: PAPEL, clipPath: CLIP_RASGADO, WebkitClipPath: CLIP_RASGADO },
   masBtn: { display: 'inline-block', textDecoration: 'none', color: '#fff', background: C.terracotta, borderRadius: 30, padding: '16px 34px', fontSize: 15.5, fontWeight: 700, boxShadow: '0 12px 28px rgba(0,0,0,0.35)' },
 
   pricing: { padding: '10px clamp(20px, 5vw, 60px) 100px', maxWidth: 1100, margin: '0 auto' },
@@ -460,8 +472,9 @@ export default function Landing() {
         <div style={S.masTags}>
           {MAS_FUNCIONES.map((t, i) => (
             <span key={t} style={S.masTag([-3, 2, -1.5, 2.5, -2, 1.5, -2.5][i % 7])}>
-              <span style={S.masTagClip} />
+              <span style={S.masTagBanda} />
               {t}
+              <span style={S.masTagRasgado} />
             </span>
           ))}
         </div>
