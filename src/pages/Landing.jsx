@@ -116,6 +116,17 @@ const S = {
   cfTexto: { fontSize: 14.5, color: C.textBody, lineHeight: 1.55 },
   cfArrow: { flexShrink: 0, fontSize: 26, color: C.terracotta, marginTop: 60, opacity: 0.55 },
 
+  scanSection: { padding: 'clamp(50px, 8vw, 80px) clamp(20px, 5vw, 60px)', maxWidth: 1080, margin: '0 auto' },
+  scanGrid: { display: 'flex', alignItems: 'center', gap: 'clamp(32px, 6vw, 64px)', flexWrap: 'wrap' },
+  scanImgWrap: { flex: '1 1 380px', minWidth: 280 },
+  scanImg: { width: '100%', height: 'auto', display: 'block', borderRadius: 20, boxShadow: '0 20px 50px rgba(36,28,20,0.18)' },
+  scanTexto: { flex: '1 1 320px', minWidth: 280 },
+  scanTitulo: { fontFamily: "'Playfair Display', serif", fontSize: 'clamp(24px, 3.4vw, 32px)', color: C.text, marginBottom: 16, lineHeight: 1.25 },
+  scanTexto2: { fontSize: 16, color: C.textBody, lineHeight: 1.65 },
+
+  kdsWrap: { background: C.bgSoft, padding: 'clamp(50px, 8vw, 80px) clamp(20px, 5vw, 60px)' },
+  kdsInner: { maxWidth: 1080, margin: '0 auto' },
+
   featuresSection: { padding: 'clamp(60px, 8vw, 90px) clamp(20px, 5vw, 60px) clamp(50px, 7vw, 80px)', maxWidth: 1160, margin: '0 auto' },
   featuresHeader: { textAlign: 'center', maxWidth: 600, margin: '0 auto 50px' },
   features: { display: 'flex', flexWrap: 'wrap', gap: 24, justifyContent: 'center' },
@@ -144,7 +155,7 @@ const S = {
   featurePuntoMarca: { color: C.terracotta, flexShrink: 0, fontWeight: 700 },
 
   masWrap: {
-    backgroundImage: "linear-gradient(rgba(255,255,255,0.18), rgba(255,255,255,0.22)), url('/mesa-restaurante.jpg')",
+    backgroundImage: "url('/mesa-restaurante.jpg')",
     backgroundSize: 'cover', backgroundPosition: 'center',
     padding: 'clamp(50px, 8vw, 90px) clamp(16px, 5vw, 60px)',
     display: 'flex', justifyContent: 'center',
@@ -153,21 +164,22 @@ const S = {
   masCard: {
     background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
     border: `1px solid rgba(255,255,255,0.6)`, borderRadius: 24,
-    padding: 'clamp(36px, 6vw, 54px) clamp(24px, 5vw, 54px)',
-    boxShadow: '0 24px 60px rgba(36,28,20,0.18)',
+    padding: 'clamp(26px, 4vw, 34px) clamp(22px, 4vw, 40px)',
+    boxShadow: '0 24px 60px rgba(36,28,20,0.22)',
+    maxWidth: 560, margin: '0 auto clamp(38px, 6vw, 56px)',
   },
   masTitulo: { fontFamily: "'Playfair Display', serif", fontSize: 'clamp(22px, 3vw, 28px)', color: C.text, marginBottom: 14 },
-  masSub: { fontSize: 15, color: C.textBody, lineHeight: 1.65, marginBottom: 34, maxWidth: 540, marginLeft: 'auto', marginRight: 'auto' },
-  masTags: { display: 'flex', flexWrap: 'wrap', gap: 18, justifyContent: 'center', marginBottom: 38, padding: '10px 4px' },
+  masSub: { fontSize: 15, color: C.textBody, lineHeight: 1.65, margin: 0 },
+  masTags: { display: 'flex', flexWrap: 'wrap', gap: '26px 22px', justifyContent: 'center', marginBottom: 46, padding: '14px 4px 6px' },
   masTag: (deg) => ({
-    position: 'relative', fontFamily: "'Kalam', cursive", fontWeight: 700, fontSize: 16.5,
-    color: '#f2ecd8', background: '#2e2419',
-    border: '2px solid #6b4a30', borderRadius: 7,
-    padding: '13px 18px 11px', boxShadow: '0 10px 20px rgba(36,28,20,0.3)',
+    position: 'relative', fontFamily: "'Kalam', cursive", fontWeight: 700, fontSize: 19,
+    color: '#f6f0dc', background: 'linear-gradient(160deg, #3a2e22 0%, #241b13 100%)',
+    border: '3px solid #7a5535', borderRadius: 8,
+    padding: '16px 24px 13px', boxShadow: '0 16px 30px rgba(0,0,0,0.45), inset 0 0 14px rgba(0,0,0,0.35)',
     transform: `rotate(${deg}deg)`,
   }),
-  masTagClip: { position: 'absolute', top: -9, left: '50%', transform: 'translateX(-50%)', width: 22, height: 12, background: '#b9ab8f', borderRadius: 3, boxShadow: '0 2px 4px rgba(0,0,0,0.3)' },
-  masBtn: { display: 'inline-block', textDecoration: 'none', color: '#fff', background: C.terracotta, borderRadius: 30, padding: '13px 28px', fontSize: 14.5, fontWeight: 700 },
+  masTagClip: { position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', width: 26, height: 14, background: '#b9ab8f', borderRadius: 3, boxShadow: '0 2px 4px rgba(0,0,0,0.3)' },
+  masBtn: { display: 'inline-block', textDecoration: 'none', color: '#fff', background: C.terracotta, borderRadius: 30, padding: '16px 34px', fontSize: 15.5, fontWeight: 700, boxShadow: '0 12px 28px rgba(0,0,0,0.35)' },
 
   pricing: { padding: '10px clamp(20px, 5vw, 60px) 100px', maxWidth: 1100, margin: '0 auto' },
   pricingGrid: { display: 'flex', flexWrap: 'wrap', gap: 22, justifyContent: 'center' },
@@ -365,6 +377,41 @@ export default function Landing() {
         </div>
       </section>
 
+      <section style={S.scanSection}>
+        <div style={S.scanGrid}>
+          <div style={S.scanImgWrap}>
+            <img src="/scanningQR.jpg" alt="Clientes escaneando el código QR de su mesa" style={S.scanImg} />
+          </div>
+          <div style={S.scanTexto}>
+            <div style={S.eyebrow}>La experiencia del cliente</div>
+            <h2 style={S.scanTitulo}>Así de simple, para cualquiera</h2>
+            <p style={S.scanTexto2}>
+              Sin descargar nada, sin crear una cuenta, sin esperar a que alguien se acerque a tomar nota.
+              Solo apuntan la cámara y la carta aparece al instante, lista para pedir.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section style={S.kdsWrap}>
+        <div style={S.kdsInner}>
+          <div style={S.scanGrid}>
+            <div style={S.scanTexto}>
+              <div style={S.eyebrow}>En la cocina</div>
+              <h2 style={S.scanTitulo}>Los pedidos llegan solos a la pantalla</h2>
+              <p style={S.scanTexto2}>
+                Cada pedido aparece al instante en la pantalla de cocina, con un aviso sonoro para que
+                nadie se lo pierda. El equipo lo marca como preparando y listo con un toque.
+                Sin papelitos, sin gritos, sin comandas perdidas.
+              </p>
+            </div>
+            <div style={S.scanImgWrap}>
+              <img src="/Kitchen_screen1.jpg" alt="Cocinero preparando un plato junto a la pantalla de pedidos de Restomind" style={S.scanImg} />
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section style={S.featuresSection}>
         <div style={S.featuresHeader}>
           <div style={S.eyebrow}>Funcionalidades</div>
@@ -407,18 +454,18 @@ export default function Landing() {
             Restomind se organiza en módulos, así que tu restaurante solo paga por lo que usa.
             Y siempre puedes sumar más sobre la marcha, sin cambiar de sistema.
           </p>
-          <div style={S.masTags}>
-            {MAS_FUNCIONES.map((t, i) => (
-              <span key={t} style={S.masTag([-3, 2, -1.5, 2.5, -2, 1.5, -2.5][i % 7])}>
-                <span style={S.masTagClip} />
-                {t}
-              </span>
-            ))}
-          </div>
-          <a href={linkWhatsapp('Hola, quiero saber qué otras funciones tiene Restomind')} style={S.masBtn} target="_blank" rel="noreferrer">
-            Cuéntanos qué necesitas
-          </a>
         </div>
+        <div style={S.masTags}>
+          {MAS_FUNCIONES.map((t, i) => (
+            <span key={t} style={S.masTag([-3, 2, -1.5, 2.5, -2, 1.5, -2.5][i % 7])}>
+              <span style={S.masTagClip} />
+              {t}
+            </span>
+          ))}
+        </div>
+        <a href={linkWhatsapp('Hola, quiero saber qué otras funciones tiene Restomind')} style={S.masBtn} target="_blank" rel="noreferrer">
+          Cuéntanos qué necesitas
+        </a>
         </div>
       </section>
 
