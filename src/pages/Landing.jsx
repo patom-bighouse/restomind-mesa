@@ -174,8 +174,10 @@ const S = {
   masTag: (deg) => ({
     position: 'relative', fontFamily: "'Kalam', cursive", fontWeight: 700, fontSize: 19,
     color: '#f6f0dc', background: 'linear-gradient(160deg, #3a2e22 0%, #241b13 100%)',
-    border: '3px solid #7a5535', borderRadius: 8,
-    padding: '16px 24px 13px', boxShadow: '0 16px 30px rgba(0,0,0,0.45), inset 0 0 14px rgba(0,0,0,0.35)',
+    border: '4px solid #f3ebd3', borderRadius: 9,
+    padding: '16px 24px 13px',
+    // marco crema tipo tiza + halo de luz: separa la pizarra oscura de la madera de la foto
+    boxShadow: '0 0 0 1px rgba(0,0,0,0.28), 0 0 26px 5px rgba(255,244,214,0.5), 0 16px 30px rgba(0,0,0,0.45), inset 0 0 0 2px #2a2016, inset 0 0 14px rgba(0,0,0,0.35)',
     transform: `rotate(${deg}deg)`,
   }),
   masTagClip: { position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', width: 26, height: 14, background: '#b9ab8f', borderRadius: 3, boxShadow: '0 2px 4px rgba(0,0,0,0.3)' },
