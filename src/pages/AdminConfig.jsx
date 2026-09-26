@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useRestaurantModulos } from '../lib/modulos'
+import ConfigInformacion from '../components/ConfigInformacion'
 
 const DIAS = [
   { key: 'lunes',     label: 'Lunes' },
@@ -43,6 +44,7 @@ const S = {
   diaCard: (abierto) => ({ background: '#1a1a1a', border: `0.5px solid ${abierto ? '#3a2e20' : '#2a2a2a'}`, borderRadius: 12, padding: '16px 20px', marginBottom: 10, opacity: abierto ? 1 : 0.5 }),
   diaHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   diaLabel: { fontSize: 15, fontWeight: 500, color: '#f0e8d8' },
+  subTab: (active) => ({ background: 'transparent', color: active ? '#e8c97a' : '#8a7560', border: 'none', borderBottom: `2px solid ${active ? '#e8c97a' : 'transparent'}`, padding: '8px 4px', marginRight: 20, fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }),
   toggleSwitch: (on) => ({ width: 42, height: 24, borderRadius: 12, background: on ? '#27ae60' : '#3a2a2a', position: 'relative', cursor: 'pointer', transition: 'background 0.15s', flexShrink: 0 }),
   toggleDot: (on) => ({ width: 20, height: 20, borderRadius: '50%', background: '#fff', position: 'absolute', top: 2, left: on ? 20 : 2, transition: 'left 0.15s' }),
 
@@ -69,6 +71,7 @@ export default function AdminConfig() {
   const { restaurantId } = useParams()
   const navigate = useNavigate()
   const { tieneModulo } = useRestaurantModulos(restaurantId)
+  const [pestana, setPestana] = useState('general') // 'general' | 'informacion'
   const [restaurant, setRestaurant] = useState(null)
   const [horario, setHorario] = useState({})
   const [nombre, setNombre] = useState('')
@@ -332,6 +335,18 @@ export default function AdminConfig() {
         <div style={S.sectionTitle}>Configuración del restaurante</div>
         <div style={S.sectionSub}>Estos datos son usados por el agente de WhatsApp para responder correctamente a los clientes.</div>
 
+        {tieneModulo('info_restaurante') && (
+          <div style={{ borderBottom: '0.5px solid #2a2a2a', marginBottom: 24 }}>
+            <button style={S.subTab(pestana === 'general')} onClick={() => setPestana('general')}>General</button>
+            <button style={S.subTab(pestana === 'informacion')} onClick={() => setPestana('informacion')}>Información</button>
+          </div>
+        )}
+
+        {pestana === 'informacion' && tieneModulo('info_restaurante') && (
+          <ConfigInformacion restaurantId={restaurantId} />
+        )}
+
+        {(pestana === 'general' || !tieneModulo('info_restaurante')) && (<>
         {error && <div style={S.error}>{error}</div>}
         {success && <div style={S.success}>{success}</div>}
 
@@ -679,6 +694,7 @@ export default function AdminConfig() {
         <button style={S.saveBtn(saving)} onClick={handleSave} disabled={saving}>
           {saving ? 'Guardando...' : 'Guardar configuración'}
         </button>
+        </>)}
       </div>
     </div>
   )

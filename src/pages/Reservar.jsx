@@ -19,12 +19,18 @@ const S = {
   big: { fontSize: 40, marginBottom: 14 },
   ctitle: { fontFamily: "'Playfair Display', serif", fontSize: 18, color: '#e8c97a', marginBottom: 8 },
   csub: { fontSize: 13, color: '#7a6a50', lineHeight: 1.5 },
+  infoBox: { background: '#221c14', border: '0.5px solid #3a2e20', borderRadius: 10, padding: '4px 14px', marginBottom: 24 },
+  infoSummary: { fontSize: 13, color: '#e8c97a', padding: '10px 0', cursor: 'pointer', fontWeight: 500 },
+  infoItem: { borderTop: '0.5px solid #3a2e20', padding: '10px 0' },
+  infoItemTitle: { fontSize: 13, color: '#e8c97a', marginBottom: 4 },
+  infoItemText: { fontSize: 13, color: '#c9bda8', lineHeight: 1.5, whiteSpace: 'pre-wrap' },
   loading: { display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', color: '#555', fontSize: 14 },
 }
 
 export default function Reservar() {
   const { restaurantId } = useParams()
   const [restaurant, setRestaurant] = useState(null)
+  const [info, setInfo] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [enviando, setEnviando] = useState(false)
@@ -43,6 +49,10 @@ export default function Reservar() {
       const { data, error: err } = await supabase.from('restaurants').select('nombre').eq('id', restaurantId).single()
       if (err || !data) { setError('No encontramos este restaurante.'); setLoading(false); return }
       setRestaurant(data)
+      // Solo devuelve algo si el restaurante tiene el módulo de información
+      // activo; si falla, la página de reservas funciona igual sin ella.
+      const { data: infoData } = await supabase.rpc('fn_info_restaurante_publica', { p_restaurant_id: restaurantId })
+      setInfo(infoData || [])
       setLoading(false)
     }
     load()
@@ -98,6 +108,18 @@ export default function Reservar() {
       <div style={S.card}>
         <div style={S.logo}>{restaurant?.nombre}</div>
         <div style={S.sub}>Reserva tu mesa</div>
+
+        {info.length > 0 && (
+          <details style={S.infoBox}>
+            <summary style={S.infoSummary}>Información del restaurante</summary>
+            {info.map((i, idx) => (
+              <div key={idx} style={S.infoItem}>
+                <div style={S.infoItemTitle}>{i.titulo}</div>
+                <div style={S.infoItemText}>{i.contenido}</div>
+              </div>
+            ))}
+          </details>
+        )}
 
         {error && <div style={S.error}>{error}</div>}
 
