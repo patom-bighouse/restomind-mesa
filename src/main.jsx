@@ -1,6 +1,8 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom'
+import { supabase } from './lib/supabase'
+import AdminRestablecer from './pages/AdminRestablecer'
 import Landing from './pages/Landing'
 import Mesa from './pages/Mesa'
 import Camarero from './pages/Camarero'
@@ -25,10 +27,25 @@ import SuperAdminRestaurantes from './pages/SuperAdminRestaurantes'
 import SuperAdminPlanes from './pages/SuperAdminPlanes'
 import NotFound from './pages/NotFound'
 
+// El enlace de recuperación de Supabase aterriza en la Site URL (normalmente "/"):
+// al detectar el evento PASSWORD_RECOVERY llevamos al usuario a la pantalla de nueva contraseña.
+function RecuperacionRedirect() {
+  const navigate = useNavigate()
+  React.useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((evento) => {
+      if (evento === 'PASSWORD_RECOVERY') navigate('/admin/restablecer', { replace: true })
+    })
+    return () => sub.subscription.unsubscribe()
+  }, [navigate])
+  return null
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
+      <RecuperacionRedirect />
       <Routes>
+        <Route path="/admin/restablecer" element={<AdminRestablecer />} />
         <Route path="/" element={<Landing />} />
         <Route path="/mesa/:token" element={<Mesa />} />
         <Route path="/camarero/:restaurantId" element={<Camarero />} />
