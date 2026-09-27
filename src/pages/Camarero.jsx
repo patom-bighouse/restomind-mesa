@@ -1456,10 +1456,10 @@ export default function Camarero() {
                     })}
                   </div>
                 )}
-                {fidelizacionEstado.sellos_progreso?.some(s => s.unidades_acumuladas > 0) && (
+                {fidelizacionEstado.sellos_progreso?.length > 0 && (
                   <div style={{ marginTop: 16 }}>
                     <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>En camino</div>
-                    {fidelizacionEstado.sellos_progreso.filter(s => s.unidades_acumuladas > 0).map(s => (
+                    {fidelizacionEstado.sellos_progreso.map(s => (
                       <div key={s.id} style={{ fontSize: 12, color: '#a89678', padding: '4px 0' }}>
                         {s.producto_objetivo_nombre}: {s.unidades_acumuladas}/{s.cantidad_objetivo} — faltan {s.cantidad_objetivo - s.unidades_acumuladas} para {s.nombre.toLowerCase()}
                       </div>
