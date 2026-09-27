@@ -41,6 +41,7 @@ export default function AdminFidelizacion() {
   const [restaurant, setRestaurant] = useState(null)
   const [niveles, setNiveles] = useState([])
   const [premios, setPremios] = useState([])
+  const [promosSellos, setPromosSellos] = useState([])
   const [menuItems, setMenuItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -58,6 +59,15 @@ export default function AdminFidelizacion() {
   const [descuentoImportePremio, setDescuentoImportePremio] = useState('')
   const [addingPremio, setAddingPremio] = useState(false)
 
+  const [nombreSello, setNombreSello] = useState('')
+  const [objetivoSello, setObjetivoSello] = useState('')
+  const [cantidadObjetivoSello, setCantidadObjetivoSello] = useState('')
+  const [premioSello, setPremioSello] = useState('')
+  const [cantidadPremioSello, setCantidadPremioSello] = useState('1')
+  const [venceSello, setVenceSello] = useState(false)
+  const [caducidadDiasSello, setCaducidadDiasSello] = useState('30')
+  const [addingSello, setAddingSello] = useState(false)
+
   useEffect(() => { checkAuth() }, [])
 
   async function checkAuth() {
@@ -67,6 +77,7 @@ export default function AdminFidelizacion() {
     setRestaurant(rest)
     await loadNiveles()
     await loadPremios()
+    await loadPromosSellos()
     await loadMenuItems()
     setLoading(false)
   }
@@ -98,6 +109,16 @@ export default function AdminFidelizacion() {
       .order('costo_puntos')
     if (err) { setError(err.message); return }
     setPremios(data || [])
+  }
+
+  async function loadPromosSellos() {
+    const { data, error: err } = await supabase
+      .from('promos_sellos')
+      .select('id, nombre, producto_objetivo_id, cantidad_objetivo, producto_premio_id, cantidad_premio, caducidad_dias, activo, orden')
+      .eq('restaurant_id', restaurantId)
+      .order('orden')
+    if (err) { setError(err.message); return }
+    setPromosSellos(data || [])
   }
 
   function nombreNivelPorId(id) {
@@ -177,6 +198,52 @@ export default function AdminFidelizacion() {
     const { error: err } = await supabase.from('premios_fidelizacion').delete().eq('id', premio.id)
     if (err) { setError(err.message); return }
     setPremios(prev => prev.filter(p => p.id !== premio.id))
+  }
+
+  async function addSello() {
+    if (!nombreSello.trim() || !objetivoSello || !cantidadObjetivoSello || !premioSello || !cantidadPremioSello) {
+      setError('Completa producto objetivo, cantidad objetivo, producto premio y cantidad premio.')
+      return
+    }
+    setError(null)
+    setAddingSello(true)
+    const orden = promosSellos.length > 0 ? Math.max(...promosSellos.map(p => p.orden)) + 1 : 0
+    const { data, error: err } = await supabase
+      .from('promos_sellos')
+      .insert({
+        restaurant_id: restaurantId,
+        nombre: nombreSello.trim(),
+        producto_objetivo_id: objetivoSello,
+        cantidad_objetivo: parseInt(cantidadObjetivoSello, 10),
+        producto_premio_id: premioSello,
+        cantidad_premio: parseInt(cantidadPremioSello, 10),
+        caducidad_dias: venceSello ? (parseInt(caducidadDiasSello, 10) || null) : null,
+        orden,
+      })
+      .select().single()
+    setAddingSello(false)
+    if (err) { setError(err.message); return }
+    setPromosSellos(prev => [...prev, data])
+    setNombreSello('')
+    setObjetivoSello('')
+    setCantidadObjetivoSello('')
+    setPremioSello('')
+    setCantidadPremioSello('1')
+    setVenceSello(false)
+    setCaducidadDiasSello('30')
+  }
+
+  async function toggleSelloActivo(promo) {
+    const { error: err } = await supabase.from('promos_sellos').update({ activo: !promo.activo }).eq('id', promo.id)
+    if (err) { setError(err.message); return }
+    setPromosSellos(prev => prev.map(p => p.id === promo.id ? { ...p, activo: !p.activo } : p))
+  }
+
+  async function eliminarSello(promo) {
+    if (!window.confirm(`¿Eliminar la promoción "${promo.nombre}"? El progreso ya acumulado por los clientes se pierde.`)) return
+    const { error: err } = await supabase.from('promos_sellos').delete().eq('id', promo.id)
+    if (err) { setError(err.message); return }
+    setPromosSellos(prev => prev.filter(p => p.id !== promo.id))
   }
 
   async function handleLogout() {
@@ -361,6 +428,96 @@ export default function AdminFidelizacion() {
                         {p.activo ? 'Activo' : 'Inactivo'}
                       </button>
                       <button style={S.deleteBtn} onClick={() => eliminarPremio(p)}>Eliminar</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div style={S.section}>
+          <div style={S.sectionTitle}>Tarjeta de sellos</div>
+          <div style={S.sectionHint}>
+            "Compra 5 y la 6ª es gratis": cada vez que se cierra una mesa o se entrega un take away
+            (con teléfono asociado), se suman las unidades del producto objetivo. Al llegar a la
+            cantidad objetivo, el cliente gana el premio para su próxima visita.
+          </div>
+
+          <div style={S.addBar}>
+            <div style={{ ...S.field, flex: 1 }}>
+              <span style={S.label}>Nombre</span>
+              <input style={S.input} placeholder="Ej. 6ª botella de vino gratis" value={nombreSello} onChange={e => setNombreSello(e.target.value)} />
+            </div>
+            <div style={S.field}>
+              <span style={S.label}>Producto objetivo</span>
+              <select style={S.select} value={objetivoSello} onChange={e => setObjetivoSello(e.target.value)}>
+                <option value="">Elige un plato</option>
+                {menuItems.map(i => <option key={i.id} value={i.id}>{i.nombre}</option>)}
+              </select>
+            </div>
+            <div style={S.field}>
+              <span style={S.label}>Cantidad objetivo</span>
+              <input style={{ ...S.input, width: 70 }} type="number" min="1" placeholder="5" value={cantidadObjetivoSello} onChange={e => setCantidadObjetivoSello(e.target.value)} />
+            </div>
+            <div style={S.field}>
+              <span style={S.label}>Producto premio</span>
+              <select style={S.select} value={premioSello} onChange={e => setPremioSello(e.target.value)}>
+                <option value="">Elige un plato</option>
+                {menuItems.map(i => <option key={i.id} value={i.id}>{i.nombre}</option>)}
+              </select>
+            </div>
+            <div style={S.field}>
+              <span style={S.label}>Cantidad premio</span>
+              <input style={{ ...S.input, width: 70 }} type="number" min="1" placeholder="1" value={cantidadPremioSello} onChange={e => setCantidadPremioSello(e.target.value)} />
+            </div>
+            <div style={S.field}>
+              <span style={S.label}>Caducidad</span>
+              <select
+                style={S.select}
+                value={venceSello ? 'vence' : 'nunca'}
+                onChange={e => setVenceSello(e.target.value === 'vence')}
+              >
+                <option value="nunca">Nunca</option>
+                <option value="vence">Vence a los...</option>
+              </select>
+            </div>
+            {venceSello && (
+              <div style={S.field}>
+                <span style={S.label}>Días</span>
+                <input style={{ ...S.input, width: 70 }} type="number" min="1" placeholder="30" value={caducidadDiasSello} onChange={e => setCaducidadDiasSello(e.target.value)} />
+              </div>
+            )}
+            <button style={S.addBtn} onClick={addSello} disabled={addingSello}>
+              {addingSello ? 'Añadiendo...' : '+ Añadir promo'}
+            </button>
+          </div>
+
+          {promosSellos.length === 0 ? (
+            <div style={S.empty}>Todavía no configuraste ninguna promoción de sellos.</div>
+          ) : (
+            <table style={S.table}>
+              <thead>
+                <tr>
+                  <th style={S.th}>Promoción</th>
+                  <th style={S.th}>Objetivo</th>
+                  <th style={S.th}>Premio</th>
+                  <th style={S.th}>Caducidad</th>
+                  <th style={S.th}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {promosSellos.map(p => (
+                  <tr key={p.id} style={{ ...S.row, opacity: p.activo ? 1 : 0.5 }}>
+                    <td style={S.td}>{p.nombre}</td>
+                    <td style={S.td}>{p.cantidad_objetivo}× {nombreMenuItemPorId(p.producto_objetivo_id)}</td>
+                    <td style={S.td}>🎁 {p.cantidad_premio}× {nombreMenuItemPorId(p.producto_premio_id)}</td>
+                    <td style={S.td}>{p.caducidad_dias ? `${p.caducidad_dias} días` : 'Nunca'}</td>
+                    <td style={S.td}>
+                      <button style={S.toggleBtn(p.activo)} onClick={() => toggleSelloActivo(p)}>
+                        {p.activo ? 'Activo' : 'Inactivo'}
+                      </button>
+                      <button style={S.deleteBtn} onClick={() => eliminarSello(p)}>Eliminar</button>
                     </td>
                   </tr>
                 ))}

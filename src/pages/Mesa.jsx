@@ -690,7 +690,7 @@ export default function Mesa() {
       // misma mesa/sesión (modo agrupado) o si crea uno nuevo (modo orden
       // de llegada). El mismo criterio se usa desde el flujo de WhatsApp,
       // así que no se decide nada de esto acá en el cliente.
-      const premiosPayload = premiosEnCarrito.map(p => ({ premio_id: p.premioId, comensal: p.comensal ?? null }))
+      const premiosPayload = premiosEnCarrito.map(p => ({ premio_id: p.premioId, comensal: p.comensal ?? null, origen: p.origen || 'puntos' }))
       const { data: newOrderId, error: rpcErr } = await supabase.rpc('fn_registrar_pedido', {
         p_table_session_id: session.id,
         p_items: itemsPayload,
@@ -782,13 +782,20 @@ export default function Mesa() {
     // En modo camarero, este teléfono nunca envía el pedido — el canje
     // solo puede quedar en manos de quien sí lo hace (Camarero.jsx).
     if (esModoCamarero) return
-    if (premio.costo_puntos > puntosDisponibles) return
+    const origen = premio.origen || 'puntos'
+    if (origen === 'sello') {
+      const yaEnCarrito = premiosEnCarrito.filter(p => p.origen === 'sello' && p.premioId === premio.id).length
+      if (yaEnCarrito >= premio.premios_disponibles) return
+    } else if (premio.costo_puntos > puntosDisponibles) {
+      return
+    }
     setPremiosEnCarrito(prev => [...prev, {
       key: crypto.randomUUID(),
       premioId: premio.id,
       nombre: premio.nombre,
       tipo: premio.tipo,
-      costoPuntos: premio.costo_puntos,
+      origen,
+      costoPuntos: premio.costo_puntos || 0,
       descuentoImporte: premio.descuento_importe || 0,
       comensal: selectedComensal,
     }])
@@ -1505,7 +1512,7 @@ export default function Mesa() {
                       <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>En tu pedido</div>
                       {premiosEnCarrito.map(p => (
                         <div key={p.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0' }}>
-                          <div style={{ fontSize: 13, color: '#e8c97a' }}>🎁 {p.nombre} ({p.costoPuntos} pts)</div>
+                          <div style={{ fontSize: 13, color: '#e8c97a' }}>🎁 {p.nombre}{p.origen !== 'sello' ? ` (${p.costoPuntos} pts)` : ''}</div>
                           <button style={S.resenaSkip} onClick={() => quitarPremioCarrito(p.key)}>Quitar</button>
                         </div>
                       ))}
@@ -1515,18 +1522,26 @@ export default function Mesa() {
                     <div style={{ marginTop: 8 }}>
                       <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Premios</div>
                       {fidelizacionEstado.premios.map(p => {
-                        const puedeCanjear = p.costo_puntos <= puntosDisponibles
+                        const origen = p.origen || 'puntos'
+                        const yaEnCarrito = premiosEnCarrito.filter(x => x.origen === origen && x.premioId === p.id).length
+                        const puedeCanjear = origen === 'sello'
+                          ? yaEnCarrito < p.premios_disponibles
+                          : p.costo_puntos <= puntosDisponibles
                         return (
-                          <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '0.5px solid #2a2018', opacity: puedeCanjear ? 1 : 0.5 }}>
+                          <div key={`${origen}-${p.id}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '0.5px solid #2a2018', opacity: puedeCanjear ? 1 : 0.5 }}>
                             <div>
                               <div style={{ fontSize: 13, color: '#f0e8d8' }}>
-                                {p.tipo === 'plato_gratis' ? `🍽 ${p.menu_item_nombre}` : `💶 -${formatMoney(p.descuento_importe, restaurant?.moneda)}`}
+                                {p.tipo === 'plato_gratis'
+                                  ? `🍽 ${p.cantidad_premio > 1 ? p.cantidad_premio + '× ' : ''}${p.menu_item_nombre}`
+                                  : `💶 -${formatMoney(p.descuento_importe, restaurant?.moneda)}`}
                                 {' · '}{p.nombre}
                               </div>
                               {p.descripcion && <div style={{ fontSize: 11, color: '#7a6a50' }}>{p.descripcion}</div>}
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <span style={{ fontSize: 12, color: puedeCanjear ? '#e8c97a' : '#7a6a50' }}>{p.costo_puntos} pts</span>
+                              <span style={{ fontSize: 12, color: puedeCanjear ? '#e8c97a' : '#7a6a50' }}>
+                                {origen === 'sello' ? `${p.premios_disponibles - yaEnCarrito} disponible${p.premios_disponibles - yaEnCarrito === 1 ? '' : 's'}` : `${p.costo_puntos} pts`}
+                              </span>
                               {esModoCamarero ? (
                                 // En modo camarero, el cliente no puede enviar
                                 // pedidos por su cuenta — el canje solo puede
@@ -1545,6 +1560,16 @@ export default function Mesa() {
                           </div>
                         )
                       })}
+                    </div>
+                  )}
+                  {fidelizacionEstado.sellos_progreso?.length > 0 && (
+                    <div style={{ marginTop: 16 }}>
+                      <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>En camino</div>
+                      {fidelizacionEstado.sellos_progreso.map(s => (
+                        <div key={s.id} style={{ fontSize: 12, color: '#a89678', padding: '4px 0' }}>
+                          {s.producto_objetivo_nombre}: {s.unidades_acumuladas}/{s.cantidad_objetivo} — te faltan {s.cantidad_objetivo - s.unidades_acumuladas} para {s.nombre.toLowerCase()}
+                        </div>
+                      ))}
                     </div>
                   )}
                 </>

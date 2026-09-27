@@ -53,6 +53,7 @@ export default function AdminClientes() {
   const [niveles, setNiveles] = useState([])
   const [premios, setPremios] = useState([])
   const [redeemPremioId, setRedeemPremioId] = useState('')
+  const [sellosPorCliente, setSellosPorCliente] = useState({}) // cliente_id -> [{ promoId, nombre, cantidadObjetivo, unidadesAcumuladas, premiosDisponibles }]
 
   useEffect(() => { checkAuth() }, [])
 
@@ -64,6 +65,7 @@ export default function AdminClientes() {
     await loadClientes()
     await loadNiveles()
     await loadPremios()
+    await loadSellosProgreso()
     setLoading(false)
   }
 
@@ -94,6 +96,29 @@ export default function AdminClientes() {
       .eq('activo', true)
       .order('costo_puntos')
     setPremios(data || [])
+  }
+
+  // Progreso de sellos de todos los clientes, en una sola consulta —
+  // se filtra por restaurant_id embebiendo promos_sellos (la tabla que
+  // sí lo tiene) porque clientes_sellos no guarda ese dato directo.
+  async function loadSellosProgreso() {
+    const { data, error: err } = await supabase
+      .from('clientes_sellos')
+      .select('cliente_id, unidades_acumuladas, premios_disponibles, promos_sellos!inner(id, restaurant_id, nombre, cantidad_objetivo)')
+      .eq('promos_sellos.restaurant_id', restaurantId)
+    if (err) { setError(err.message); return }
+    const porCliente = {}
+    for (const row of data || []) {
+      if (!porCliente[row.cliente_id]) porCliente[row.cliente_id] = []
+      porCliente[row.cliente_id].push({
+        promoId: row.promos_sellos.id,
+        nombre: row.promos_sellos.nombre,
+        cantidadObjetivo: row.promos_sellos.cantidad_objetivo,
+        unidadesAcumuladas: row.unidades_acumuladas,
+        premiosDisponibles: row.premios_disponibles,
+      })
+    }
+    setSellosPorCliente(porCliente)
   }
 
   // El nivel más alto cuyo umbral de gasto ya se alcanzó — el mismo
@@ -250,6 +275,7 @@ export default function AdminClientes() {
                 <th style={S.th}>Nivel</th>
                 <th style={S.th}>Puntos</th>
                 <th style={S.th}>Gasto acumulado</th>
+                <th style={{ ...S.th, minWidth: 220, textAlign: 'center' }}>Sellos</th>
                 <th style={S.th}>Última visita</th>
                 <th style={S.th}></th>
               </tr>
@@ -263,6 +289,19 @@ export default function AdminClientes() {
                     <td style={S.td}>{nivelDeCliente(c.gasto_acumulado)?.nombre || '—'}</td>
                     <td style={{ ...S.td, ...S.puntos }}>{c.puntos}</td>
                     <td style={S.td}>{formatMoney(c.gasto_acumulado, restaurant?.moneda)}</td>
+                    <td style={{ ...S.td, minWidth: 220 }}>
+                      {(sellosPorCliente[c.id] || []).length === 0 ? '—' : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {sellosPorCliente[c.id].map(s => (
+                            <div key={s.promoId} style={{ fontSize: 12, color: s.premiosDisponibles > 0 ? '#7ae8a0' : '#a89678' }}>
+                              {s.premiosDisponibles > 0
+                                ? `🎁 ${s.premiosDisponibles} lista${s.premiosDisponibles > 1 ? 's' : ''} · ${s.nombre}`
+                                : `${s.unidadesAcumuladas}/${s.cantidadObjetivo} · ${s.nombre}`}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </td>
                     <td style={S.td}>{c.ultima_visita ? new Date(c.ultima_visita).toLocaleDateString('es-ES') : '—'}</td>
                     <td style={{ ...S.td, display: 'flex', gap: 8 }}>
                       <button style={S.redeemBtn} onClick={() => toggleHistorial(c.id)}>
@@ -275,7 +314,7 @@ export default function AdminClientes() {
                   </tr>
                   {historialAbierto === c.id && (
                     <tr style={S.row}>
-                      <td colSpan={7} style={{ ...S.td, paddingTop: 0 }}>
+                      <td colSpan={8} style={{ ...S.td, paddingTop: 0 }}>
                         {!movimientos[c.id] ? (
                           <div style={{ fontSize: 12, color: '#555' }}>Cargando...</div>
                         ) : movimientos[c.id].length === 0 ? (
