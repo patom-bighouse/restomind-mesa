@@ -275,7 +275,7 @@ export default function AdminClientes() {
                 <th style={S.th}>Nivel</th>
                 <th style={S.th}>Puntos</th>
                 <th style={S.th}>Gasto acumulado</th>
-                <th style={S.th}>Sellos</th>
+                <th style={{ ...S.th, minWidth: 220 }}>Sellos</th>
                 <th style={S.th}>Última visita</th>
                 <th style={S.th}></th>
               </tr>
@@ -289,7 +289,7 @@ export default function AdminClientes() {
                     <td style={S.td}>{nivelDeCliente(c.gasto_acumulado)?.nombre || '—'}</td>
                     <td style={{ ...S.td, ...S.puntos }}>{c.puntos}</td>
                     <td style={S.td}>{formatMoney(c.gasto_acumulado, restaurant?.moneda)}</td>
-                    <td style={S.td}>
+                    <td style={{ ...S.td, minWidth: 220 }}>
                       {(sellosPorCliente[c.id] || []).length === 0 ? '—' : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                           {sellosPorCliente[c.id].map(s => (
