@@ -22,7 +22,6 @@ const C = {
 
 const FEATURES = [
   {
-    emoji: '📱',
     foto: '/MesaQR.jpg',
     fotoAlt: 'Cliente escaneando el código QR de su mesa',
     titulo: 'Carta digital con QR',
@@ -30,7 +29,6 @@ const FEATURES = [
     puntos: ['Pide desde el móvil, sin esperar a que el camarero tome nota', 'La carta se actualiza sola: precios, fotos y disponibilidad al día'],
   },
   {
-    emoji: '🛵',
     foto: '/Takeaway.jpg',
     fotoAlt: 'Camarera entregando un pedido para llevar',
     titulo: 'Takeaway y delivery',
@@ -38,7 +36,6 @@ const FEATURES = [
     puntos: ['Un asistente por WhatsApp puede tomar el pedido de forma automática', 'El cliente recibe confirmación con hora de recogida y precio exacto'],
   },
   {
-    emoji: '📅',
     foto: '/Reservas.jpg',
     fotoAlt: 'Encargada de sala gestionando reservas desde una tablet',
     titulo: 'Reservas',
@@ -46,7 +43,6 @@ const FEATURES = [
     puntos: ['El sistema comprueba la disponibilidad real de mesas antes de confirmar', 'También se pueden recibir y confirmar por WhatsApp'],
   },
   {
-    emoji: '📊',
     foto: '/Panel.jpg',
     fotoAlt: 'Dueña de restaurante revisando el panel de ventas y reservas en su portátil',
     titulo: 'Todo en un panel',
@@ -163,13 +159,7 @@ const S = {
     position: 'absolute', top: 14, right: 14, fontSize: 12, color: C.text, fontWeight: 700, letterSpacing: 1,
     background: 'rgba(255,255,255,0.88)', borderRadius: 20, padding: '4px 10px',
   },
-  featureCardInner: { padding: '34px 24px 28px' },
-  featureIconWrap: {
-    width: 56, height: 56, borderRadius: '50%', background: C.bgSoft,
-    border: `1px solid ${C.gold}`, display: 'flex', alignItems: 'center',
-    justifyContent: 'center', fontSize: 24, marginTop: -62, marginBottom: 16,
-    boxShadow: '0 4px 10px rgba(36,28,20,0.12)',
-  },
+  featureCardInner: { padding: '26px 24px 28px' },
   featureTitulo: { fontFamily: "'Playfair Display', serif", fontSize: 18, color: C.text, letterSpacing: 0.2, marginBottom: 10 },
   featureTexto: { fontSize: 14, color: C.textBody, lineHeight: 1.6, marginBottom: 18 },
   featureIncluyeLabel: { fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: C.textMuted, fontWeight: 700, textAlign: 'left', marginBottom: 10 },
@@ -451,7 +441,6 @@ export default function Landing() {
               </div>
               <span style={S.featureIndice}>{String(i + 1).padStart(2, '0')}</span>
               <div style={S.featureCardInner}>
-                <div style={S.featureIconWrap}>{f.emoji}</div>
                 <div style={S.featureTitulo}>{f.titulo}</div>
                 <div style={S.featureTexto}>{f.texto}</div>
                 <div style={S.featureIncluyeLabel}>Incluye</div>
