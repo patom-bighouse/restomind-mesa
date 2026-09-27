@@ -140,7 +140,7 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
       if (orderIds.length > 0) {
         const { data: itemsData, error: iErr } = await supabase
           .from('order_items')
-          .select('id, order_id, nombre_snapshot, precio_snapshot, cantidad, notas, comensal, premio_canjeado_id')
+          .select('id, order_id, nombre_snapshot, precio_snapshot, cantidad, notas, comensal, premio_canjeado_id, promo_sello_id')
           .in('order_id', orderIds)
         if (iErr) throw iErr
         items = itemsData || []
@@ -295,7 +295,7 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
             {pedido.items.map(item => (
               <div key={item.id}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>{item.premio_canjeado_id ? '🎁 ' : ''}{item.cantidad}× {item.nombre_snapshot}{item.comensal != null ? ` (C${item.comensal})` : ''}</span>
+                  <span>{(item.premio_canjeado_id || item.promo_sello_id) ? '🎁 ' : ''}{item.cantidad}× {item.nombre_snapshot}{item.comensal != null ? ` (C${item.comensal})` : ''}</span>
                   <span>{formatMoney((parseFloat(item.precio_snapshot) + extraModificadores(item)) * item.cantidad, moneda)}</span>
                 </div>
                 {item.modificadores?.map(m => (
@@ -364,7 +364,7 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
                 {pedido.items.map(item => (
                   <div key={item.id} style={S.itemRow}>
                     <div style={S.itemNombre}>
-                      {item.premio_canjeado_id ? '🎁 ' : ''}{item.cantidad}× {item.nombre_snapshot}
+                      {(item.premio_canjeado_id || item.promo_sello_id) ? '🎁 ' : ''}{item.cantidad}× {item.nombre_snapshot}
                       {item.comensal != null && <span style={{ fontSize: 11, color: '#7a6a50' }}> · Comensal {item.comensal}</span>}
                       {item.modificadores?.length > 0 && (
                         <div style={S.itemNota}>
