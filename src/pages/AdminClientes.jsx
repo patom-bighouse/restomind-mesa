@@ -275,7 +275,7 @@ export default function AdminClientes() {
                 <th style={S.th}>Nivel</th>
                 <th style={S.th}>Puntos</th>
                 <th style={S.th}>Gasto acumulado</th>
-                <th style={{ ...S.th, minWidth: 220 }}>Sellos</th>
+                <th style={{ ...S.th, minWidth: 220, textAlign: 'center' }}>Sellos</th>
                 <th style={S.th}>Última visita</th>
                 <th style={S.th}></th>
               </tr>
