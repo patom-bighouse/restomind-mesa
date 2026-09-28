@@ -5,6 +5,7 @@ import { formatMoney } from '../lib/money'
 import { resolverMenuActivo, aplicarPreciosMenu } from '../lib/menus'
 import { IDIOMAS_CARTA } from '../lib/idiomas'
 import { traducirAlergenos } from '../lib/alergenosI18n'
+import RestauranteSuspendido from '../components/RestauranteSuspendido'
 
 // Mismo catálogo fijo que AdminCarta.jsx (Reglamento UE 1169/2011).
 const ALERGENOS = [
@@ -399,7 +400,7 @@ export default function Mesa() {
 
         const { data: rest } = await supabase
           .from('restaurants')
-          .select('nombre, moneda, config')
+          .select('nombre, moneda, config, activo')
           .eq('id', tableData.restaurant_id)
           .single()
         setRestaurant(rest)
@@ -899,6 +900,8 @@ export default function Mesa() {
       </div>
     </div>
   )
+
+  if (restaurant?.activo === false) return <RestauranteSuspendido publico />
 
   if (error) return (
     <div style={S.app}>

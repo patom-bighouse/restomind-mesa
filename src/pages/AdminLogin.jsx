@@ -27,14 +27,18 @@ export default function AdminLogin() {
     const { data, error: err } = await supabase.auth.signInWithPassword({ email, password })
     if (err) { setError(err.message); setLoading(false); return }
 
-    // Find restaurant linked to this user
-    const { data: rest } = await supabase
-      .from('restaurants')
-      .select('id')
-      .eq('user_id', data.user.id)
-      .single()
+    // Find restaurant linked to this user. Va por RPC y no por la tabla:
+    // con el restaurante inactivo, RLS ya no le deja leer su fila.
+    const { data: filas } = await supabase.rpc('fn_mi_restaurante')
+    const rest = filas?.[0]
 
     if (!rest) { setError('No hay restaurante vinculado a este usuario.'); setLoading(false); return }
+    if (!rest.activo) {
+      await supabase.auth.signOut()
+      setError('Tu cuenta está suspendida. Ponte en contacto con Restomind para reactivarla.')
+      setLoading(false)
+      return
+    }
     navigate(`/admin/mesas/${rest.id}`)
   }
 
