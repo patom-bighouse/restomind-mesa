@@ -462,6 +462,10 @@ export default function SuperAdminRestaurantes() {
 
   async function toggleActivo(rest) {
     const nuevo = !rest.activo
+    const aviso = nuevo
+      ? `¿Reactivar "${rest.nombre}"? El dueño, su personal y sus clientes vuelven a tener acceso.`
+      : `¿Desactivar "${rest.nombre}"? Se bloquea todo: el dueño no podrá entrar al panel, el personal no podrá usar Cocina ni Camarero, y no se aceptarán pedidos ni reservas por ningún canal (QR, WhatsApp, web).`
+    if (!window.confirm(aviso)) return
     const { error: err } = await supabase.from('restaurants').update({ activo: nuevo }).eq('id', rest.id)
     if (err) { setError(err.message); return }
     setRestaurants(prev => prev.map(r => r.id === rest.id ? { ...r, activo: nuevo } : r))

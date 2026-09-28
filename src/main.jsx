@@ -26,6 +26,7 @@ import SuperAdminLogin from './pages/SuperAdminLogin'
 import SuperAdminRestaurantes from './pages/SuperAdminRestaurantes'
 import SuperAdminPlanes from './pages/SuperAdminPlanes'
 import NotFound from './pages/NotFound'
+import GuardRestaurante from './components/GuardRestaurante'
 
 // El enlace de recuperación de Supabase aterriza en la Site URL (normalmente "/"):
 // al detectar el evento PASSWORD_RECOVERY llevamos al usuario a la pantalla de nueva contraseña.
@@ -48,23 +49,23 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/admin/restablecer" element={<AdminRestablecer />} />
         <Route path="/" element={<Landing />} />
         <Route path="/mesa/:token" element={<Mesa />} />
-        <Route path="/camarero/:restaurantId" element={<Camarero />} />
-        <Route path="/cocina/:restaurantId" element={<Cocina />} />
+        <Route path="/camarero/:restaurantId" element={<GuardRestaurante><Camarero /></GuardRestaurante>} />
+        <Route path="/cocina/:restaurantId" element={<GuardRestaurante><Cocina /></GuardRestaurante>} />
         <Route path="/admin/login" element={<AdminLogin />} />
-        <Route path="/admin/mesas/:restaurantId" element={<AdminMesas />} />
-        <Route path="/admin/clientes/:restaurantId" element={<AdminClientes />} />
-        <Route path="/admin/upsell/:restaurantId" element={<AdminUpsell />} />
-        <Route path="/admin/reservas/:restaurantId" element={<AdminReservas />} />
-        <Route path="/reservar/:restaurantId" element={<Reservar />} />
-        <Route path="/admin/limpieza/:restaurantId" element={<AdminLimpieza />} />
-        <Route path="/admin/fidelizacion/:restaurantId" element={<AdminFidelizacion />} />
-        <Route path="/admin/carta/:restaurantId" element={<AdminCarta />} />
-        <Route path="/admin/menus/:restaurantId" element={<AdminMenus />} />
-        <Route path="/admin/stock/:restaurantId" element={<AdminStock />} />
-        <Route path="/admin/vales/:restaurantId" element={<AdminVales />} />
-        <Route path="/admin/webhooks/:restaurantId" element={<AdminWebhooks />} />
-        <Route path="/admin/dashboard/:restaurantId" element={<AdminDashboard />} />
-        <Route path="/admin/config/:restaurantId" element={<AdminConfig />} />
+        <Route path="/admin/mesas/:restaurantId" element={<GuardRestaurante><AdminMesas /></GuardRestaurante>} />
+        <Route path="/admin/clientes/:restaurantId" element={<GuardRestaurante><AdminClientes /></GuardRestaurante>} />
+        <Route path="/admin/upsell/:restaurantId" element={<GuardRestaurante><AdminUpsell /></GuardRestaurante>} />
+        <Route path="/admin/reservas/:restaurantId" element={<GuardRestaurante><AdminReservas /></GuardRestaurante>} />
+        <Route path="/reservar/:restaurantId" element={<GuardRestaurante publico><Reservar /></GuardRestaurante>} />
+        <Route path="/admin/limpieza/:restaurantId" element={<GuardRestaurante><AdminLimpieza /></GuardRestaurante>} />
+        <Route path="/admin/fidelizacion/:restaurantId" element={<GuardRestaurante><AdminFidelizacion /></GuardRestaurante>} />
+        <Route path="/admin/carta/:restaurantId" element={<GuardRestaurante><AdminCarta /></GuardRestaurante>} />
+        <Route path="/admin/menus/:restaurantId" element={<GuardRestaurante><AdminMenus /></GuardRestaurante>} />
+        <Route path="/admin/stock/:restaurantId" element={<GuardRestaurante><AdminStock /></GuardRestaurante>} />
+        <Route path="/admin/vales/:restaurantId" element={<GuardRestaurante><AdminVales /></GuardRestaurante>} />
+        <Route path="/admin/webhooks/:restaurantId" element={<GuardRestaurante><AdminWebhooks /></GuardRestaurante>} />
+        <Route path="/admin/dashboard/:restaurantId" element={<GuardRestaurante><AdminDashboard /></GuardRestaurante>} />
+        <Route path="/admin/config/:restaurantId" element={<GuardRestaurante><AdminConfig /></GuardRestaurante>} />
         <Route path="/superadmin/login" element={<SuperAdminLogin />} />
         <Route path="/superadmin/restaurantes" element={<SuperAdminRestaurantes />} />
         <Route path="/superadmin/planes" element={<SuperAdminPlanes />} />
