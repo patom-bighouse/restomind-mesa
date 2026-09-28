@@ -466,8 +466,15 @@ export default function SuperAdminRestaurantes() {
       ? `¿Reactivar "${rest.nombre}"? El dueño, su personal y sus clientes vuelven a tener acceso.`
       : `¿Desactivar "${rest.nombre}"? Se bloquea todo: el dueño no podrá entrar al panel, el personal no podrá usar Cocina ni Camarero, y no se aceptarán pedidos ni reservas por ningún canal (QR, WhatsApp, web).`
     if (!window.confirm(aviso)) return
-    const { error: err } = await supabase.from('restaurants').update({ activo: nuevo }).eq('id', rest.id)
+    // .select() para saber si de verdad se cambió alguna fila: si la sesión
+    // ya no es la del superadmin (hay una sola por navegador y el login de
+    // un dueño la sustituye), RLS descarta el update sin dar error.
+    const { data: filas, error: err } = await supabase.from('restaurants').update({ activo: nuevo }).eq('id', rest.id).select('id')
     if (err) { setError(err.message); return }
+    if (!filas?.length) {
+      setError('No se ha guardado el cambio: tu sesión de superadmin ya no está activa en este navegador. Vuelve a iniciar sesión como superadmin.')
+      return
+    }
     setRestaurants(prev => prev.map(r => r.id === rest.id ? { ...r, activo: nuevo } : r))
   }
 
