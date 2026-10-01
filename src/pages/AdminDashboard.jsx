@@ -86,6 +86,24 @@ function getRangeDates(range, customFrom, customTo) {
   return { from, to }
 }
 
+// Tooltip compartido por los tres gráficos de pedidos: además del valor
+// de la barra (pedidos), muestra la facturación de ese mismo punto — el
+// dato va ya en el "payload" de cada item (campo "facturacion"), no hace
+// falta una segunda <Bar>. `promedio` ajusta el texto para el gráfico de
+// día de la semana, donde ambos valores son un promedio, no una suma.
+function PedidosTooltip({ active, payload, label, moneda, promedio }) {
+  if (!active || !payload?.length) return null
+  const d = payload[0].payload
+  const sufijo = promedio ? ' de media' : ''
+  return (
+    <div style={{ background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 8, fontSize: 12, padding: '8px 12px' }}>
+      <div style={{ color: '#e8c97a', marginBottom: 4 }}>{label}</div>
+      <div style={{ color: '#f0e8d8' }}>{d.pedidos} {d.pedidos === 1 ? 'pedido' : 'pedidos'}{sufijo}</div>
+      <div style={{ color: '#f0e8d8' }}>{formatMoney(d.facturacion, moneda)}{sufijo}</div>
+    </div>
+  )
+}
+
 export default function AdminDashboard() {
   const { restaurantId } = useParams()
   const navigate = useNavigate()
@@ -282,12 +300,14 @@ export default function AdminDashboard() {
 
   // Horas pico
   const horaCounts = {}
-  for (let h = 0; h < 24; h++) horaCounts[h] = 0
+  const horaIngresos = {}
+  for (let h = 0; h < 24; h++) { horaCounts[h] = 0; horaIngresos[h] = 0 }
   validOrders.forEach(o => {
     const h = new Date(o.created_at).getHours()
     horaCounts[h]++
+    horaIngresos[h] += parseFloat(o.total || 0)
   })
-  const horaData = Object.entries(horaCounts).map(([h, count]) => ({ hora: `${h}h`, pedidos: count }))
+  const horaData = Object.entries(horaCounts).map(([h, count]) => ({ hora: `${h}h`, pedidos: count, facturacion: horaIngresos[h] }))
 
   // Pedidos por día — un día por cada día del rango seleccionado (no solo
   // los que tienen pedidos, para que se vean también los días en 0).
@@ -297,19 +317,21 @@ export default function AdminDashboard() {
   const localDayKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   const { from: diaFrom, to: diaTo } = getRangeDates(range, customFrom, customTo)
   const diaCounts = {}
+  const diaIngresos = {}
   const diaOrder = []
   const diaCursor = new Date(diaFrom.getFullYear(), diaFrom.getMonth(), diaFrom.getDate())
   while (diaCursor < diaTo) {
     const key = localDayKey(diaCursor)
     diaCounts[key] = 0
+    diaIngresos[key] = 0
     diaOrder.push({ key, label: diaCursor.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' }) })
     diaCursor.setDate(diaCursor.getDate() + 1)
   }
   validOrders.forEach(o => {
     const key = localDayKey(new Date(o.created_at))
-    if (diaCounts[key] !== undefined) diaCounts[key]++
+    if (diaCounts[key] !== undefined) { diaCounts[key]++; diaIngresos[key] += parseFloat(o.total || 0) }
   })
-  const diaData = diaOrder.map(({ key, label }) => ({ dia: label, pedidos: diaCounts[key] }))
+  const diaData = diaOrder.map(({ key, label }) => ({ dia: label, pedidos: diaCounts[key], facturacion: diaIngresos[key] }))
   // Con rangos largos (ej. "Este mes" o un personalizado amplio) se
   // saltan etiquetas del eje para que no se amontonen.
   const diaInterval = diaData.length > 12 ? Math.ceil(diaData.length / 10) - 1 : 0
@@ -321,6 +343,7 @@ export default function AdminDashboard() {
   // comparación es justa. Mismo orden L-D que getRangeDates (lunes = 1).
   const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
   const semanaPedidos = DIAS_SEMANA.map(() => 0)
+  const semanaIngresos = DIAS_SEMANA.map(() => 0)
   const semanaOcurrencias = DIAS_SEMANA.map(() => 0)
   diaOrder.forEach(({ key }) => {
     const [y, m, dd] = key.split('-').map(Number)
@@ -330,10 +353,12 @@ export default function AdminDashboard() {
   validOrders.forEach(o => {
     const idx = (new Date(o.created_at).getDay() || 7) - 1
     semanaPedidos[idx]++
+    semanaIngresos[idx] += parseFloat(o.total || 0)
   })
   const semanaData = DIAS_SEMANA.map((label, i) => ({
     diaSemana: label,
     pedidos: semanaOcurrencias[i] ? +(semanaPedidos[i] / semanaOcurrencias[i]).toFixed(1) : 0,
+    facturacion: semanaOcurrencias[i] ? semanaIngresos[i] / semanaOcurrencias[i] : 0,
   }))
 
   // Sesiones de mesa (agrupa los pedidos por visita de cliente, no solo por mesa física)
@@ -548,7 +573,7 @@ export default function AdminDashboard() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" vertical={false} />
                 <XAxis dataKey="hora" stroke="#7a6a50" fontSize={11} interval={1} />
                 <YAxis stroke="#7a6a50" fontSize={11} allowDecimals={false} />
-                <Tooltip contentStyle={{ background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 8, fontSize: 12 }} labelStyle={{ color: '#e8c97a' }} />
+                <Tooltip content={<PedidosTooltip moneda={restaurant?.moneda} />} />
                 <Bar dataKey="pedidos" fill="#e8c97a" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -564,7 +589,7 @@ export default function AdminDashboard() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" vertical={false} />
                 <XAxis dataKey="dia" stroke="#7a6a50" fontSize={11} interval={diaInterval} />
                 <YAxis stroke="#7a6a50" fontSize={11} allowDecimals={false} />
-                <Tooltip contentStyle={{ background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 8, fontSize: 12 }} labelStyle={{ color: '#e8c97a' }} />
+                <Tooltip content={<PedidosTooltip moneda={restaurant?.moneda} />} />
                 <Bar dataKey="pedidos" fill="#e8c97a" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -581,7 +606,7 @@ export default function AdminDashboard() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" vertical={false} />
                 <XAxis dataKey="diaSemana" stroke="#7a6a50" fontSize={11} />
                 <YAxis stroke="#7a6a50" fontSize={11} />
-                <Tooltip contentStyle={{ background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 8, fontSize: 12 }} labelStyle={{ color: '#e8c97a' }} formatter={(value) => [value, 'Pedidos (promedio)']} />
+                <Tooltip content={<PedidosTooltip moneda={restaurant?.moneda} promedio />} />
                 <Bar dataKey="pedidos" fill="#e8c97a" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
