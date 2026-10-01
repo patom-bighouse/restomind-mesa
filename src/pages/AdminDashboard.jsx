@@ -314,6 +314,28 @@ export default function AdminDashboard() {
   // saltan etiquetas del eje para que no se amontonen.
   const diaInterval = diaData.length > 12 ? Math.ceil(diaData.length / 10) - 1 : 0
 
+  // Pedidos por día de la semana — PROMEDIO, no suma total. Con "Este
+  // mes" un lunes puede caer 5 veces y un domingo solo 4; si sumáramos,
+  // el lunes siempre parecería más visitado aunque no lo sea. Dividiendo
+  // por cuántas veces cayó cada día de la semana en el rango, la
+  // comparación es justa. Mismo orden L-D que getRangeDates (lunes = 1).
+  const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+  const semanaPedidos = DIAS_SEMANA.map(() => 0)
+  const semanaOcurrencias = DIAS_SEMANA.map(() => 0)
+  diaOrder.forEach(({ key }) => {
+    const [y, m, dd] = key.split('-').map(Number)
+    const idx = (new Date(y, m - 1, dd).getDay() || 7) - 1
+    semanaOcurrencias[idx]++
+  })
+  validOrders.forEach(o => {
+    const idx = (new Date(o.created_at).getDay() || 7) - 1
+    semanaPedidos[idx]++
+  })
+  const semanaData = DIAS_SEMANA.map((label, i) => ({
+    diaSemana: label,
+    pedidos: semanaOcurrencias[i] ? +(semanaPedidos[i] / semanaOcurrencias[i]).toFixed(1) : 0,
+  }))
+
   // Sesiones de mesa (agrupa los pedidos por visita de cliente, no solo por mesa física)
   const pedidosPorSesion = {}
   validOrders.forEach(o => {
@@ -543,6 +565,23 @@ export default function AdminDashboard() {
                 <XAxis dataKey="dia" stroke="#7a6a50" fontSize={11} interval={diaInterval} />
                 <YAxis stroke="#7a6a50" fontSize={11} allowDecimals={false} />
                 <Tooltip contentStyle={{ background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 8, fontSize: 12 }} labelStyle={{ color: '#e8c97a' }} />
+                <Bar dataKey="pedidos" fill="#e8c97a" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Pedidos por día de la semana */}
+        <div style={S.section}>
+          <div style={S.chartCard}>
+            <div style={S.cardTitle}>Pedidos por día de la semana</div>
+            <div style={{ fontSize: 11, color: '#7a6a50', marginTop: -8, marginBottom: 10 }}>Promedio en el rango seleccionado</div>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={semanaData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" vertical={false} />
+                <XAxis dataKey="diaSemana" stroke="#7a6a50" fontSize={11} />
+                <YAxis stroke="#7a6a50" fontSize={11} />
+                <Tooltip contentStyle={{ background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 8, fontSize: 12 }} labelStyle={{ color: '#e8c97a' }} formatter={(value) => [value, 'Pedidos (promedio)']} />
                 <Bar dataKey="pedidos" fill="#e8c97a" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
