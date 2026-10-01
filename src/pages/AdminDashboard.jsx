@@ -289,6 +289,31 @@ export default function AdminDashboard() {
   })
   const horaData = Object.entries(horaCounts).map(([h, count]) => ({ hora: `${h}h`, pedidos: count }))
 
+  // Pedidos por día — un día por cada día del rango seleccionado (no solo
+  // los que tienen pedidos, para que se vean también los días en 0).
+  // Se agrupa en hora local, igual que "Horas pico" arriba (getHours()),
+  // para evitar que un pedido de madrugada caiga en el día equivocado
+  // por el desfase horario si se agrupara en UTC.
+  const localDayKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const { from: diaFrom, to: diaTo } = getRangeDates(range, customFrom, customTo)
+  const diaCounts = {}
+  const diaOrder = []
+  const diaCursor = new Date(diaFrom.getFullYear(), diaFrom.getMonth(), diaFrom.getDate())
+  while (diaCursor < diaTo) {
+    const key = localDayKey(diaCursor)
+    diaCounts[key] = 0
+    diaOrder.push({ key, label: diaCursor.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' }) })
+    diaCursor.setDate(diaCursor.getDate() + 1)
+  }
+  validOrders.forEach(o => {
+    const key = localDayKey(new Date(o.created_at))
+    if (diaCounts[key] !== undefined) diaCounts[key]++
+  })
+  const diaData = diaOrder.map(({ key, label }) => ({ dia: label, pedidos: diaCounts[key] }))
+  // Con rangos largos (ej. "Este mes" o un personalizado amplio) se
+  // saltan etiquetas del eje para que no se amontonen.
+  const diaInterval = diaData.length > 12 ? Math.ceil(diaData.length / 10) - 1 : 0
+
   // Sesiones de mesa (agrupa los pedidos por visita de cliente, no solo por mesa física)
   const pedidosPorSesion = {}
   validOrders.forEach(o => {
@@ -500,6 +525,22 @@ export default function AdminDashboard() {
               <BarChart data={horaData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" vertical={false} />
                 <XAxis dataKey="hora" stroke="#7a6a50" fontSize={11} interval={1} />
+                <YAxis stroke="#7a6a50" fontSize={11} allowDecimals={false} />
+                <Tooltip contentStyle={{ background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 8, fontSize: 12 }} labelStyle={{ color: '#e8c97a' }} />
+                <Bar dataKey="pedidos" fill="#e8c97a" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Pedidos por día */}
+        <div style={S.section}>
+          <div style={S.chartCard}>
+            <div style={S.cardTitle}>Pedidos por día</div>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={diaData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" vertical={false} />
+                <XAxis dataKey="dia" stroke="#7a6a50" fontSize={11} interval={diaInterval} />
                 <YAxis stroke="#7a6a50" fontSize={11} allowDecimals={false} />
                 <Tooltip contentStyle={{ background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 8, fontSize: 12 }} labelStyle={{ color: '#e8c97a' }} />
                 <Bar dataKey="pedidos" fill="#e8c97a" radius={[4, 4, 0, 0]} />
