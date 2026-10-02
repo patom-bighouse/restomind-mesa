@@ -22,6 +22,11 @@ const S = {
   rangeBtn: (active) => ({ background: active ? '#e8c97a' : 'transparent', color: active ? '#111' : '#8a7560', border: `0.5px solid ${active ? '#e8c97a' : '#3a2e20'}`, borderRadius: 8, padding: '7px 16px', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }),
   dateInput: { background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '7px 12px', fontSize: 13, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none' },
 
+  filterBar: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 },
+  filterSelect: { background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '7px 10px', fontSize: 13, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', cursor: 'pointer' },
+  filterInput: { background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '7px 12px', fontSize: 13, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', minWidth: 160 },
+  filterClear: { background: 'transparent', border: 'none', fontSize: 12, color: '#c4a85a', cursor: 'pointer', fontFamily: "'Inter', sans-serif", textDecoration: 'underline', padding: '7px 2px' },
+
   kpiGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 32 },
   kpiCard: (color) => ({ background: '#1a1a1a', border: `1px solid ${color}`, borderRadius: 14, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 6 }),
   kpiVal: (color) => ({ fontSize: 30, fontWeight: 600, color, fontFamily: "'Playfair Display', serif", lineHeight: 1 }),
@@ -121,6 +126,17 @@ export default function AdminDashboard() {
   const [tables, setTables] = useState({})
   const [sessions, setSessions] = useState([])
   const [resenas, setResenas] = useState([])
+
+  // Filtros de los listados (se aplican sobre lo ya cargado para el
+  // rango de fechas elegido, no disparan una consulta nueva — por eso
+  // los pedidos nuevos que lleguen por realtime se siguen viendo en
+  // cuanto cumplan el filtro activo).
+  const [filtroPedidoMesa, setFiltroPedidoMesa] = useState('')
+  const [filtroPedidoEstado, setFiltroPedidoEstado] = useState('')
+  const [filtroPedidoBusqueda, setFiltroPedidoBusqueda] = useState('')
+  const [filtroSesionMesa, setFiltroSesionMesa] = useState('')
+  const [filtroSesionEstado, setFiltroSesionEstado] = useState('')
+  const [filtroSesionPago, setFiltroSesionPago] = useState('')
 
   useEffect(() => { checkAuth() }, [])
 
@@ -427,6 +443,38 @@ export default function AdminDashboard() {
     return `Mesa ${t.numero} (${zonaCapitalizada})`
   }
 
+  // ---------- Filtros de los listados ----------
+  const hayFiltroPedidos = !!(filtroPedidoMesa || filtroPedidoEstado || filtroPedidoBusqueda.trim())
+  function limpiarFiltrosPedidos() {
+    setFiltroPedidoMesa(''); setFiltroPedidoEstado(''); setFiltroPedidoBusqueda('')
+  }
+  const mesasEnPedidos = [...new Set(orders.filter(o => o.tipo === 'mesa' && o.table_id).map(o => o.table_id))]
+    .sort((a, b) => (tables[a]?.numero || 0) - (tables[b]?.numero || 0))
+  const ordersFiltrados = orders.filter(o => {
+    if (filtroPedidoMesa === 'takeaway' && o.tipo !== 'takeaway') return false
+    if (filtroPedidoMesa && filtroPedidoMesa !== 'takeaway' && o.table_id !== filtroPedidoMesa) return false
+    if (filtroPedidoEstado && o.estado !== filtroPedidoEstado) return false
+    if (filtroPedidoBusqueda.trim()) {
+      const q = filtroPedidoBusqueda.trim().toLowerCase()
+      const items = orderItemsMap[o.id] || []
+      if (!items.some(i => i.nombre_snapshot?.toLowerCase().includes(q))) return false
+    }
+    return true
+  })
+
+  const hayFiltroSesiones = !!(filtroSesionMesa || filtroSesionEstado || filtroSesionPago)
+  function limpiarFiltrosSesiones() {
+    setFiltroSesionMesa(''); setFiltroSesionEstado(''); setFiltroSesionPago('')
+  }
+  const mesasEnSesiones = [...new Set(sesionesConDatos.map(s => s.table_id).filter(Boolean))]
+    .sort((a, b) => (tables[a]?.numero || 0) - (tables[b]?.numero || 0))
+  const sesionesFiltradas = sesionesConDatos.filter(s => {
+    if (filtroSesionMesa && s.table_id !== filtroSesionMesa) return false
+    if (filtroSesionEstado && s.estado !== filtroSesionEstado) return false
+    if (filtroSesionPago && s.estado_pago !== filtroSesionPago) return false
+    return true
+  })
+
   // Para un pedido de mesa, busca la sesión a la que pertenece (para
   // saber si ya está cobrado y con qué método) — un pedido de take away
   // no tiene table_session_id, queda sin esa información.
@@ -696,12 +744,32 @@ export default function AdminDashboard() {
         {/* Sesiones de mesa (visitas de clientes) */}
         <div style={S.section}>
           <div style={S.chartCard}>
-            <div style={S.cardTitle}>Sesiones de mesa ({sesionesConDatos.length})</div>
+            <div style={S.cardTitle}>Sesiones de mesa ({hayFiltroSesiones ? `${sesionesFiltradas.length} de ${sesionesConDatos.length}` : sesionesConDatos.length})</div>
             <div style={{ fontSize: 12, color: '#666', marginBottom: 14, marginTop: -6 }}>
               Cada fila es una visita: agrupa todos los pedidos hechos por el mismo cliente/grupo mientras la mesa estuvo abierta.
             </div>
+            <div style={S.filterBar}>
+              <select style={S.filterSelect} value={filtroSesionMesa} onChange={e => setFiltroSesionMesa(e.target.value)}>
+                <option value="">Todas las mesas</option>
+                {mesasEnSesiones.map(tid => <option key={tid} value={tid}>{mesaLabel(tid)}</option>)}
+              </select>
+              <select style={S.filterSelect} value={filtroSesionEstado} onChange={e => setFiltroSesionEstado(e.target.value)}>
+                <option value="">Todos los estados</option>
+                <option value="abierta">En curso</option>
+                <option value="cerrada">Cerrada</option>
+              </select>
+              <select style={S.filterSelect} value={filtroSesionPago} onChange={e => setFiltroSesionPago(e.target.value)}>
+                <option value="">Todos los pagos</option>
+                <option value="pagado">Pagado</option>
+                <option value="pendiente">Pendiente</option>
+                <option value="exento">Invitación</option>
+              </select>
+              {hayFiltroSesiones && <button style={S.filterClear} onClick={limpiarFiltrosSesiones}>Limpiar filtros</button>}
+            </div>
             {sesionesConDatos.length === 0 ? (
               <div style={{ fontSize: 13, color: '#555' }}>Sin sesiones de mesa en este rango.</div>
+            ) : sesionesFiltradas.length === 0 ? (
+              <div style={{ fontSize: 13, color: '#555' }}>Ninguna sesión cumple los filtros elegidos.</div>
             ) : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={S.table}>
@@ -718,7 +786,7 @@ export default function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sesionesConDatos.map(s => (
+                    {sesionesFiltradas.map(s => (
                       <tr key={s.id}>
                         <td style={S.td}>{mesaLabel(s.table_id)}</td>
                         <td style={S.td}>{new Date(s.abierta_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
@@ -841,9 +909,28 @@ export default function AdminDashboard() {
         {/* Historial de pedidos */}
         <div style={S.section}>
           <div style={S.chartCard}>
-            <div style={S.cardTitle}>Historial de pedidos ({orders.length})</div>
+            <div style={S.cardTitle}>Historial de pedidos ({hayFiltroPedidos ? `${ordersFiltrados.length} de ${orders.length}` : orders.length})</div>
+            <div style={S.filterBar}>
+              <select style={S.filterSelect} value={filtroPedidoMesa} onChange={e => setFiltroPedidoMesa(e.target.value)}>
+                <option value="">Todas las mesas / tipos</option>
+                <option value="takeaway">Takeaway</option>
+                {mesasEnPedidos.map(tid => <option key={tid} value={tid}>{mesaLabel(tid)}</option>)}
+              </select>
+              <select style={S.filterSelect} value={filtroPedidoEstado} onChange={e => setFiltroPedidoEstado(e.target.value)}>
+                <option value="">Todos los estados</option>
+                <option value="pendiente">Pendiente</option>
+                <option value="preparando">Preparando</option>
+                <option value="listo">Listo</option>
+                <option value="entregado">Entregado</option>
+                <option value="cancelado">Cancelado</option>
+              </select>
+              <input style={S.filterInput} type="text" placeholder="Buscar plato..." value={filtroPedidoBusqueda} onChange={e => setFiltroPedidoBusqueda(e.target.value)} />
+              {hayFiltroPedidos && <button style={S.filterClear} onClick={limpiarFiltrosPedidos}>Limpiar filtros</button>}
+            </div>
             {orders.length === 0 ? (
               <div style={{ fontSize: 13, color: '#555' }}>Sin pedidos en este rango.</div>
+            ) : ordersFiltrados.length === 0 ? (
+              <div style={{ fontSize: 13, color: '#555' }}>Ningún pedido cumple los filtros elegidos.</div>
             ) : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={S.table}>
@@ -857,7 +944,7 @@ export default function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {orders.map(o => (
+                    {ordersFiltrados.map(o => (
                       <tr key={o.id}>
                         <td style={S.td}>{new Date(o.created_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
                         <td style={S.td}>{o.tipo === 'mesa' ? mesaLabel(o.table_id) : 'Takeaway'}</td>
