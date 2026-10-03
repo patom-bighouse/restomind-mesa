@@ -546,9 +546,10 @@ export default function AdminDashboard() {
 
   // Botón único arriba, junto al selector de fecha, para limpiar los
   // filtros de los tres listados de una vez.
-  const hayAlgunFiltro = hayFiltroPedidos || hayFiltroSesiones || hayFiltroRentabilidad
+  const hayAlgunFiltro = hayFiltroPedidos || hayFiltroSesiones || hayFiltroRentabilidad || range !== 'hoy'
   function limpiarTodosFiltros() {
     limpiarFiltrosPedidos(); limpiarFiltrosSesiones(); limpiarFiltrosRentabilidad()
+    setRange('hoy'); setCustomFrom(''); setCustomTo('')
   }
 
   // Para un pedido de mesa, busca la sesión a la que pertenece (para
