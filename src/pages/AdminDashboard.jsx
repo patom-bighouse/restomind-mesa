@@ -137,6 +137,8 @@ export default function AdminDashboard() {
   const [filtroSesionMesa, setFiltroSesionMesa] = useState('')
   const [filtroSesionEstado, setFiltroSesionEstado] = useState('')
   const [filtroSesionPago, setFiltroSesionPago] = useState('')
+  const [filtroRentaBusqueda, setFiltroRentaBusqueda] = useState('')
+  const [filtroRentaMargen, setFiltroRentaMargen] = useState('')
 
   useEffect(() => { checkAuth() }, [])
 
@@ -305,6 +307,17 @@ export default function AdminDashboard() {
     }))
     .sort((a, b) => (b.margen ?? -Infinity) - (a.margen ?? -Infinity))
   const umbralMargenAlerta = restaurant?.config?.umbral_margen_alerta ?? 20
+
+  const hayFiltroRentabilidad = !!(filtroRentaBusqueda.trim() || filtroRentaMargen)
+  function limpiarFiltrosRentabilidad() {
+    setFiltroRentaBusqueda(''); setFiltroRentaMargen('')
+  }
+  const rentabilidadFiltrada = rentabilidadData.filter(p => {
+    if (filtroRentaBusqueda.trim() && !p.nombre.toLowerCase().includes(filtroRentaBusqueda.trim().toLowerCase())) return false
+    if (filtroRentaMargen === 'bajo' && !(p.margenPct != null && p.margenPct < umbralMargenAlerta)) return false
+    if (filtroRentaMargen === 'sincoste' && p.margen != null) return false
+    return true
+  })
 
   // Ocupación de mesas
   const mesaCounts = {}
@@ -865,12 +878,23 @@ export default function AdminDashboard() {
         {/* Rentabilidad por producto: ingreso, coste y margen */}
         <div style={S.section}>
           <div style={S.chartCard}>
-            <div style={S.cardTitle}>Rentabilidad por producto</div>
+            <div style={S.cardTitle}>Rentabilidad por producto ({hayFiltroRentabilidad ? `${rentabilidadFiltrada.length} de ${rentabilidadData.length}` : rentabilidadData.length})</div>
             <div style={{ fontSize: 12, color: '#666', marginBottom: 14, marginTop: -6 }}>
               Margen calculado con el precio de coste vigente en el momento de cada venta. Los productos sin coste cargado muestran el margen como "—".
             </div>
+            <div style={S.filterBar}>
+              <input style={S.filterInput} type="text" placeholder="Buscar producto..." value={filtroRentaBusqueda} onChange={e => setFiltroRentaBusqueda(e.target.value)} />
+              <select style={S.filterSelect} value={filtroRentaMargen} onChange={e => setFiltroRentaMargen(e.target.value)}>
+                <option value="">Todos los márgenes</option>
+                <option value="bajo">Por debajo del umbral ({umbralMargenAlerta}%)</option>
+                <option value="sincoste">Sin coste cargado</option>
+              </select>
+              {hayFiltroRentabilidad && <button style={S.filterClear} onClick={limpiarFiltrosRentabilidad}>Limpiar filtros</button>}
+            </div>
             {rentabilidadData.length === 0 ? (
               <div style={{ fontSize: 13, color: '#555' }}>Sin ventas en este rango.</div>
+            ) : rentabilidadFiltrada.length === 0 ? (
+              <div style={{ fontSize: 13, color: '#555' }}>Ningún producto cumple los filtros elegidos.</div>
             ) : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={S.table}>
@@ -885,7 +909,7 @@ export default function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {rentabilidadData.map(p => (
+                    {rentabilidadFiltrada.map(p => (
                       <tr key={p.nombre}>
                         <td style={S.td}>{p.nombre}</td>
                         <td style={S.td}>{p.unidades}</td>
