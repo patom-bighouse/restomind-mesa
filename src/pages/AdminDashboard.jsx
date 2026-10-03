@@ -88,6 +88,16 @@ function getRangeDates(range, customFrom, customTo) {
   } else {
     from = customFrom ? new Date(customFrom) : new Date(now.getFullYear(), now.getMonth(), now.getDate())
     to = customTo ? new Date(new Date(customTo).getTime() + 24 * 60 * 60 * 1000) : new Date(from.getTime() + 24 * 60 * 60 * 1000)
+    // Límite de seguridad: un rango personalizado disparatadamente amplio
+    // (un typo de fecha, o un valor viejo guardado) no debe intentar
+    // cargar años de pedidos de Supabase ni construir miles de barras en
+    // los gráficos por día — se recorta a un máximo de 366 días.
+    const MAX_DIAS_RANGO_PERSONALIZADO = 366
+    const maxTo = new Date(from.getTime() + MAX_DIAS_RANGO_PERSONALIZADO * 24 * 60 * 60 * 1000)
+    if (to > maxTo) to = maxTo
+    // "to" inválido o anterior a "from" (fechas invertidas, o algún
+    // valor corrupto): mejor un día que un rango roto.
+    if (!(to > from)) to = new Date(from.getTime() + 24 * 60 * 60 * 1000)
   }
   return { from, to }
 }
@@ -390,12 +400,17 @@ export default function AdminDashboard() {
   const diaIngresos = {}
   const diaOrder = []
   const diaCursor = new Date(diaFrom.getFullYear(), diaFrom.getMonth(), diaFrom.getDate())
-  while (diaCursor < diaTo) {
+  // Tope extra de seguridad (además del límite de 366 días ya aplicado en
+  // getRangeDates): así este bucle nunca puede colgar la pestaña, pase lo
+  // que pase con el rango de fechas que le llegue.
+  let diaGuard = 0
+  while (diaCursor < diaTo && diaGuard < 400) {
     const key = localDayKey(diaCursor)
     diaCounts[key] = 0
     diaIngresos[key] = 0
     diaOrder.push({ key, label: diaCursor.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' }) })
     diaCursor.setDate(diaCursor.getDate() + 1)
+    diaGuard++
   }
   validOrders.forEach(o => {
     const key = localDayKey(new Date(o.created_at))
@@ -637,6 +652,9 @@ export default function AdminDashboard() {
               <input type="date" style={S.dateInput} value={customFrom} onChange={e => setCustomFrom(e.target.value)} />
               <span style={{ color: '#555' }}>→</span>
               <input type="date" style={S.dateInput} value={customTo} onChange={e => setCustomTo(e.target.value)} />
+              {customFrom && customTo && (new Date(customTo) - new Date(customFrom)) / 86400000 > 366 && (
+                <span style={{ fontSize: 12, color: '#e8b84a' }}>⚠ Rango limitado a 366 días</span>
+              )}
             </>
           )}
           {hayAlgunFiltro && (
