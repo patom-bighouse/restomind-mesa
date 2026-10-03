@@ -133,9 +133,15 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  const [range, setRange] = useState('hoy')
-  const [customFrom, setCustomFrom] = useState('')
-  const [customTo, setCustomTo] = useState('')
+  // Se inicializa desde localStorage para sobrevivir a navegar a otra
+  // pestaña del panel — todas las pestañas del admin enlazan con <a
+  // href>, no con el router de React, así que cada cambio de pestaña
+  // recarga la página entera; sin esto, se perdería todo al volver.
+  const filtrosGuardados = cargarFiltrosGuardados(restaurantId)
+
+  const [range, setRange] = useState(filtrosGuardados.range || 'hoy')
+  const [customFrom, setCustomFrom] = useState(filtrosGuardados.customFrom || '')
+  const [customTo, setCustomTo] = useState(filtrosGuardados.customTo || '')
 
   const [orders, setOrders] = useState([])
   const [orderItemsMap, setOrderItemsMap] = useState({})
@@ -146,9 +152,7 @@ export default function AdminDashboard() {
   // Filtros de los listados (se aplican sobre lo ya cargado para el
   // rango de fechas elegido, no disparan una consulta nueva — por eso
   // los pedidos nuevos que lleguen por realtime se siguen viendo en
-  // cuanto cumplan el filtro activo). Se inicializan desde localStorage
-  // para sobrevivir a una navegación a otra pestaña del panel.
-  const filtrosGuardados = cargarFiltrosGuardados(restaurantId)
+  // cuanto cumplan el filtro activo).
   const [filtroPedidoMesa, setFiltroPedidoMesa] = useState(filtrosGuardados.pedidoMesa || '')
   const [filtroPedidoEstado, setFiltroPedidoEstado] = useState(filtrosGuardados.pedidoEstado || '')
   const [filtroPedidoBusqueda, setFiltroPedidoBusqueda] = useState(filtrosGuardados.pedidoBusqueda || '')
@@ -160,16 +164,18 @@ export default function AdminDashboard() {
   const [filtroRentaMargenMax, setFiltroRentaMargenMax] = useState(filtrosGuardados.rentaMargenMax || '')
   const [filtroRentaSinCoste, setFiltroRentaSinCoste] = useState(filtrosGuardados.rentaSinCoste || false)
 
-  // Guarda los filtros en localStorage cada vez que cambian.
+  // Guarda los filtros (incluido el rango de fecha) en localStorage cada
+  // vez que cambian.
   useEffect(() => {
     try {
       localStorage.setItem(FILTROS_DASHBOARD_PREFIJO + restaurantId, JSON.stringify({
+        range, customFrom, customTo,
         pedidoMesa: filtroPedidoMesa, pedidoEstado: filtroPedidoEstado, pedidoBusqueda: filtroPedidoBusqueda,
         sesionMesa: filtroSesionMesa, sesionEstado: filtroSesionEstado, sesionPago: filtroSesionPago,
         rentaBusqueda: filtroRentaBusqueda, rentaMargenMin: filtroRentaMargenMin, rentaMargenMax: filtroRentaMargenMax, rentaSinCoste: filtroRentaSinCoste,
       }))
     } catch { /* localStorage no disponible (privado/bloqueado) — los filtros simplemente no persisten */ }
-  }, [restaurantId, filtroPedidoMesa, filtroPedidoEstado, filtroPedidoBusqueda, filtroSesionMesa, filtroSesionEstado, filtroSesionPago, filtroRentaBusqueda, filtroRentaMargenMin, filtroRentaMargenMax, filtroRentaSinCoste])
+  }, [restaurantId, range, customFrom, customTo, filtroPedidoMesa, filtroPedidoEstado, filtroPedidoBusqueda, filtroSesionMesa, filtroSesionEstado, filtroSesionPago, filtroRentaBusqueda, filtroRentaMargenMin, filtroRentaMargenMax, filtroRentaSinCoste])
 
   useEffect(() => { checkAuth() }, [])
 
