@@ -22,6 +22,12 @@ const S = {
   rangeBtn: (active) => ({ background: active ? '#e8c97a' : 'transparent', color: active ? '#111' : '#8a7560', border: `0.5px solid ${active ? '#e8c97a' : '#3a2e20'}`, borderRadius: 8, padding: '7px 16px', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }),
   dateInput: { background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '7px 12px', fontSize: 13, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none' },
 
+  filterBar: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 },
+  filterSelect: { background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '7px 10px', fontSize: 13, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', cursor: 'pointer' },
+  filterInput: { background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '7px 12px', fontSize: 13, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', minWidth: 160 },
+  filterClear: { background: 'transparent', border: 'none', fontSize: 12, color: '#c4a85a', cursor: 'pointer', fontFamily: "'Inter', sans-serif", textDecoration: 'underline', padding: '7px 2px' },
+  filterCheckLabel: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#8a7560', cursor: 'pointer', fontFamily: "'Inter', sans-serif" },
+
   kpiGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 32 },
   kpiCard: (color) => ({ background: '#1a1a1a', border: `1px solid ${color}`, borderRadius: 14, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 6 }),
   kpiVal: (color) => ({ fontSize: 30, fontWeight: 600, color, fontFamily: "'Playfair Display', serif", lineHeight: 1 }),
@@ -82,8 +88,51 @@ function getRangeDates(range, customFrom, customTo) {
   } else {
     from = customFrom ? new Date(customFrom) : new Date(now.getFullYear(), now.getMonth(), now.getDate())
     to = customTo ? new Date(new Date(customTo).getTime() + 24 * 60 * 60 * 1000) : new Date(from.getTime() + 24 * 60 * 60 * 1000)
+    // Límite de seguridad: un rango personalizado disparatadamente amplio
+    // (un typo de fecha, o un valor viejo guardado) no debe intentar
+    // cargar años de pedidos de Supabase ni construir miles de barras en
+    // los gráficos por día — se recorta a un máximo de 366 días.
+    const MAX_DIAS_RANGO_PERSONALIZADO = 366
+    const maxTo = new Date(from.getTime() + MAX_DIAS_RANGO_PERSONALIZADO * 24 * 60 * 60 * 1000)
+    if (to > maxTo) to = maxTo
+    // "to" inválido o anterior a "from" (fechas invertidas, o algún
+    // valor corrupto): mejor un día que un rango roto.
+    if (!(to > from)) to = new Date(from.getTime() + 24 * 60 * 60 * 1000)
   }
   return { from, to }
+}
+
+// Tooltip compartido por los tres gráficos de pedidos: además del valor
+// de la barra (pedidos), muestra la facturación de ese mismo punto — el
+// dato va ya en el "payload" de cada item (campo "facturacion"), no hace
+// falta una segunda <Bar>. `promedio` ajusta el texto para el gráfico de
+// día de la semana, donde ambos valores son un promedio, no una suma.
+function PedidosTooltip({ active, payload, label, moneda, promedio }) {
+  if (!active || !payload?.length) return null
+  const d = payload[0].payload
+  const sufijo = promedio ? ' de media' : ''
+  return (
+    <div style={{ background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 8, fontSize: 12, padding: '8px 12px' }}>
+      <div style={{ color: '#e8c97a', marginBottom: 4 }}>{label}</div>
+      <div style={{ color: '#f0e8d8' }}>{d.pedidos} {d.pedidos === 1 ? 'pedido' : 'pedidos'}{sufijo}</div>
+      <div style={{ color: '#f0e8d8' }}>{formatMoney(d.facturacion, moneda)}{sufijo}</div>
+    </div>
+  )
+}
+
+// Los filtros de los listados se recuerdan por restaurante en
+// localStorage, para que no se pierdan al navegar a otra pestaña del
+// panel (Mesas, Clientes...) y volver. Solo se borran con los botones
+// de "Limpiar filtros".
+const FILTROS_DASHBOARD_PREFIJO = 'restomind_dashboard_filtros_'
+
+function cargarFiltrosGuardados(restaurantId) {
+  try {
+    const raw = localStorage.getItem(FILTROS_DASHBOARD_PREFIJO + restaurantId)
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    return {}
+  }
 }
 
 export default function AdminDashboard() {
@@ -94,15 +143,49 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  const [range, setRange] = useState('hoy')
-  const [customFrom, setCustomFrom] = useState('')
-  const [customTo, setCustomTo] = useState('')
+  // Se inicializa desde localStorage para sobrevivir a navegar a otra
+  // pestaña del panel — todas las pestañas del admin enlazan con <a
+  // href>, no con el router de React, así que cada cambio de pestaña
+  // recarga la página entera; sin esto, se perdería todo al volver.
+  const filtrosGuardados = cargarFiltrosGuardados(restaurantId)
+
+  const [range, setRange] = useState(filtrosGuardados.range || 'hoy')
+  const [customFrom, setCustomFrom] = useState(filtrosGuardados.customFrom || '')
+  const [customTo, setCustomTo] = useState(filtrosGuardados.customTo || '')
 
   const [orders, setOrders] = useState([])
   const [orderItemsMap, setOrderItemsMap] = useState({})
   const [tables, setTables] = useState({})
   const [sessions, setSessions] = useState([])
   const [resenas, setResenas] = useState([])
+
+  // Filtros de los listados (se aplican sobre lo ya cargado para el
+  // rango de fechas elegido, no disparan una consulta nueva — por eso
+  // los pedidos nuevos que lleguen por realtime se siguen viendo en
+  // cuanto cumplan el filtro activo).
+  const [filtroPedidoMesa, setFiltroPedidoMesa] = useState(filtrosGuardados.pedidoMesa || '')
+  const [filtroPedidoEstado, setFiltroPedidoEstado] = useState(filtrosGuardados.pedidoEstado || '')
+  const [filtroPedidoBusqueda, setFiltroPedidoBusqueda] = useState(filtrosGuardados.pedidoBusqueda || '')
+  const [filtroSesionMesa, setFiltroSesionMesa] = useState(filtrosGuardados.sesionMesa || '')
+  const [filtroSesionEstado, setFiltroSesionEstado] = useState(filtrosGuardados.sesionEstado || '')
+  const [filtroSesionPago, setFiltroSesionPago] = useState(filtrosGuardados.sesionPago || '')
+  const [filtroRentaBusqueda, setFiltroRentaBusqueda] = useState(filtrosGuardados.rentaBusqueda || '')
+  const [filtroRentaMargenMin, setFiltroRentaMargenMin] = useState(filtrosGuardados.rentaMargenMin || '')
+  const [filtroRentaMargenMax, setFiltroRentaMargenMax] = useState(filtrosGuardados.rentaMargenMax || '')
+  const [filtroRentaSinCoste, setFiltroRentaSinCoste] = useState(filtrosGuardados.rentaSinCoste || false)
+
+  // Guarda los filtros (incluido el rango de fecha) en localStorage cada
+  // vez que cambian.
+  useEffect(() => {
+    try {
+      localStorage.setItem(FILTROS_DASHBOARD_PREFIJO + restaurantId, JSON.stringify({
+        range, customFrom, customTo,
+        pedidoMesa: filtroPedidoMesa, pedidoEstado: filtroPedidoEstado, pedidoBusqueda: filtroPedidoBusqueda,
+        sesionMesa: filtroSesionMesa, sesionEstado: filtroSesionEstado, sesionPago: filtroSesionPago,
+        rentaBusqueda: filtroRentaBusqueda, rentaMargenMin: filtroRentaMargenMin, rentaMargenMax: filtroRentaMargenMax, rentaSinCoste: filtroRentaSinCoste,
+      }))
+    } catch { /* localStorage no disponible (privado/bloqueado) — los filtros simplemente no persisten */ }
+  }, [restaurantId, range, customFrom, customTo, filtroPedidoMesa, filtroPedidoEstado, filtroPedidoBusqueda, filtroSesionMesa, filtroSesionEstado, filtroSesionPago, filtroRentaBusqueda, filtroRentaMargenMin, filtroRentaMargenMax, filtroRentaSinCoste])
 
   useEffect(() => { checkAuth() }, [])
 
@@ -272,6 +355,21 @@ export default function AdminDashboard() {
     .sort((a, b) => (b.margen ?? -Infinity) - (a.margen ?? -Infinity))
   const umbralMargenAlerta = restaurant?.config?.umbral_margen_alerta ?? 20
 
+  const hayFiltroRentabilidad = !!(filtroRentaBusqueda.trim() || filtroRentaMargenMin !== '' || filtroRentaMargenMax !== '' || filtroRentaSinCoste)
+  function limpiarFiltrosRentabilidad() {
+    setFiltroRentaBusqueda(''); setFiltroRentaMargenMin(''); setFiltroRentaMargenMax(''); setFiltroRentaSinCoste(false)
+  }
+  const rentabilidadFiltrada = rentabilidadData.filter(p => {
+    if (filtroRentaBusqueda.trim() && !p.nombre.toLowerCase().includes(filtroRentaBusqueda.trim().toLowerCase())) return false
+    // "Sin coste cargado" es una vista aparte: si está marcado, ignora el
+    // rango de margen (no tiene sentido combinarlos, un producto sin
+    // coste no tiene margenPct con el que comparar).
+    if (filtroRentaSinCoste) return p.margen == null
+    if (filtroRentaMargenMin !== '' && (p.margenPct == null || p.margenPct < parseFloat(filtroRentaMargenMin))) return false
+    if (filtroRentaMargenMax !== '' && (p.margenPct == null || p.margenPct > parseFloat(filtroRentaMargenMax))) return false
+    return true
+  })
+
   // Ocupación de mesas
   const mesaCounts = {}
   validOrders.forEach(o => {
@@ -282,12 +380,71 @@ export default function AdminDashboard() {
 
   // Horas pico
   const horaCounts = {}
-  for (let h = 0; h < 24; h++) horaCounts[h] = 0
+  const horaIngresos = {}
+  for (let h = 0; h < 24; h++) { horaCounts[h] = 0; horaIngresos[h] = 0 }
   validOrders.forEach(o => {
     const h = new Date(o.created_at).getHours()
     horaCounts[h]++
+    horaIngresos[h] += parseFloat(o.total || 0)
   })
-  const horaData = Object.entries(horaCounts).map(([h, count]) => ({ hora: `${h}h`, pedidos: count }))
+  const horaData = Object.entries(horaCounts).map(([h, count]) => ({ hora: `${h}h`, pedidos: count, facturacion: horaIngresos[h] }))
+
+  // Pedidos por día — un día por cada día del rango seleccionado (no solo
+  // los que tienen pedidos, para que se vean también los días en 0).
+  // Se agrupa en hora local, igual que "Horas pico" arriba (getHours()),
+  // para evitar que un pedido de madrugada caiga en el día equivocado
+  // por el desfase horario si se agrupara en UTC.
+  const localDayKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const { from: diaFrom, to: diaTo } = getRangeDates(range, customFrom, customTo)
+  const diaCounts = {}
+  const diaIngresos = {}
+  const diaOrder = []
+  const diaCursor = new Date(diaFrom.getFullYear(), diaFrom.getMonth(), diaFrom.getDate())
+  // Tope extra de seguridad (además del límite de 366 días ya aplicado en
+  // getRangeDates): así este bucle nunca puede colgar la pestaña, pase lo
+  // que pase con el rango de fechas que le llegue.
+  let diaGuard = 0
+  while (diaCursor < diaTo && diaGuard < 400) {
+    const key = localDayKey(diaCursor)
+    diaCounts[key] = 0
+    diaIngresos[key] = 0
+    diaOrder.push({ key, label: diaCursor.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' }) })
+    diaCursor.setDate(diaCursor.getDate() + 1)
+    diaGuard++
+  }
+  validOrders.forEach(o => {
+    const key = localDayKey(new Date(o.created_at))
+    if (diaCounts[key] !== undefined) { diaCounts[key]++; diaIngresos[key] += parseFloat(o.total || 0) }
+  })
+  const diaData = diaOrder.map(({ key, label }) => ({ dia: label, pedidos: diaCounts[key], facturacion: diaIngresos[key] }))
+  // Con rangos largos (ej. "Este mes" o un personalizado amplio) se
+  // saltan etiquetas del eje para que no se amontonen.
+  const diaInterval = diaData.length > 12 ? Math.ceil(diaData.length / 10) - 1 : 0
+
+  // Pedidos por día de la semana — PROMEDIO, no suma total. Con "Este
+  // mes" un lunes puede caer 5 veces y un domingo solo 4; si sumáramos,
+  // el lunes siempre parecería más visitado aunque no lo sea. Dividiendo
+  // por cuántas veces cayó cada día de la semana en el rango, la
+  // comparación es justa. Mismo orden L-D que getRangeDates (lunes = 1).
+  const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+  const semanaPedidos = DIAS_SEMANA.map(() => 0)
+  const semanaIngresos = DIAS_SEMANA.map(() => 0)
+  const semanaOcurrencias = DIAS_SEMANA.map(() => 0)
+  diaOrder.forEach(({ key }) => {
+    const [y, m, dd] = key.split('-').map(Number)
+    const idx = (new Date(y, m - 1, dd).getDay() || 7) - 1
+    semanaOcurrencias[idx]++
+  })
+  validOrders.forEach(o => {
+    const idx = (new Date(o.created_at).getDay() || 7) - 1
+    semanaPedidos[idx]++
+    semanaIngresos[idx] += parseFloat(o.total || 0)
+  })
+  const semanaData = DIAS_SEMANA.map((label, i) => ({
+    diaSemana: label,
+    pedidos: semanaOcurrencias[i] ? +(semanaPedidos[i] / semanaOcurrencias[i]).toFixed(1) : 0,
+    facturacion: semanaOcurrencias[i] ? semanaIngresos[i] / semanaOcurrencias[i] : 0,
+  }))
 
   // Sesiones de mesa (agrupa los pedidos por visita de cliente, no solo por mesa física)
   const pedidosPorSesion = {}
@@ -353,6 +510,46 @@ export default function AdminDashboard() {
     if (!t.zona) return `Mesa ${t.numero}`
     const zonaCapitalizada = t.zona.charAt(0).toUpperCase() + t.zona.slice(1)
     return `Mesa ${t.numero} (${zonaCapitalizada})`
+  }
+
+  // ---------- Filtros de los listados ----------
+  const hayFiltroPedidos = !!(filtroPedidoMesa || filtroPedidoEstado || filtroPedidoBusqueda.trim())
+  function limpiarFiltrosPedidos() {
+    setFiltroPedidoMesa(''); setFiltroPedidoEstado(''); setFiltroPedidoBusqueda('')
+  }
+  const mesasEnPedidos = [...new Set(orders.filter(o => o.tipo === 'mesa' && o.table_id).map(o => o.table_id))]
+    .sort((a, b) => (tables[a]?.numero || 0) - (tables[b]?.numero || 0))
+  const ordersFiltrados = orders.filter(o => {
+    if (filtroPedidoMesa === 'takeaway' && o.tipo !== 'takeaway') return false
+    if (filtroPedidoMesa && filtroPedidoMesa !== 'takeaway' && o.table_id !== filtroPedidoMesa) return false
+    if (filtroPedidoEstado && o.estado !== filtroPedidoEstado) return false
+    if (filtroPedidoBusqueda.trim()) {
+      const q = filtroPedidoBusqueda.trim().toLowerCase()
+      const items = orderItemsMap[o.id] || []
+      if (!items.some(i => i.nombre_snapshot?.toLowerCase().includes(q))) return false
+    }
+    return true
+  })
+
+  const hayFiltroSesiones = !!(filtroSesionMesa || filtroSesionEstado || filtroSesionPago)
+  function limpiarFiltrosSesiones() {
+    setFiltroSesionMesa(''); setFiltroSesionEstado(''); setFiltroSesionPago('')
+  }
+  const mesasEnSesiones = [...new Set(sesionesConDatos.map(s => s.table_id).filter(Boolean))]
+    .sort((a, b) => (tables[a]?.numero || 0) - (tables[b]?.numero || 0))
+  const sesionesFiltradas = sesionesConDatos.filter(s => {
+    if (filtroSesionMesa && s.table_id !== filtroSesionMesa) return false
+    if (filtroSesionEstado && s.estado !== filtroSesionEstado) return false
+    if (filtroSesionPago && s.estado_pago !== filtroSesionPago) return false
+    return true
+  })
+
+  // Botón único arriba, junto al selector de fecha, para limpiar los
+  // filtros de los tres listados de una vez.
+  const hayAlgunFiltro = hayFiltroPedidos || hayFiltroSesiones || hayFiltroRentabilidad || range !== 'hoy'
+  function limpiarTodosFiltros() {
+    limpiarFiltrosPedidos(); limpiarFiltrosSesiones(); limpiarFiltrosRentabilidad()
+    setRange('hoy'); setCustomFrom(''); setCustomTo('')
   }
 
   // Para un pedido de mesa, busca la sesión a la que pertenece (para
@@ -456,7 +653,15 @@ export default function AdminDashboard() {
               <input type="date" style={S.dateInput} value={customFrom} onChange={e => setCustomFrom(e.target.value)} />
               <span style={{ color: '#555' }}>→</span>
               <input type="date" style={S.dateInput} value={customTo} onChange={e => setCustomTo(e.target.value)} />
+              {customFrom && customTo && (new Date(customTo) - new Date(customFrom)) / 86400000 > 366 && (
+                <span style={{ fontSize: 12, color: '#e8b84a' }}>⚠ Rango limitado a 366 días</span>
+              )}
             </>
+          )}
+          {hayAlgunFiltro && (
+            <button onClick={limpiarTodosFiltros} style={{ background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '7px 14px', fontSize: 13, color: '#c4a85a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+              ✕ Limpiar todos los filtros
+            </button>
           )}
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }} className="no-print">
             <button onClick={exportarCSV} style={{ background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '7px 14px', fontSize: 13, color: '#c4a85a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
@@ -501,7 +706,40 @@ export default function AdminDashboard() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" vertical={false} />
                 <XAxis dataKey="hora" stroke="#7a6a50" fontSize={11} interval={1} />
                 <YAxis stroke="#7a6a50" fontSize={11} allowDecimals={false} />
-                <Tooltip contentStyle={{ background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 8, fontSize: 12 }} labelStyle={{ color: '#e8c97a' }} />
+                <Tooltip content={<PedidosTooltip moneda={restaurant?.moneda} />} />
+                <Bar dataKey="pedidos" fill="#e8c97a" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Pedidos por día */}
+        <div style={S.section}>
+          <div style={S.chartCard}>
+            <div style={S.cardTitle}>Pedidos por día</div>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={diaData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" vertical={false} />
+                <XAxis dataKey="dia" stroke="#7a6a50" fontSize={11} interval={diaInterval} />
+                <YAxis stroke="#7a6a50" fontSize={11} allowDecimals={false} />
+                <Tooltip content={<PedidosTooltip moneda={restaurant?.moneda} />} />
+                <Bar dataKey="pedidos" fill="#e8c97a" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Pedidos por día de la semana */}
+        <div style={S.section}>
+          <div style={S.chartCard}>
+            <div style={S.cardTitle}>Pedidos por día de la semana</div>
+            <div style={{ fontSize: 11, color: '#7a6a50', marginTop: -8, marginBottom: 10 }}>Promedio en el rango seleccionado</div>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={semanaData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" vertical={false} />
+                <XAxis dataKey="diaSemana" stroke="#7a6a50" fontSize={11} />
+                <YAxis stroke="#7a6a50" fontSize={11} />
+                <Tooltip content={<PedidosTooltip moneda={restaurant?.moneda} promedio />} />
                 <Bar dataKey="pedidos" fill="#e8c97a" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -591,12 +829,32 @@ export default function AdminDashboard() {
         {/* Sesiones de mesa (visitas de clientes) */}
         <div style={S.section}>
           <div style={S.chartCard}>
-            <div style={S.cardTitle}>Sesiones de mesa ({sesionesConDatos.length})</div>
+            <div style={S.cardTitle}>Sesiones de mesa ({hayFiltroSesiones ? `${sesionesFiltradas.length} de ${sesionesConDatos.length}` : sesionesConDatos.length})</div>
             <div style={{ fontSize: 12, color: '#666', marginBottom: 14, marginTop: -6 }}>
               Cada fila es una visita: agrupa todos los pedidos hechos por el mismo cliente/grupo mientras la mesa estuvo abierta.
             </div>
+            <div style={S.filterBar}>
+              <select style={S.filterSelect} value={filtroSesionMesa} onChange={e => setFiltroSesionMesa(e.target.value)}>
+                <option value="">Todas las mesas</option>
+                {mesasEnSesiones.map(tid => <option key={tid} value={tid}>{mesaLabel(tid)}</option>)}
+              </select>
+              <select style={S.filterSelect} value={filtroSesionEstado} onChange={e => setFiltroSesionEstado(e.target.value)}>
+                <option value="">Todos los estados</option>
+                <option value="abierta">En curso</option>
+                <option value="cerrada">Cerrada</option>
+              </select>
+              <select style={S.filterSelect} value={filtroSesionPago} onChange={e => setFiltroSesionPago(e.target.value)}>
+                <option value="">Todos los pagos</option>
+                <option value="pagado">Pagado</option>
+                <option value="pendiente">Pendiente</option>
+                <option value="exento">Invitación</option>
+              </select>
+              {hayFiltroSesiones && <button style={S.filterClear} onClick={limpiarFiltrosSesiones}>Limpiar filtros</button>}
+            </div>
             {sesionesConDatos.length === 0 ? (
               <div style={{ fontSize: 13, color: '#555' }}>Sin sesiones de mesa en este rango.</div>
+            ) : sesionesFiltradas.length === 0 ? (
+              <div style={{ fontSize: 13, color: '#555' }}>Ninguna sesión cumple los filtros elegidos.</div>
             ) : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={S.table}>
@@ -613,7 +871,7 @@ export default function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sesionesConDatos.map(s => (
+                    {sesionesFiltradas.map(s => (
                       <tr key={s.id}>
                         <td style={S.td}>{mesaLabel(s.table_id)}</td>
                         <td style={S.td}>{new Date(s.abierta_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
@@ -692,12 +950,26 @@ export default function AdminDashboard() {
         {/* Rentabilidad por producto: ingreso, coste y margen */}
         <div style={S.section}>
           <div style={S.chartCard}>
-            <div style={S.cardTitle}>Rentabilidad por producto</div>
+            <div style={S.cardTitle}>Rentabilidad por producto ({hayFiltroRentabilidad ? `${rentabilidadFiltrada.length} de ${rentabilidadData.length}` : rentabilidadData.length})</div>
             <div style={{ fontSize: 12, color: '#666', marginBottom: 14, marginTop: -6 }}>
               Margen calculado con el precio de coste vigente en el momento de cada venta. Los productos sin coste cargado muestran el margen como "—".
             </div>
+            <div style={S.filterBar}>
+              <input style={S.filterInput} type="text" placeholder="Buscar producto..." value={filtroRentaBusqueda} onChange={e => setFiltroRentaBusqueda(e.target.value)} />
+              <span style={{ fontSize: 13, color: '#8a7560' }}>Margen entre</span>
+              <input style={{ ...S.filterInput, minWidth: 70, opacity: filtroRentaSinCoste ? 0.5 : 1 }} type="number" placeholder="mín %" value={filtroRentaMargenMin} onChange={e => setFiltroRentaMargenMin(e.target.value)} disabled={filtroRentaSinCoste} />
+              <span style={{ fontSize: 13, color: '#8a7560' }}>y</span>
+              <input style={{ ...S.filterInput, minWidth: 70, opacity: filtroRentaSinCoste ? 0.5 : 1 }} type="number" placeholder="máx %" value={filtroRentaMargenMax} onChange={e => setFiltroRentaMargenMax(e.target.value)} disabled={filtroRentaSinCoste} />
+              <label style={S.filterCheckLabel}>
+                <input type="checkbox" checked={filtroRentaSinCoste} onChange={e => setFiltroRentaSinCoste(e.target.checked)} />
+                Sin coste cargado
+              </label>
+              {hayFiltroRentabilidad && <button style={S.filterClear} onClick={limpiarFiltrosRentabilidad}>Limpiar filtros</button>}
+            </div>
             {rentabilidadData.length === 0 ? (
               <div style={{ fontSize: 13, color: '#555' }}>Sin ventas en este rango.</div>
+            ) : rentabilidadFiltrada.length === 0 ? (
+              <div style={{ fontSize: 13, color: '#555' }}>Ningún producto cumple los filtros elegidos.</div>
             ) : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={S.table}>
@@ -712,7 +984,7 @@ export default function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {rentabilidadData.map(p => (
+                    {rentabilidadFiltrada.map(p => (
                       <tr key={p.nombre}>
                         <td style={S.td}>{p.nombre}</td>
                         <td style={S.td}>{p.unidades}</td>
@@ -736,9 +1008,28 @@ export default function AdminDashboard() {
         {/* Historial de pedidos */}
         <div style={S.section}>
           <div style={S.chartCard}>
-            <div style={S.cardTitle}>Historial de pedidos ({orders.length})</div>
+            <div style={S.cardTitle}>Historial de pedidos ({hayFiltroPedidos ? `${ordersFiltrados.length} de ${orders.length}` : orders.length})</div>
+            <div style={S.filterBar}>
+              <select style={S.filterSelect} value={filtroPedidoMesa} onChange={e => setFiltroPedidoMesa(e.target.value)}>
+                <option value="">Todas las mesas / tipos</option>
+                <option value="takeaway">Takeaway</option>
+                {mesasEnPedidos.map(tid => <option key={tid} value={tid}>{mesaLabel(tid)}</option>)}
+              </select>
+              <select style={S.filterSelect} value={filtroPedidoEstado} onChange={e => setFiltroPedidoEstado(e.target.value)}>
+                <option value="">Todos los estados</option>
+                <option value="pendiente">Pendiente</option>
+                <option value="preparando">Preparando</option>
+                <option value="listo">Listo</option>
+                <option value="entregado">Entregado</option>
+                <option value="cancelado">Cancelado</option>
+              </select>
+              <input style={S.filterInput} type="text" placeholder="Buscar plato..." value={filtroPedidoBusqueda} onChange={e => setFiltroPedidoBusqueda(e.target.value)} />
+              {hayFiltroPedidos && <button style={S.filterClear} onClick={limpiarFiltrosPedidos}>Limpiar filtros</button>}
+            </div>
             {orders.length === 0 ? (
               <div style={{ fontSize: 13, color: '#555' }}>Sin pedidos en este rango.</div>
+            ) : ordersFiltrados.length === 0 ? (
+              <div style={{ fontSize: 13, color: '#555' }}>Ningún pedido cumple los filtros elegidos.</div>
             ) : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={S.table}>
@@ -752,7 +1043,7 @@ export default function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {orders.map(o => (
+                    {ordersFiltrados.map(o => (
                       <tr key={o.id}>
                         <td style={S.td}>{new Date(o.created_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
                         <td style={S.td}>{o.tipo === 'mesa' ? mesaLabel(o.table_id) : 'Takeaway'}</td>
