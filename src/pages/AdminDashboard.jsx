@@ -26,6 +26,7 @@ const S = {
   filterSelect: { background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '7px 10px', fontSize: 13, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', cursor: 'pointer' },
   filterInput: { background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '7px 12px', fontSize: 13, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', minWidth: 160 },
   filterClear: { background: 'transparent', border: 'none', fontSize: 12, color: '#c4a85a', cursor: 'pointer', fontFamily: "'Inter', sans-serif", textDecoration: 'underline', padding: '7px 2px' },
+  filterCheckLabel: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#8a7560', cursor: 'pointer', fontFamily: "'Inter', sans-serif" },
 
   kpiGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 32 },
   kpiCard: (color) => ({ background: '#1a1a1a', border: `1px solid ${color}`, borderRadius: 14, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 6 }),
@@ -109,6 +110,21 @@ function PedidosTooltip({ active, payload, label, moneda, promedio }) {
   )
 }
 
+// Los filtros de los listados se recuerdan por restaurante en
+// localStorage, para que no se pierdan al navegar a otra pestaña del
+// panel (Mesas, Clientes...) y volver. Solo se borran con los botones
+// de "Limpiar filtros".
+const FILTROS_DASHBOARD_PREFIJO = 'restomind_dashboard_filtros_'
+
+function cargarFiltrosGuardados(restaurantId) {
+  try {
+    const raw = localStorage.getItem(FILTROS_DASHBOARD_PREFIJO + restaurantId)
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    return {}
+  }
+}
+
 export default function AdminDashboard() {
   const { restaurantId } = useParams()
   const navigate = useNavigate()
@@ -130,15 +146,30 @@ export default function AdminDashboard() {
   // Filtros de los listados (se aplican sobre lo ya cargado para el
   // rango de fechas elegido, no disparan una consulta nueva — por eso
   // los pedidos nuevos que lleguen por realtime se siguen viendo en
-  // cuanto cumplan el filtro activo).
-  const [filtroPedidoMesa, setFiltroPedidoMesa] = useState('')
-  const [filtroPedidoEstado, setFiltroPedidoEstado] = useState('')
-  const [filtroPedidoBusqueda, setFiltroPedidoBusqueda] = useState('')
-  const [filtroSesionMesa, setFiltroSesionMesa] = useState('')
-  const [filtroSesionEstado, setFiltroSesionEstado] = useState('')
-  const [filtroSesionPago, setFiltroSesionPago] = useState('')
-  const [filtroRentaBusqueda, setFiltroRentaBusqueda] = useState('')
-  const [filtroRentaMargen, setFiltroRentaMargen] = useState('')
+  // cuanto cumplan el filtro activo). Se inicializan desde localStorage
+  // para sobrevivir a una navegación a otra pestaña del panel.
+  const filtrosGuardados = cargarFiltrosGuardados(restaurantId)
+  const [filtroPedidoMesa, setFiltroPedidoMesa] = useState(filtrosGuardados.pedidoMesa || '')
+  const [filtroPedidoEstado, setFiltroPedidoEstado] = useState(filtrosGuardados.pedidoEstado || '')
+  const [filtroPedidoBusqueda, setFiltroPedidoBusqueda] = useState(filtrosGuardados.pedidoBusqueda || '')
+  const [filtroSesionMesa, setFiltroSesionMesa] = useState(filtrosGuardados.sesionMesa || '')
+  const [filtroSesionEstado, setFiltroSesionEstado] = useState(filtrosGuardados.sesionEstado || '')
+  const [filtroSesionPago, setFiltroSesionPago] = useState(filtrosGuardados.sesionPago || '')
+  const [filtroRentaBusqueda, setFiltroRentaBusqueda] = useState(filtrosGuardados.rentaBusqueda || '')
+  const [filtroRentaMargenMin, setFiltroRentaMargenMin] = useState(filtrosGuardados.rentaMargenMin || '')
+  const [filtroRentaMargenMax, setFiltroRentaMargenMax] = useState(filtrosGuardados.rentaMargenMax || '')
+  const [filtroRentaSinCoste, setFiltroRentaSinCoste] = useState(filtrosGuardados.rentaSinCoste || false)
+
+  // Guarda los filtros en localStorage cada vez que cambian.
+  useEffect(() => {
+    try {
+      localStorage.setItem(FILTROS_DASHBOARD_PREFIJO + restaurantId, JSON.stringify({
+        pedidoMesa: filtroPedidoMesa, pedidoEstado: filtroPedidoEstado, pedidoBusqueda: filtroPedidoBusqueda,
+        sesionMesa: filtroSesionMesa, sesionEstado: filtroSesionEstado, sesionPago: filtroSesionPago,
+        rentaBusqueda: filtroRentaBusqueda, rentaMargenMin: filtroRentaMargenMin, rentaMargenMax: filtroRentaMargenMax, rentaSinCoste: filtroRentaSinCoste,
+      }))
+    } catch { /* localStorage no disponible (privado/bloqueado) — los filtros simplemente no persisten */ }
+  }, [restaurantId, filtroPedidoMesa, filtroPedidoEstado, filtroPedidoBusqueda, filtroSesionMesa, filtroSesionEstado, filtroSesionPago, filtroRentaBusqueda, filtroRentaMargenMin, filtroRentaMargenMax, filtroRentaSinCoste])
 
   useEffect(() => { checkAuth() }, [])
 
@@ -308,14 +339,18 @@ export default function AdminDashboard() {
     .sort((a, b) => (b.margen ?? -Infinity) - (a.margen ?? -Infinity))
   const umbralMargenAlerta = restaurant?.config?.umbral_margen_alerta ?? 20
 
-  const hayFiltroRentabilidad = !!(filtroRentaBusqueda.trim() || filtroRentaMargen)
+  const hayFiltroRentabilidad = !!(filtroRentaBusqueda.trim() || filtroRentaMargenMin !== '' || filtroRentaMargenMax !== '' || filtroRentaSinCoste)
   function limpiarFiltrosRentabilidad() {
-    setFiltroRentaBusqueda(''); setFiltroRentaMargen('')
+    setFiltroRentaBusqueda(''); setFiltroRentaMargenMin(''); setFiltroRentaMargenMax(''); setFiltroRentaSinCoste(false)
   }
   const rentabilidadFiltrada = rentabilidadData.filter(p => {
     if (filtroRentaBusqueda.trim() && !p.nombre.toLowerCase().includes(filtroRentaBusqueda.trim().toLowerCase())) return false
-    if (filtroRentaMargen === 'bajo' && !(p.margenPct != null && p.margenPct < umbralMargenAlerta)) return false
-    if (filtroRentaMargen === 'sincoste' && p.margen != null) return false
+    // "Sin coste cargado" es una vista aparte: si está marcado, ignora el
+    // rango de margen (no tiene sentido combinarlos, un producto sin
+    // coste no tiene margenPct con el que comparar).
+    if (filtroRentaSinCoste) return p.margen == null
+    if (filtroRentaMargenMin !== '' && (p.margenPct == null || p.margenPct < parseFloat(filtroRentaMargenMin))) return false
+    if (filtroRentaMargenMax !== '' && (p.margenPct == null || p.margenPct > parseFloat(filtroRentaMargenMax))) return false
     return true
   })
 
@@ -488,6 +523,13 @@ export default function AdminDashboard() {
     return true
   })
 
+  // Botón único arriba, junto al selector de fecha, para limpiar los
+  // filtros de los tres listados de una vez.
+  const hayAlgunFiltro = hayFiltroPedidos || hayFiltroSesiones || hayFiltroRentabilidad
+  function limpiarTodosFiltros() {
+    limpiarFiltrosPedidos(); limpiarFiltrosSesiones(); limpiarFiltrosRentabilidad()
+  }
+
   // Para un pedido de mesa, busca la sesión a la que pertenece (para
   // saber si ya está cobrado y con qué método) — un pedido de take away
   // no tiene table_session_id, queda sin esa información.
@@ -590,6 +632,11 @@ export default function AdminDashboard() {
               <span style={{ color: '#555' }}>→</span>
               <input type="date" style={S.dateInput} value={customTo} onChange={e => setCustomTo(e.target.value)} />
             </>
+          )}
+          {hayAlgunFiltro && (
+            <button onClick={limpiarTodosFiltros} style={{ background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '7px 14px', fontSize: 13, color: '#c4a85a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+              ✕ Limpiar todos los filtros
+            </button>
           )}
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }} className="no-print">
             <button onClick={exportarCSV} style={{ background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '7px 14px', fontSize: 13, color: '#c4a85a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
@@ -884,11 +931,14 @@ export default function AdminDashboard() {
             </div>
             <div style={S.filterBar}>
               <input style={S.filterInput} type="text" placeholder="Buscar producto..." value={filtroRentaBusqueda} onChange={e => setFiltroRentaBusqueda(e.target.value)} />
-              <select style={S.filterSelect} value={filtroRentaMargen} onChange={e => setFiltroRentaMargen(e.target.value)}>
-                <option value="">Todos los márgenes</option>
-                <option value="bajo">Por debajo del umbral ({umbralMargenAlerta}%)</option>
-                <option value="sincoste">Sin coste cargado</option>
-              </select>
+              <span style={{ fontSize: 13, color: '#8a7560' }}>Margen entre</span>
+              <input style={{ ...S.filterInput, minWidth: 70, opacity: filtroRentaSinCoste ? 0.5 : 1 }} type="number" placeholder="mín %" value={filtroRentaMargenMin} onChange={e => setFiltroRentaMargenMin(e.target.value)} disabled={filtroRentaSinCoste} />
+              <span style={{ fontSize: 13, color: '#8a7560' }}>y</span>
+              <input style={{ ...S.filterInput, minWidth: 70, opacity: filtroRentaSinCoste ? 0.5 : 1 }} type="number" placeholder="máx %" value={filtroRentaMargenMax} onChange={e => setFiltroRentaMargenMax(e.target.value)} disabled={filtroRentaSinCoste} />
+              <label style={S.filterCheckLabel}>
+                <input type="checkbox" checked={filtroRentaSinCoste} onChange={e => setFiltroRentaSinCoste(e.target.checked)} />
+                Sin coste cargado
+              </label>
               {hayFiltroRentabilidad && <button style={S.filterClear} onClick={limpiarFiltrosRentabilidad}>Limpiar filtros</button>}
             </div>
             {rentabilidadData.length === 0 ? (
