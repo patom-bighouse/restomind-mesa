@@ -264,7 +264,7 @@ export default function AdminDashboard() {
     const { from, to } = getRangeDates(range, customFrom, customTo)
     const { data, error: err } = await supabase
       .from('orders')
-      .select('id, table_id, table_session_id, estado, total, tipo, created_at, notas')
+      .select('id, table_id, table_session_id, estado, total, tipo, created_at, notas, preparando_at, listo_at, entregado_at')
       .eq('restaurant_id', restaurantId)
       .gte('created_at', from.toISOString())
       .lt('created_at', to.toISOString())
@@ -309,6 +309,27 @@ export default function AdminDashboard() {
   const ingresos = validOrders.reduce((s, o) => s + parseFloat(o.total || 0), 0)
   const totalPedidos = validOrders.length
   const ticketMedio = totalPedidos ? ingresos / totalPedidos : 0
+
+  // Tiempo medio de preparación (pendiente→listo) y de servicio
+  // (pendiente→entregado), en minutos. Solo sobre pedidos que ya tienen
+  // la marca correspondiente — uno anterior a este cambio, o uno aún en
+  // curso, no cuenta ni a favor ni en contra del promedio.
+  const minutosEntre = (a, b) => (new Date(b).getTime() - new Date(a).getTime()) / 60000
+  const conPreparacion = validOrders.filter(o => o.listo_at)
+  const tiempoMedioPreparacion = conPreparacion.length
+    ? conPreparacion.reduce((s, o) => s + minutosEntre(o.created_at, o.listo_at), 0) / conPreparacion.length
+    : null
+  const conServicio = validOrders.filter(o => o.entregado_at)
+  const tiempoMedioServicio = conServicio.length
+    ? conServicio.reduce((s, o) => s + minutosEntre(o.created_at, o.entregado_at), 0) / conServicio.length
+    : null
+  function formatMinutos(min) {
+    if (min == null) return '—'
+    if (min < 60) return `${Math.round(min)} min`
+    const h = Math.floor(min / 60)
+    const m = Math.round(min % 60)
+    return `${h}h ${m}min`
+  }
 
   // Top platos
   const platoCounts = {}
@@ -694,6 +715,14 @@ export default function AdminDashboard() {
           <div style={S.kpiCard('#9b59b6')}>
             <div style={S.kpiVal('#9b59b6')}>{comensalesPromedioGeneral != null ? comensalesPromedioGeneral.toFixed(1) : '—'}</div>
             <div style={S.kpiLabel}>Comensales promedio</div>
+          </div>
+          <div style={S.kpiCard('#f39c12')}>
+            <div style={S.kpiVal('#f39c12')}>{formatMinutos(tiempoMedioPreparacion)}</div>
+            <div style={S.kpiLabel}>Tiempo de preparación</div>
+          </div>
+          <div style={S.kpiCard('#1abc9c')}>
+            <div style={S.kpiVal('#1abc9c')}>{formatMinutos(tiempoMedioServicio)}</div>
+            <div style={S.kpiLabel}>Tiempo hasta servir</div>
           </div>
         </div>
 
