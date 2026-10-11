@@ -325,6 +325,15 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
             ))}
           </>
         )}
+        <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
+        {/* Deja claro que este papel no es el ticket fiscal — por diseño,
+            para que Restomind no pase a considerarse un sistema de
+            facturación (VeriFactu solo alcanza al documento que se
+            entrega al cliente como comprobante). El fiscal lo sigue
+            emitiendo el TPV/caja del restaurante. */}
+        <div style={{ fontSize: 10, textAlign: 'center', fontStyle: 'italic' }}>
+          Documento informativo — no válido como factura.<br />Solicite su ticket fiscal en caja.
+        </div>
       </div>
     </div>
   )
