@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/money'
 import { useRestaurantModulos } from '../lib/modulos'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 const S = {
   app: { minHeight: '100vh', background: '#111', color: '#f0e8d8', fontFamily: "'Inter', sans-serif" },
@@ -442,6 +442,16 @@ export default function AdminDashboard() {
   // saltan etiquetas del eje para que no se amontonen.
   const diaInterval = diaData.length > 12 ? Math.ceil(diaData.length / 10) - 1 : 0
 
+  // Facturación del período — por hora si el rango es "Hoy" (un único
+  // día no tiene sentido partido en días), por día en cualquier otro
+  // rango (Esta semana / Este mes / Personalizado). Reutiliza los
+  // mismos datos ya calculados arriba, no hace falta recorrer nada de
+  // nuevo.
+  const facturacionData = range === 'hoy'
+    ? horaData.map(h => ({ etiqueta: h.hora, facturacion: h.facturacion, pedidos: h.pedidos }))
+    : diaData.map(d => ({ etiqueta: d.dia, facturacion: d.facturacion, pedidos: d.pedidos }))
+  const facturacionInterval = range === 'hoy' ? 1 : diaInterval
+
   // Pedidos por día de la semana — PROMEDIO, no suma total. Con "Este
   // mes" un lunes puede caer 5 veces y un domingo solo 4; si sumáramos,
   // el lunes siempre parecería más visitado aunque no lo sea. Dividiendo
@@ -723,6 +733,22 @@ export default function AdminDashboard() {
           <div style={S.kpiCard('#1abc9c')}>
             <div style={S.kpiVal('#1abc9c')}>{formatMinutos(tiempoMedioServicio)}</div>
             <div style={S.kpiLabel}>Tiempo hasta servir</div>
+          </div>
+        </div>
+
+        {/* Facturación del período */}
+        <div style={S.section}>
+          <div style={S.chartCard}>
+            <div style={S.cardTitle}>Facturación {range === 'hoy' ? '(por hora)' : '(por día)'}</div>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={facturacionData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" vertical={false} />
+                <XAxis dataKey="etiqueta" stroke="#7a6a50" fontSize={11} interval={facturacionInterval} />
+                <YAxis stroke="#7a6a50" fontSize={11} tickFormatter={(v) => formatMoney(v, restaurant?.moneda)} width={80} />
+                <Tooltip content={<PedidosTooltip moneda={restaurant?.moneda} />} />
+                <Line type="monotone" dataKey="facturacion" stroke="#e8c97a" strokeWidth={2} dot={{ r: 3, fill: '#e8c97a' }} activeDot={{ r: 5 }} />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
         </div>
 
