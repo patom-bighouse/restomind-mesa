@@ -12,6 +12,14 @@ import CamareroCocina from '../components/CamareroCocina'
 const PERMISOS_IMPLEMENTADOS = ['pedidos', 'clientes', 'reservas', 'limpieza', 'cocina']
 const PERMISOS_LABEL = { pedidos: 'Pedidos', clientes: 'Clientes', reservas: 'Reservas', limpieza: 'Limpieza', cocina: 'Cocina' }
 
+// Mismas etiquetas que Mesa.jsx usa en "Mis pedidos".
+const ESTADO_PEDIDO_LABEL = {
+  pendiente: '🕒 Recibido',
+  preparando: '👨‍🍳 En preparación',
+  listo: '✅ Listo para servir',
+  entregado: '🍽 Entregado',
+}
+
 // Mismo catálogo fijo que AdminCarta.jsx y Mesa.jsx (Reglamento UE 1169/2011).
 const ALERGENOS = [
   { key: 'gluten', label: 'Gluten', emoji: '🌾' },
@@ -133,6 +141,10 @@ export default function Camarero() {
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState(null)
   const [sendSuccess, setSendSuccess] = useState(false)
+
+  const [showPedidosSesion, setShowPedidosSesion] = useState(false)
+  const [pedidosSesion, setPedidosSesion] = useState([])
+  const [loadingPedidosSesion, setLoadingPedidosSesion] = useState(false)
 
   const [showFidelizacion, setShowFidelizacion] = useState(false)
   const [telefonoInput, setTelefonoInput] = useState('')
@@ -452,6 +464,56 @@ export default function Camarero() {
       setFidelizacionEstado(null)
     }
   }
+
+  // Lo que ya se pidió en esta visita — tanto lo que cargó el propio
+  // camarero en rondas anteriores como lo que el cliente pidió por su
+  // cuenta desde el QR (Mesa.jsx ya se lo muestra a él con "Mis
+  // pedidos"; esto es lo mismo, visto desde el lado del camarero).
+  async function loadPedidosSesion() {
+    if (!selectedTable?.session?.id) return
+    setLoadingPedidosSesion(true)
+    const { data, error: e } = await supabase.rpc('fn_camarero_listar_pedidos_sesion', {
+      p_restaurant_id: restaurantId,
+      p_camarero_id: camarero.id,
+      p_table_session_id: selectedTable.session.id,
+    })
+    setLoadingPedidosSesion(false)
+    if (e || !data) { setPedidosSesion([]); return }
+
+    const porPedido = {}
+    data.forEach(row => {
+      if (!porPedido[row.order_id]) {
+        porPedido[row.order_id] = {
+          id: row.order_id,
+          created_at: row.order_created_at,
+          estado: row.order_estado,
+          total: row.order_total,
+          items: [],
+        }
+      }
+      if (row.item_id) {
+        porPedido[row.order_id].items.push({
+          id: row.item_id,
+          nombre: row.item_nombre,
+          precio: parseFloat(row.item_precio) + parseFloat(row.item_modificadores_extra || 0),
+          cantidad: row.item_cantidad,
+          modificadores: row.item_modificadores,
+        })
+      }
+    })
+    setPedidosSesion(Object.values(porPedido))
+  }
+
+  function abrirPedidosSesion() {
+    setShowPedidosSesion(true)
+    loadPedidosSesion()
+  }
+
+  useEffect(() => {
+    if (!showPedidosSesion) return
+    const interval = setInterval(loadPedidosSesion, 15000)
+    return () => clearInterval(interval)
+  }, [showPedidosSesion, selectedTable?.session?.id])
 
   async function cargarEstadoFidelizacion(telefono) {
     setCargandoEstadoFidelizacion(true)
@@ -1075,6 +1137,12 @@ export default function Camarero() {
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', gap: 10, maxWidth: '65%' }}>
           {sendSuccess && <span style={{ fontSize: 12, color: '#7ae8a0' }}>✓ Pedido enviado</span>}
           <button
+            onClick={abrirPedidosSesion}
+            style={{ background: 'transparent', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '6px 14px', fontSize: 12, color: '#c4a85a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+          >
+            📋 Pedidos de la mesa
+          </button>
+          <button
             onClick={() => setShowAlergenosPanel(true)}
             style={{ background: alergenosExcluidos.length > 0 ? '#3a2010' : 'transparent', border: `0.5px solid ${alergenosExcluidos.length > 0 ? '#e8c97a' : '#3a2e20'}`, borderRadius: 8, padding: '6px 14px', fontSize: 12, color: '#c4a85a', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
           >
@@ -1385,6 +1453,52 @@ export default function Camarero() {
                   {aplicandoVale ? 'Aplicando...' : 'Aplicar a la cuenta'}
                 </button>
               </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showPedidosSesion && (
+        <div style={S.overlay} onClick={() => setShowPedidosSesion(false)}>
+          <div style={S.sheet} onClick={e => e.stopPropagation()}>
+            <div style={S.sheetTitle}>📋 Pedidos de la mesa {selectedTable.numero}</div>
+            {loadingPedidosSesion && pedidosSesion.length === 0 && (
+              <div style={{ textAlign: 'center', color: '#7a6a50', fontSize: 13, padding: '20px 0' }}>Cargando...</div>
+            )}
+            {!loadingPedidosSesion && pedidosSesion.length === 0 && (
+              <div style={{ textAlign: 'center', color: '#7a6a50', fontSize: 13, padding: '20px 0' }}>Todavía no hay ningún pedido en esta mesa.</div>
+            )}
+            {pedidosSesion.map(pedido => (
+              <div key={pedido.id} style={{ marginBottom: 16, paddingBottom: 12, borderBottom: '0.5px solid #2a2018' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, color: '#7a6a50' }}>
+                    {new Date(pedido.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                  <span style={{ fontSize: 11, color: '#c4a85a', fontWeight: 500 }}>
+                    {ESTADO_PEDIDO_LABEL[pedido.estado] || pedido.estado}
+                  </span>
+                </div>
+                {pedido.items.map(item => (
+                  <div key={item.id} style={{ padding: '2px 0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#f0e8d8' }}>
+                      <span>{item.cantidad}× {item.nombre}</span>
+                      <span style={{ color: '#c4a85a' }}>{formatMoney(item.precio * item.cantidad, restaurant?.moneda)}</span>
+                    </div>
+                    {item.modificadores && (
+                      <div style={{ fontSize: 11, color: '#8a7560', marginLeft: 12 }}>{item.modificadores}</div>
+                    )}
+                  </div>
+                ))}
+                <div style={{ textAlign: 'right', fontSize: 12, color: '#7a6a50', marginTop: 4 }}>
+                  Subtotal: {formatMoney(pedido.total || 0, restaurant?.moneda)}
+                </div>
+              </div>
+            ))}
+            {pedidosSesion.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16, fontWeight: 600, color: '#e8c97a', paddingTop: 8 }}>
+                <span>Total de la mesa hasta ahora</span>
+                <span>{formatMoney(pedidosSesion.reduce((s, p) => s + parseFloat(p.total || 0), 0), restaurant?.moneda)}</span>
+              </div>
             )}
           </div>
         </div>
