@@ -20,6 +20,16 @@ const ESTADO_PEDIDO_LABEL = {
   entregado: '🍽 Entregado',
 }
 
+// Hay restaurantes con dos mesas con el mismo número en zonas distintas
+// (ej. "Mesa 3" en terraza y "Mesa 3" en privado) — sin la zona, el
+// camarero no puede distinguir cuál es cuál si tiene varias abiertas.
+function mesaLabel(t) {
+  if (!t) return 'Mesa ?'
+  if (!t.zona) return `Mesa ${t.numero}`
+  const zonaCapitalizada = t.zona.charAt(0).toUpperCase() + t.zona.slice(1)
+  return `Mesa ${t.numero} (${zonaCapitalizada})`
+}
+
 // Mismo catálogo fijo que AdminCarta.jsx y Mesa.jsx (Reglamento UE 1169/2011).
 const ALERGENOS = [
   { key: 'gluten', label: 'Gluten', emoji: '🌾' },
@@ -972,7 +982,7 @@ export default function Camarero() {
                 <div key={call.id} style={S.llamadaBanner}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span style={{ fontSize: 18 }}>🛎</span>
-                    <div style={{ fontSize: 14, fontWeight: 500, color: '#f0e8d8' }}>Mesa {call.mesa_numero} llama al camarero</div>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: '#f0e8d8' }}>{mesaLabel({ numero: call.mesa_numero, zona: call.mesa_zona })} llama al camarero</div>
                   </div>
                   <button onClick={() => atenderLlamada(call.id)} style={{ background: '#d4a017', border: 'none', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 500, color: '#111', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
                     Atendido
@@ -1019,7 +1029,7 @@ export default function Camarero() {
               <div key={call.id} style={S.llamadaBanner}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{ fontSize: 18 }}>🛎</span>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: '#f0e8d8' }}>Mesa {call.mesa_numero} llama al camarero</div>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: '#f0e8d8' }}>{mesaLabel({ numero: call.mesa_numero, zona: call.mesa_zona })} llama al camarero</div>
                 </div>
                 <button onClick={() => atenderLlamada(call.id)} style={{ background: '#d4a017', border: 'none', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 500, color: '#111', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
                   Atendido
@@ -1035,7 +1045,7 @@ export default function Camarero() {
             <div style={S.mesasGrid}>
               {mesasPropias.map(t => (
                 <div key={t.id} style={S.mesaCard} onClick={() => abrirMesa(t)}>
-                  <div style={S.mesaNum}>Mesa {t.numero}</div>
+                  <div style={S.mesaNum}>{mesaLabel(t)}</div>
                   {t.zona && <div style={S.mesaZona}>{t.zona.charAt(0).toUpperCase() + t.zona.slice(1)}</div>}
                   <div style={S.mesaComensales}>{sessions[t.id]?.comensales ?? t.capacidad} comensales</div>
                 </div>
@@ -1055,7 +1065,7 @@ export default function Camarero() {
                 style={{ ...S.mesaCard, opacity: abriendoMesa === t.id ? 0.5 : 1, ...(t.necesita_limpieza ? { border: '0.5px solid #d4a017', background: '#2a2010' } : {}) }}
                 onClick={() => abrirMesa(t)}
               >
-                <div style={S.mesaNum}>Mesa {t.numero}</div>
+                <div style={S.mesaNum}>{mesaLabel(t)}</div>
                 {t.zona && <div style={S.mesaZona}>{t.zona.charAt(0).toUpperCase() + t.zona.slice(1)}</div>}
                 <div style={S.mesaComensales}>{t.necesita_limpieza ? '🧹 Necesita limpieza' : `Capacidad: ${t.capacidad}`}</div>
               </div>
@@ -1066,7 +1076,7 @@ export default function Camarero() {
         {limpiezaModal && (
           <div style={S.limpiezaOverlay} onClick={() => setLimpiezaModal(null)}>
             <div style={S.limpiezaBox} onClick={e => e.stopPropagation()}>
-              <div style={S.limpiezaTitle}>🧹 Mesa {limpiezaModal.numero}</div>
+              <div style={S.limpiezaTitle}>🧹 {mesaLabel(limpiezaModal)}</div>
               <div style={S.limpiezaSub}>Marca cada paso a medida que lo completas — la mesa vuelve a estar libre sola.</div>
               {limpiezaPasos.map(paso => {
                 const marcado = (limpiezaModal.limpieza_progreso || []).includes(paso.id)
@@ -1132,7 +1142,7 @@ export default function Camarero() {
       <div style={S.header}>
         <div>
           <div style={S.logo}>{restaurant?.nombre || 'Restomind'}</div>
-          <div style={S.sub}>{camarero.nombre} · Mesa {selectedTable.numero}</div>
+          <div style={S.sub}>{camarero.nombre} · {mesaLabel(selectedTable)}</div>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', gap: 10, maxWidth: '65%' }}>
           {sendSuccess && <span style={{ fontSize: 12, color: '#7ae8a0' }}>✓ Pedido enviado</span>}
@@ -1316,7 +1326,7 @@ export default function Camarero() {
       {showCart && (
         <div style={S.overlay} onClick={() => setShowCart(false)}>
           <div style={S.sheet} onClick={e => e.stopPropagation()}>
-            <div style={S.sheetTitle}>Pedido — Mesa {selectedTable.numero}</div>
+            <div style={S.sheetTitle}>Pedido — {mesaLabel(selectedTable)}</div>
             {Object.entries(cart).map(([id, v]) => (
               <div key={id} style={{ ...S.cartLine, flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -1461,7 +1471,7 @@ export default function Camarero() {
       {showPedidosSesion && (
         <div style={S.overlay} onClick={() => setShowPedidosSesion(false)}>
           <div style={S.sheet} onClick={e => e.stopPropagation()}>
-            <div style={S.sheetTitle}>📋 Pedidos de la mesa {selectedTable.numero}</div>
+            <div style={S.sheetTitle}>📋 Pedidos — {mesaLabel(selectedTable)}</div>
             {loadingPedidosSesion && pedidosSesion.length === 0 && (
               <div style={{ textAlign: 'center', color: '#7a6a50', fontSize: 13, padding: '20px 0' }}>Cargando...</div>
             )}
@@ -1507,7 +1517,7 @@ export default function Camarero() {
       {showFidelizacion && !editandoTelefono && selectedTable?.session?.cliente_telefono && (
         <div style={S.overlay} onClick={() => setShowFidelizacion(false)}>
           <div style={S.sheet} onClick={e => e.stopPropagation()}>
-            <div style={S.sheetTitle}>🎁 Fidelización — Mesa {selectedTable.numero}</div>
+            <div style={S.sheetTitle}>🎁 Fidelización — {mesaLabel(selectedTable)}</div>
             {cargandoEstadoFidelizacion ? (
               <div style={{ textAlign: 'center', color: '#7a6a50', padding: '20px 0' }}>Cargando...</div>
             ) : fidelizacionEstado ? (
@@ -1597,7 +1607,7 @@ export default function Camarero() {
       {showFidelizacion && editandoTelefono && (
         <div style={S.overlay} onClick={() => setShowFidelizacion(false)}>
           <div style={S.sheet} onClick={e => e.stopPropagation()}>
-            <div style={S.sheetTitle}>🎁 Fidelización — Mesa {selectedTable.numero}</div>
+            <div style={S.sheetTitle}>🎁 Fidelización — {mesaLabel(selectedTable)}</div>
             <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 14, lineHeight: 1.5 }}>
               Introduce el teléfono del cliente para que sume puntos automáticamente cuando se cierre la mesa como pagada.
             </div>
