@@ -156,6 +156,7 @@ export default function AdminDashboard() {
   const [orders, setOrders] = useState([])
   const [orderItemsMap, setOrderItemsMap] = useState({})
   const [tables, setTables] = useState({})
+  const [camareros, setCamareros] = useState({})
   const [sessions, setSessions] = useState([])
   const [resenas, setResenas] = useState([])
 
@@ -166,6 +167,7 @@ export default function AdminDashboard() {
   const [filtroPedidoMesa, setFiltroPedidoMesa] = useState(filtrosGuardados.pedidoMesa || '')
   const [filtroPedidoEstado, setFiltroPedidoEstado] = useState(filtrosGuardados.pedidoEstado || '')
   const [filtroPedidoBusqueda, setFiltroPedidoBusqueda] = useState(filtrosGuardados.pedidoBusqueda || '')
+  const [filtroPedidoAtendidoPor, setFiltroPedidoAtendidoPor] = useState(filtrosGuardados.pedidoAtendidoPor || '')
   const [filtroSesionMesa, setFiltroSesionMesa] = useState(filtrosGuardados.sesionMesa || '')
   const [filtroSesionEstado, setFiltroSesionEstado] = useState(filtrosGuardados.sesionEstado || '')
   const [filtroSesionPago, setFiltroSesionPago] = useState(filtrosGuardados.sesionPago || '')
@@ -180,12 +182,12 @@ export default function AdminDashboard() {
     try {
       localStorage.setItem(FILTROS_DASHBOARD_PREFIJO + restaurantId, JSON.stringify({
         range, customFrom, customTo,
-        pedidoMesa: filtroPedidoMesa, pedidoEstado: filtroPedidoEstado, pedidoBusqueda: filtroPedidoBusqueda,
+        pedidoMesa: filtroPedidoMesa, pedidoEstado: filtroPedidoEstado, pedidoBusqueda: filtroPedidoBusqueda, pedidoAtendidoPor: filtroPedidoAtendidoPor,
         sesionMesa: filtroSesionMesa, sesionEstado: filtroSesionEstado, sesionPago: filtroSesionPago,
         rentaBusqueda: filtroRentaBusqueda, rentaMargenMin: filtroRentaMargenMin, rentaMargenMax: filtroRentaMargenMax, rentaSinCoste: filtroRentaSinCoste,
       }))
     } catch { /* localStorage no disponible (privado/bloqueado) — los filtros simplemente no persisten */ }
-  }, [restaurantId, range, customFrom, customTo, filtroPedidoMesa, filtroPedidoEstado, filtroPedidoBusqueda, filtroSesionMesa, filtroSesionEstado, filtroSesionPago, filtroRentaBusqueda, filtroRentaMargenMin, filtroRentaMargenMax, filtroRentaSinCoste])
+  }, [restaurantId, range, customFrom, customTo, filtroPedidoMesa, filtroPedidoEstado, filtroPedidoBusqueda, filtroPedidoAtendidoPor, filtroSesionMesa, filtroSesionEstado, filtroSesionPago, filtroRentaBusqueda, filtroRentaMargenMin, filtroRentaMargenMax, filtroRentaSinCoste])
 
   useEffect(() => { checkAuth() }, [])
 
@@ -196,6 +198,7 @@ export default function AdminDashboard() {
     if (!rest) { navigate('/admin/login'); return }
     setRestaurant(rest)
     await loadTables(rest.id)
+    await loadCamareros(rest.id)
     await loadResenas(rest.id)
     setLoading(false)
   }
@@ -205,6 +208,15 @@ export default function AdminDashboard() {
     const map = {}
     ;(data || []).forEach(t => { map[t.id] = t })
     setTables(map)
+  }
+
+  // Todos los camareros, activos o no — un pedido antiguo tiene que
+  // poder mostrar el nombre de alguien que ya no trabaja ahí.
+  async function loadCamareros(restId) {
+    const { data } = await supabase.from('camareros').select('id, nombre').eq('restaurant_id', restId)
+    const map = {}
+    ;(data || []).forEach(c => { map[c.id] = c.nombre })
+    setCamareros(map)
   }
 
   // Resumen general de reseñas (no filtra por el rango de fechas del
@@ -264,7 +276,7 @@ export default function AdminDashboard() {
     const { from, to } = getRangeDates(range, customFrom, customTo)
     const { data, error: err } = await supabase
       .from('orders')
-      .select('id, table_id, table_session_id, estado, total, tipo, created_at, notas, preparando_at, listo_at, entregado_at')
+      .select('id, table_id, table_session_id, estado, total, tipo, created_at, notas, preparando_at, listo_at, entregado_at, tomado_por')
       .eq('restaurant_id', restaurantId)
       .gte('created_at', from.toISOString())
       .lt('created_at', to.toISOString())
@@ -544,16 +556,20 @@ export default function AdminDashboard() {
   }
 
   // ---------- Filtros de los listados ----------
-  const hayFiltroPedidos = !!(filtroPedidoMesa || filtroPedidoEstado || filtroPedidoBusqueda.trim())
+  const hayFiltroPedidos = !!(filtroPedidoMesa || filtroPedidoEstado || filtroPedidoBusqueda.trim() || filtroPedidoAtendidoPor)
   function limpiarFiltrosPedidos() {
-    setFiltroPedidoMesa(''); setFiltroPedidoEstado(''); setFiltroPedidoBusqueda('')
+    setFiltroPedidoMesa(''); setFiltroPedidoEstado(''); setFiltroPedidoBusqueda(''); setFiltroPedidoAtendidoPor('')
   }
   const mesasEnPedidos = [...new Set(orders.filter(o => o.tipo === 'mesa' && o.table_id).map(o => o.table_id))]
     .sort((a, b) => (tables[a]?.numero || 0) - (tables[b]?.numero || 0))
+  const camarerosEnPedidos = [...new Set(orders.filter(o => o.tomado_por).map(o => o.tomado_por))]
+    .sort((a, b) => (camareros[a] || '').localeCompare(camareros[b] || ''))
   const ordersFiltrados = orders.filter(o => {
     if (filtroPedidoMesa === 'takeaway' && o.tipo !== 'takeaway') return false
     if (filtroPedidoMesa && filtroPedidoMesa !== 'takeaway' && o.table_id !== filtroPedidoMesa) return false
     if (filtroPedidoEstado && o.estado !== filtroPedidoEstado) return false
+    if (filtroPedidoAtendidoPor === 'cliente' && o.tomado_por) return false
+    if (filtroPedidoAtendidoPor && filtroPedidoAtendidoPor !== 'cliente' && o.tomado_por !== filtroPedidoAtendidoPor) return false
     if (filtroPedidoBusqueda.trim()) {
       const q = filtroPedidoBusqueda.trim().toLowerCase()
       const items = orderItemsMap[o.id] || []
@@ -1079,6 +1095,11 @@ export default function AdminDashboard() {
                 <option value="cancelado">Cancelado</option>
               </select>
               <input style={S.filterInput} type="text" placeholder="Buscar plato..." value={filtroPedidoBusqueda} onChange={e => setFiltroPedidoBusqueda(e.target.value)} />
+              <select style={S.filterSelect} value={filtroPedidoAtendidoPor} onChange={e => setFiltroPedidoAtendidoPor(e.target.value)}>
+                <option value="">Todos — cliente y camareros</option>
+                <option value="cliente">Solo autogestionados (cliente)</option>
+                {camarerosEnPedidos.map(cid => <option key={cid} value={cid}>{camareros[cid] || 'Camarero'}</option>)}
+              </select>
               {hayFiltroPedidos && <button style={S.filterClear} onClick={limpiarFiltrosPedidos}>Limpiar filtros</button>}
             </div>
             {orders.length === 0 ? (
@@ -1095,6 +1116,7 @@ export default function AdminDashboard() {
                       <th style={S.th}>Items</th>
                       <th style={S.th}>Total</th>
                       <th style={S.th}>Estado</th>
+                      <th style={S.th}>Atendido por</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1105,6 +1127,7 @@ export default function AdminDashboard() {
                         <td style={S.td}>{(orderItemsMap[o.id] || []).map(i => `${i.cantidad}× ${i.nombre_snapshot}`).join(', ') || '—'}</td>
                         <td style={S.td}>{formatMoney(o.total, restaurant?.moneda)}</td>
                         <td style={S.td}><span style={S.estadoBadge(o.estado)}>{o.estado}</span></td>
+                        <td style={S.td}>{o.tomado_por ? `🧑‍💼 ${camareros[o.tomado_por] || 'Camarero'}` : '📱 Cliente'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1150,6 +1173,7 @@ export default function AdminDashboard() {
               <th style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'left' }}>Items</th>
               <th style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>Total</th>
               <th style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'left' }}>Estado</th>
+              <th style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'left' }}>Atendido por</th>
             </tr>
           </thead>
           <tbody>
@@ -1160,6 +1184,7 @@ export default function AdminDashboard() {
                 <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{(orderItemsMap[o.id] || []).map(i => `${i.cantidad}x ${i.nombre_snapshot}`).join(', ') || '—'}</td>
                 <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>{formatMoney(o.total, restaurant?.moneda)}</td>
                 <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{o.estado}</td>
+                <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{o.tomado_por ? (camareros[o.tomado_por] || 'Camarero') : 'Cliente'}</td>
               </tr>
             ))}
           </tbody>
