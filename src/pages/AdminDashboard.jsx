@@ -1173,6 +1173,7 @@ export default function AdminDashboard() {
               <th style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'left' }}>Items</th>
               <th style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>Total</th>
               <th style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'left' }}>Estado</th>
+              <th style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'left' }}>Atendido por</th>
             </tr>
           </thead>
           <tbody>
@@ -1183,6 +1184,7 @@ export default function AdminDashboard() {
                 <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{(orderItemsMap[o.id] || []).map(i => `${i.cantidad}x ${i.nombre_snapshot}`).join(', ') || '—'}</td>
                 <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>{formatMoney(o.total, restaurant?.moneda)}</td>
                 <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{o.estado}</td>
+                <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{o.tomado_por ? (camareros[o.tomado_por] || 'Camarero') : 'Cliente'}</td>
               </tr>
             ))}
           </tbody>
