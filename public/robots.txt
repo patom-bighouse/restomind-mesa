@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /superadmin
+Disallow: /mesa
+Disallow: /cocina
+Disallow: /camarero
+Disallow: /reservar
+
+Sitemap: https://restomind.app/sitemap.xml

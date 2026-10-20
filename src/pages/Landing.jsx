@@ -56,6 +56,29 @@ const MAS_FUNCIONES = [
   '🔐 Gestión de equipo con PIN', '🌐 Dominio y marca propia', '🔗 Integraciones y webhooks',
 ]
 
+const FAQS = [
+  {
+    pregunta: '¿Qué es Restomind?',
+    respuesta: 'Restomind es un software de gestión para restaurantes: carta digital con código QR, pedidos directos a cocina, reservas y un panel de control con los datos reales de tu negocio.',
+  },
+  {
+    pregunta: '¿Los clientes necesitan instalar una aplicación?',
+    respuesta: 'No. El cliente escanea el código QR de su mesa y accede a la carta desde el navegador del móvil, sin descargar nada y sin crear una cuenta.',
+  },
+  {
+    pregunta: '¿Restomind cobra comisión por pedido o por reserva?',
+    respuesta: 'No. Restomind cobra una cuota mensual fija según el plan contratado — no hay comisión por pedido, por reserva ni por volumen de ventas.',
+  },
+  {
+    pregunta: '¿Cuánto cuesta Restomind?',
+    respuesta: 'Desde 35€/mes en el plan Básico. Los planes Profesional (89€/mes) y Premium (169€/mes) suman reservas, fidelización, agente de WhatsApp y más funciones, según lo que necesite tu restaurante.',
+  },
+  {
+    pregunta: '¿Restomind gestiona reservas y pedidos por WhatsApp?',
+    respuesta: 'Sí. En el plan Premium, un agente responde consultas, gestiona reservas y toma pedidos para llevar por WhatsApp, siempre confirmando antes de darlos por hechos.',
+  },
+]
+
 const PLANES = [
   {
     nombre: 'Básico',
@@ -225,6 +248,11 @@ const S = {
   },
 
   footer: { textAlign: 'center', padding: '34px 20px 44px', fontSize: 13, color: C.textMuted, borderTop: `1px solid ${C.border}` },
+
+  faqSection: { padding: '10px clamp(20px, 5vw, 60px) 90px', maxWidth: 820, margin: '0 auto' },
+  faqItem: { padding: '26px 0', borderBottom: `1px solid ${C.border}` },
+  faqQ: { fontFamily: "'Playfair Display', serif", fontSize: 19, color: C.text, marginBottom: 10, lineHeight: 1.35 },
+  faqA: { fontSize: 15, color: C.textBody, lineHeight: 1.65, margin: 0 },
 }
 
 function IlustracionEscanear() {
@@ -507,6 +535,31 @@ export default function Landing() {
           ))}
         </div>
       </section>
+
+      <section style={S.faqSection}>
+        <div style={S.featuresHeader}>
+          <div style={S.eyebrow}>Preguntas frecuentes</div>
+          <h2 style={S.h2}>Lo que suelen preguntarnos</h2>
+        </div>
+        {FAQS.map((f) => (
+          <div key={f.pregunta} style={S.faqItem}>
+            <h3 style={S.faqQ}>{f.pregunta}</h3>
+            <p style={S.faqA}>{f.respuesta}</p>
+          </div>
+        ))}
+      </section>
+
+      <script type="application/ld+json">
+        {JSON.stringify({
+          '@context': 'https://schema.org',
+          '@type': 'FAQPage',
+          mainEntity: FAQS.map((f) => ({
+            '@type': 'Question',
+            name: f.pregunta,
+            acceptedAnswer: { '@type': 'Answer', text: f.respuesta },
+          })),
+        })}
+      </script>
 
       <footer style={S.footer}>© {new Date().getFullYear()} Restomind</footer>
     </div>
