@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 700" width="600" height="700" role="img" aria-label="Restomind">
+  <rect width="600" height="700" fill="#faf6ee"/>
+  <g transform="translate(200,120)">
+    <circle cx="100" cy="100" r="100" fill="#241c14"/>
+    <text x="92.5" y="142.5" font-family="'Playfair Display', serif" font-weight="600" font-size="130" fill="#faf6ee" text-anchor="middle">R</text>
+    <line x1="130" y1="120" x2="160" y2="150" stroke="#c99a35" stroke-width="10" stroke-linecap="round"/>
+    <circle cx="165" cy="155" r="12.5" fill="#c99a35"/>
+  </g>
+  <text x="300" y="400" text-anchor="middle" font-family="'Playfair Display', serif" font-weight="600" font-size="60" fill="#241c14" textLength="420" lengthAdjust="spacingAndGlyphs">restomind</text>
+  <circle cx="522" cy="389" r="6" fill="#c99a35"/>
+  <text x="300" y="434" text-anchor="middle" font-family="'Inter', sans-serif" font-weight="500" font-size="16" letter-spacing="2" fill="#9b8b70">SOFTWARE DE GESTIÓN PARA RESTAURANTES</text>
+</svg>

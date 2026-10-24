@@ -380,7 +380,7 @@ export default function Landing() {
       `}</style>
 
       <header style={S.nav}>
-        <span style={S.logo}>Restomind</span>
+        <span style={{ ...S.logo, display: 'inline-flex', alignItems: 'center', gap: 8 }}><img src="/logos/opcion-2-monograma/icon.svg" alt="" style={{ height: 28 }} />Restomind</span>
         <a href={linkWhatsapp(mensajeGeneral)} style={S.navBtn} target="_blank" rel="noreferrer">WhatsApp</a>
       </header>
 

@@ -170,7 +170,7 @@ export default function AdminReservas() {
       <div style={S.app}>
         <div style={S.header}>
           <div>
-            <div style={S.logo}>Restomind Admin</div>
+            <div style={S.logo}><img src="/logos/opcion-2-monograma/icon-dark.svg" alt="" style={{ height: 22, verticalAlign: 'middle', marginRight: 8 }} />Restomind Admin</div>
             <div style={S.restName}>{restaurant?.nombre}</div>
           </div>
           <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
@@ -188,7 +188,7 @@ export default function AdminReservas() {
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
       <div style={S.header}>
         <div>
-          <div style={S.logo}>Restomind Admin</div>
+          <div style={S.logo}><img src="/logos/opcion-2-monograma/icon-dark.svg" alt="" style={{ height: 22, verticalAlign: 'middle', marginRight: 8 }} />Restomind Admin</div>
           <div style={S.restName}>{restaurant?.nombre}</div>
         </div>
         <div style={S.navTabs}>

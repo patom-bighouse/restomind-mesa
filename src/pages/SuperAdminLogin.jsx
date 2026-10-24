@@ -46,7 +46,7 @@ export default function SuperAdminLogin() {
     <div style={S.app}>
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
       <div style={S.card}>
-        <div style={S.logo}>Restomind</div>
+        <div style={S.logo}><img src="/logos/opcion-2-monograma/icon-dark.svg" alt="" style={{ height: 28, verticalAlign: 'middle', marginRight: 10 }} />Restomind</div>
         <div style={S.sub}>Super Admin</div>
         {error && <div style={S.error}>{error}</div>}
         <form onSubmit={handleLogin}>

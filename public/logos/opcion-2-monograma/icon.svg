@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160" role="img" aria-label="Restomind">
+  <circle cx="80" cy="80" r="80" fill="#241c14"/>
+  <text x="74" y="114" font-family="'Playfair Display', serif" font-weight="600" font-size="104" fill="#faf6ee" text-anchor="middle">R</text>
+  <line x1="104" y1="96" x2="128" y2="120" stroke="#c99a35" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="132" cy="124" r="10" fill="#c99a35"/>
+</svg>
