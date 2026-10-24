@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" width="1200" height="400" role="img" aria-label="Restomind">
+  <rect width="1200" height="400" fill="#FBF6EE"/>
+  <g transform="translate(59,115)">
+    <polygon points="80,2 147.5,41 147.5,119 80,158 12.5,119 12.5,41" fill="#2A211C"/>
+    <circle cx="80" cy="96" r="38" stroke="#FBF6EE" stroke-width="7" fill="none"/>
+    <path d="M58,58 C54,48 62,44 58,34" stroke="#FBF6EE" stroke-width="6" fill="none" stroke-linecap="round"/>
+    <path d="M102,58 C98,48 106,44 102,34" stroke="#FBF6EE" stroke-width="6" fill="none" stroke-linecap="round"/>
+    <path d="M80,54 C76,44 84,40 80,30" stroke="#FBF6EE" stroke-width="6" fill="none" stroke-linecap="round"/>
+    <circle cx="80" cy="24" r="9" fill="#C97B4A"/>
+  </g>
+  <text x="277" y="232" font-family="Fraunces, serif" font-weight="600" font-size="92" letter-spacing="-1" fill="#2A211C" textLength="620" lengthAdjust="spacingAndGlyphs">restomind</text>
+  <circle cx="913" cy="208" r="8" fill="#C97B4A"/>
+  <text x="277" y="266" font-family="Outfit, sans-serif" font-weight="500" font-size="18" letter-spacing="2" fill="#8A7E72">SOFTWARE DE GESTIÓN PARA RESTAURANTES</text>
+</svg>

@@ -664,7 +664,7 @@ export default function AdminDashboard() {
       `}</style>
       <div className="no-print" style={S.header}>
         <div>
-          <div style={S.logo}>Restomind Admin</div>
+          <div style={S.logo}><img src="/logos/opcion-2-monograma/icon-dark.svg" alt="" style={{ height: 22, verticalAlign: 'middle', marginRight: 8 }} />Restomind Admin</div>
           <div style={S.restName}>{restaurant?.nombre}</div>
         </div>
         <div style={S.navTabs}>

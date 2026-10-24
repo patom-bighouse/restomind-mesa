@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" width="1200" height="400" role="img" aria-label="Restomind">
+  <rect width="1200" height="400" fill="#182328"/>
+  <g transform="translate(64,120)">
+    <rect width="160" height="160" rx="36" fill="#FAF8F4"/>
+    <rect x="54" y="18" width="8" height="36" rx="4" fill="#182328"/>
+    <rect x="76" y="18" width="8" height="36" rx="4" fill="#182328"/>
+    <rect x="98" y="18" width="8" height="36" rx="4" fill="#182328"/>
+    <path d="M50 54 L110 54 L86 80 L74 80 Z" fill="#182328"/>
+    <rect x="74" y="80" width="12" height="36" rx="6" fill="#182328"/>
+    <circle cx="80" cy="128" r="12" fill="#E7693F"/>
+  </g>
+  <text x="272" y="238" font-family="Outfit, sans-serif" font-weight="800" font-size="96" letter-spacing="-3" fill="#FAF8F4">resto<tspan fill="#E7693F">mind</tspan></text>
+  <text x="272" y="272" font-family="Outfit, sans-serif" font-weight="500" font-size="18" letter-spacing="2" fill="#9CA3A6">SOFTWARE DE GESTIÓN PARA RESTAURANTES</text>
+</svg>

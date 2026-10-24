@@ -490,7 +490,7 @@ export default function SuperAdminRestaurantes() {
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
       <div style={S.header}>
         <div>
-          <div style={S.logo}>Restomind</div>
+          <div style={S.logo}><img src="/logos/opcion-2-monograma/icon-dark.svg" alt="" style={{ height: 22, verticalAlign: 'middle', marginRight: 8 }} />Restomind</div>
           <div style={S.sub}>Super Admin</div>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>

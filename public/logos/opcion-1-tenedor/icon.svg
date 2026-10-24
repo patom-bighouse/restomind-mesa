@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160" role="img" aria-label="Restomind">
+  <rect x="0" y="0" width="160" height="160" rx="36" fill="#182328"/>
+  <rect x="54" y="18" width="8" height="36" rx="4" fill="#FAF8F4"/>
+  <rect x="76" y="18" width="8" height="36" rx="4" fill="#FAF8F4"/>
+  <rect x="98" y="18" width="8" height="36" rx="4" fill="#FAF8F4"/>
+  <path d="M50 54 L110 54 L86 80 L74 80 Z" fill="#FAF8F4"/>
+  <rect x="74" y="80" width="12" height="36" rx="6" fill="#FAF8F4"/>
+  <circle cx="80" cy="128" r="12" fill="#E7693F"/>
+</svg>

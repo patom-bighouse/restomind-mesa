@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 700" width="600" height="700" role="img" aria-label="Restomind">
+  <rect width="600" height="700" fill="#FBF6EE"/>
+  <g transform="translate(195,115)">
+    <polygon points="105,2.6 193.4,53.8 193.4,156.1 105,207.4 16.4,156.1 16.4,53.8" fill="#2A211C"/>
+    <circle cx="105" cy="126" r="50" stroke="#FBF6EE" stroke-width="9" fill="none"/>
+    <path d="M76,76 C70.5,63 80.7,57.8 76,44.6" stroke="#FBF6EE" stroke-width="8" fill="none" stroke-linecap="round"/>
+    <path d="M134,76 C128.5,63 138.7,57.8 134,44.6" stroke="#FBF6EE" stroke-width="8" fill="none" stroke-linecap="round"/>
+    <path d="M105,71 C99.5,58 111.7,52.8 105,39.4" stroke="#FBF6EE" stroke-width="8" fill="none" stroke-linecap="round"/>
+    <circle cx="105" cy="31.6" r="11.8" fill="#C97B4A"/>
+  </g>
+  <text x="300" y="410" text-anchor="middle" font-family="Fraunces, serif" font-weight="600" font-size="60" letter-spacing="-0.5" fill="#2A211C" textLength="400" lengthAdjust="spacingAndGlyphs">restomind</text>
+  <circle cx="516" cy="391" r="6" fill="#C97B4A"/>
+  <text x="300" y="444" text-anchor="middle" font-family="Outfit, sans-serif" font-weight="500" font-size="16" letter-spacing="2" fill="#8A7E72">SOFTWARE DE GESTIÓN PARA RESTAURANTES</text>
+</svg>
