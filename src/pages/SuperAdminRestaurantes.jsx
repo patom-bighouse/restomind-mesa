@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { createClient } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { isValidIban, formatIbanDisplay } from '../lib/iban'
@@ -88,9 +88,39 @@ export default function SuperAdminRestaurantes() {
   const [descuentoPrecio, setDescuentoPrecio] = useState('')
   const [descuentoDias, setDescuentoDias] = useState('30')
   const [guardandoTrial, setGuardandoTrial] = useState(false)
+  // Alta lanzada desde el CRM ("Convertir en restaurante"): ?cuenta=<id>
+  const [searchParams, setSearchParams] = useSearchParams()
+  const cuentaParam = searchParams.get('cuenta')
+  const [cuentaOrigen, setCuentaOrigen] = useState(null)
 
   useEffect(() => { checkAuth() }, [])
   useEffect(() => { loadModulosCatalogo(); loadPlanes() }, [])
+  useEffect(() => {
+    if (cuentaParam && !cuentaOrigen && !loading && modulosCatalogo.length && planes.length) abrirDesdeCuenta(cuentaParam)
+  }, [cuentaParam, loading, modulosCatalogo, planes])
+
+  async function abrirDesdeCuenta(cuentaId) {
+    const { data: cuenta, error: err } = await supabase.from('crm_cuentas').select('*').eq('id', cuentaId).maybeSingle()
+    if (err || !cuenta) { setError(err?.message || 'No se encontró la cuenta del CRM.'); setSearchParams({}); return }
+    if (cuenta.restaurant_id) { setError(`"${cuenta.nombre}" ya está vinculada a un restaurante.`); setSearchParams({}); return }
+    setSearchParams({}, { replace: true })
+    openCreateModal()
+    setCuentaOrigen(cuenta)
+    setForm(prev => ({
+      ...prev,
+      nombre: cuenta.nombre || '',
+      email: cuenta.email || '',
+      whatsapp: cuenta.telefono || '',
+      direccion: [cuenta.direccion, cuenta.ciudad].filter(Boolean).join(', '),
+      ...(PAISES.some(p => p.code === cuenta.pais) ? { pais: cuenta.pais, moneda: PAISES.find(p => p.code === cuenta.pais).moneda } : {}),
+    }))
+    // Módulos del plan que le interesa (los planes son acumulativos).
+    const plan = planes.find(p => p.key === cuenta.plan_interes)
+    if (plan) {
+      const ordenPorPlan = Object.fromEntries(planes.map(p => [p.key, p.orden]))
+      setModulosActivos(new Set(['nucleo', ...modulosCatalogo.filter(m => ordenPorPlan[m.plan] <= plan.orden).map(m => m.key)]))
+    }
+  }
 
   async function loadModulosCatalogo() {
     const { data } = await supabase.from('modulos').select('key, nombre, descripcion, requiere, plan').order('orden')
@@ -199,6 +229,7 @@ export default function SuperAdminRestaurantes() {
     setSuccess(null)
     setEditingId(null)
     setEditTab('datos')
+    setCuentaOrigen(null)
     setModalMode('create')
   }
 
@@ -372,6 +403,16 @@ export default function SuperAdminRestaurantes() {
         if (billErr) throw billErr
       }
 
+      // Viene del CRM con un plan elegido: deja la etiqueta del plan
+      // puesta. Va antes del upsert de módulos para que, si se tocaron
+      // los toggles a mano, mande lo elegido en la pestaña "Módulos".
+      if (cuentaOrigen?.plan_interes) {
+        const { error: planErr } = await supabase.rpc('fn_asignar_plan', {
+          p_restaurant_id: restData.id, p_plan_key: cuentaOrigen.plan_interes,
+        })
+        if (planErr) throw planErr
+      }
+
       // Módulos elegidos en la pestaña "Módulos" del alta. El trigger
       // trg_activar_modulo_nucleo ya insertó 'nucleo' — este upsert es
       // idempotente, así que no genera conflicto con eso.
@@ -387,7 +428,20 @@ export default function SuperAdminRestaurantes() {
         if (modErr) throw modErr
       }
 
-      setSuccess(`Restaurante "${form.nombre}" creado correctamente.\n\nAcceso del cliente: ${form.email} / (la contraseña que definiste)\nPanel: /admin/login`)
+      // Cerrar el círculo en el CRM: la cuenta pasa a ser cliente.
+      let avisoCrm = ''
+      if (cuentaOrigen) {
+        const { error: crmErr } = await supabase
+          .from('crm_cuentas')
+          .update({ restaurant_id: restData.id, etapa: 'ganado' })
+          .eq('id', cuentaOrigen.id)
+        avisoCrm = crmErr
+          ? `\n\nAtención: no se pudo vincular con la cuenta del CRM (${crmErr.message}). Vincúlala a mano desde la ficha.`
+          : '\n\nCuenta del CRM vinculada: ya cuenta como cliente y empieza a generar comisión el mes que viene.'
+        setCuentaOrigen(null)
+      }
+
+      setSuccess(`Restaurante "${form.nombre}" creado correctamente.\n\nAcceso del cliente: ${form.email} / (la contraseña que definiste)\nPanel: /admin/login${avisoCrm}`)
       setModalMode(null)
       loadRestaurants()
     } catch (e) {
@@ -494,6 +548,7 @@ export default function SuperAdminRestaurantes() {
           <div style={S.sub}>Super Admin</div>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <a href="/superadmin/crm" style={S.linkBtn}>CRM</a>
           <a href="/superadmin/planes" style={S.linkBtn}>Planes</a>
           <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
         </div>
@@ -566,6 +621,11 @@ export default function SuperAdminRestaurantes() {
         <div style={S.modal} onClick={e => { if (e.target === e.currentTarget) setModalMode(null) }}>
           <div style={S.modalBox}>
             <div style={S.modalTitle}>{modalMode === 'create' ? 'Nuevo restaurante' : 'Editar restaurante'}</div>
+            {modalMode === 'create' && cuentaOrigen && (
+              <div style={{ ...S.hint, color: '#e8c97a', marginTop: -10, marginBottom: 6 }}>
+                Alta desde el CRM{cuentaOrigen.plan_interes ? ` · plan ${cuentaOrigen.plan_interes} preseleccionado en Módulos` : ''}. Al crearlo, la cuenta queda vinculada como cliente.
+              </div>
+            )}
 
             <label style={S.label}>Nombre del restaurante *</label>
             <input style={S.input} value={form.nombre} onChange={e => setForm(prev => ({ ...prev, nombre: e.target.value }))} placeholder="Ej. La Taberna del Puerto" />
