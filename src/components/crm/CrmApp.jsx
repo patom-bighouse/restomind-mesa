@@ -55,6 +55,28 @@ export default function CrmApp({ modo, subtitulo, navExtra, onLogout }) {
 
   useEffect(() => { cargar() }, [cargar])
 
+  // Lo que cambia otra persona (el superadmin asigna una cuenta, el
+  // vendedor registra una actividad) tiene que verse sin recargar la
+  // página: se refresca en segundo plano al volver a la ventana y cada
+  // RECARGA_MS mientras esté visible.
+  useEffect(() => {
+    const RECARGA_MS = 30 * 1000
+    const alVolver = () => { if (document.visibilityState === 'visible') cargar() }
+    const intervalo = setInterval(() => { if (document.visibilityState === 'visible') cargar() }, RECARGA_MS)
+    window.addEventListener('focus', alVolver)
+    document.addEventListener('visibilitychange', alVolver)
+    return () => {
+      clearInterval(intervalo)
+      window.removeEventListener('focus', alVolver)
+      document.removeEventListener('visibilitychange', alVolver)
+    }
+  }, [cargar])
+
+  function cambiarTab(key) {
+    setTab(key)
+    cargar()
+  }
+
   const cuentasFiltradas = useMemo(() => {
     const q = busqueda.trim().toLowerCase()
     return cuentas.filter(c => {
@@ -127,7 +149,7 @@ export default function CrmApp({ modo, subtitulo, navExtra, onLogout }) {
         {aviso && <div style={S.success} onClick={() => setAviso(null)} role="button" title="Click para cerrar">{aviso}</div>}
 
         <div style={S.tabBar}>
-          {tabs.map(t => <button key={t.key} style={S.tabBtn(tab === t.key)} onClick={() => setTab(t.key)}>{t.label}</button>)}
+          {tabs.map(t => <button key={t.key} style={S.tabBtn(tab === t.key)} onClick={() => cambiarTab(t.key)}>{t.label}</button>)}
         </div>
 
         {tabUsaFiltros && (
@@ -177,6 +199,7 @@ export default function CrmApp({ modo, subtitulo, navExtra, onLogout }) {
 
       {fichaId && (
         <CrmFicha
+          key={fichaId}
           cuentaId={fichaId === 'nueva' ? null : fichaId}
           etapaInicial={fichaEtapaInicial}
           esAdmin={esAdmin}

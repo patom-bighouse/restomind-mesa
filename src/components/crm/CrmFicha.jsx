@@ -72,9 +72,19 @@ export default function CrmFicha({
 
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
 
+  // La cuota sigue al plan mientras no se haya escrito a mano: si está
+  // vacía o coincide con el precio del plan anterior, pasa al del nuevo.
   function planElegido(key) {
     const plan = planes.find(p => p.key === key)
-    setForm(prev => ({ ...prev, plan_interes: key, cuota_estimada: plan?.precio != null && !prev.cuota_estimada ? String(plan.precio) : prev.cuota_estimada }))
+    setForm(prev => {
+      const anterior = planes.find(p => p.key === prev.plan_interes)
+      const automatica = prev.cuota_estimada === '' || (anterior?.precio != null && Number(prev.cuota_estimada) === Number(anterior.precio))
+      return {
+        ...prev,
+        plan_interes: key,
+        cuota_estimada: automatica ? (plan?.precio != null ? String(plan.precio) : '') : prev.cuota_estimada,
+      }
+    })
   }
 
   async function guardar() {
@@ -220,7 +230,7 @@ export default function CrmFicha({
   return (
     <div style={S.modal} onClick={e => { if (e.target === e.currentTarget) onCerrar() }}>
       <div style={S.modalBox(720)}>
-        {cargando ? <div style={{ ...S.loading, height: 200 }}>Cargando…</div> : (
+        {cargando || (!esNueva && !cuenta) ? <div style={{ ...S.loading, height: 200 }}>{error || 'Cargando…'}</div> : (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
               <div>

@@ -37,7 +37,10 @@ export default function CrmVendedores({ vendedores, cuentas, clientesInfo, onCam
 
   function validar() {
     if (!form.nombre.trim() || !form.email.trim()) return 'Nombre y email son obligatorios.'
-    if (modal === 'crear' && form.password.length < 8) return 'La contraseña debe tener al menos 8 caracteres.'
+    // Misma política que exige Supabase Auth en el proyecto.
+    if (modal === 'crear' && (form.password.length < 8 || !/[a-z]/.test(form.password) || !/[A-Z]/.test(form.password) || !/\d/.test(form.password))) {
+      return 'La contraseña debe tener al menos 8 caracteres, con una minúscula, una mayúscula y un número.'
+    }
     const pct = Number(form.comision_pct)
     if (form.comision_pct === '' || isNaN(pct) || pct < 0 || pct > 100) return 'La comisión debe estar entre 0 y 100 %.'
     if (!form.sinLimite && !(parseInt(form.comision_cuotas, 10) > 0)) return 'Indica cuántas cuotas cobra, o marca "Sin límite".'
@@ -199,7 +202,7 @@ export default function CrmVendedores({ vendedores, cuentas, clientesInfo, onCam
             {modal === 'crear' && (
               <>
                 <label style={S.label}>Contraseña inicial *</label>
-                <input style={S.input} type="text" value={form.password} onChange={e => set('password', e.target.value)} placeholder="mínimo 8 caracteres" />
+                <input style={S.input} type="text" value={form.password} onChange={e => set('password', e.target.value)} placeholder="mín. 8, con minúscula, mayúscula y número" />
                 <div style={S.hint}>Compártesela al vendedor; entrará en /vendedor/login</div>
               </>
             )}
