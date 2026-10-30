@@ -29,7 +29,9 @@ function exportarCsv(filas, proximaTarea, nombreVendedor) {
 
 export default function CrmLista({ cuentas, proximaTarea, esAdmin, nombreVendedor, onAbrir }) {
   const [etapa, setEtapa] = useState('todas')
-  const [orden, setOrden] = useState({ key: 'updated_at', asc: false })
+  // Por defecto: lo más urgente arriba (próxima tarea ascendente, sin tarea
+  // al final) y, a igual fecha, por nombre.
+  const [orden, setOrden] = useState({ key: 'proxima', asc: true })
   const hoy = hoyISO()
 
   const filas = useMemo(() => {
@@ -43,7 +45,8 @@ export default function CrmLista({ cuentas, proximaTarea, esAdmin, nombreVendedo
       const cmp = typeof va === 'number' || typeof vb === 'number'
         ? (Number(va) || 0) - (Number(vb) || 0)
         : String(va).localeCompare(String(vb), 'es')
-      return orden.asc ? cmp : -cmp
+      // Desempate siempre por nombre A→Z, sea cual sea la columna elegida.
+      return (orden.asc ? cmp : -cmp) || a.nombre.localeCompare(b.nombre, 'es')
     })
   }, [cuentas, etapa, orden, proximaTarea])
 
