@@ -16,7 +16,7 @@ const T = {
   pie: { fontSize: 11, color: C.muted, textAlign: 'center', padding: '6px 0' },
 }
 
-export default function CrmTablero({ cuentas, tareas, esAdmin, nombreVendedor, onAbrir, onMover }) {
+export default function CrmTablero({ cuentas, tareas, proximaTarea, esAdmin, nombreVendedor, onAbrir, onMover }) {
   const [arrastrando, setArrastrando] = useState(null)
   const [sobre, setSobre] = useState(null)
   const hoy = hoyISO()
@@ -72,9 +72,11 @@ export default function CrmTablero({ cuentas, tareas, esAdmin, nombreVendedor, o
               {col.total > 0 && <span style={T.colMeta}>{fmtEuro(col.total)}/mes</span>}
             </div>
             {col.items.map(c => {
-              const vencida = c.proxima_accion_fecha && c.proxima_accion_fecha < hoy
+              const proxima = proximaTarea[c.id]
+              const vencida = proxima && proxima.vence_en < hoy
+              const abierta = ETAPAS_ABIERTAS.includes(c.etapa)
               const dias = diasDesde(c.ultima_actividad_en || c.created_at)
-              const fria = ETAPAS_ABIERTAS.includes(c.etapa) && dias != null && dias >= DIAS_SIN_ACTIVIDAD
+              const fria = abierta && dias != null && dias >= DIAS_SIN_ACTIVIDAD
               return (
                 <div
                   key={c.id}
@@ -87,10 +89,12 @@ export default function CrmTablero({ cuentas, tareas, esAdmin, nombreVendedor, o
                   <div style={T.cardNombre}>{c.nombre}</div>
                   {(c.ciudad || c.tipo_local) && <div style={T.cardLinea}>{[c.tipo_local, c.ciudad].filter(Boolean).join(' · ')}</div>}
                   {c.cuota_estimada != null && <div style={T.cardLinea}>{fmtEuro(c.cuota_estimada)}/mes{c.plan_interes ? ` · ${c.plan_interes}` : ''}</div>}
-                  {c.proxima_accion_fecha && (
-                    <div style={{ ...T.cardLinea, color: vencida ? C.mal : C.oro }}>
-                      {vencida ? '⚠ ' : '→ '}{c.proxima_accion || 'Próxima acción'} · {fmtFecha(c.proxima_accion_fecha)}
+                  {proxima ? (
+                    <div style={{ ...T.cardLinea, color: vencida ? C.mal : proxima.vence_en === hoy ? C.oro : C.texto2 }}>
+                      {vencida ? '⚠ ' : '→ '}{proxima.titulo} · {fmtFecha(proxima.vence_en)}
                     </div>
+                  ) : abierta && (
+                    <div style={{ ...T.cardLinea, color: C.aviso }}>Sin próxima tarea</div>
                   )}
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
                     {esAdmin && <span style={S.badge('#1f1f1f', nombreVendedor(c.vendedor_id) ? C.texto2 : C.aviso)}>{nombreVendedor(c.vendedor_id) || 'Sin asignar'}</span>}

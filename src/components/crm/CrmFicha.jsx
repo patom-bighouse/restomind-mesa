@@ -10,13 +10,14 @@ import {
 const VACIO = {
   nombre: '', contacto_nombre: '', contacto_cargo: '', telefono: '', email: '',
   ciudad: '', pais: 'ES', direccion: '', tipo_local: '', num_mesas: '', fuente: '',
-  etapa: 'prospecto', motivo_perdida: '', plan_interes: '', cuota_estimada: '',
-  proxima_accion: '', proxima_accion_fecha: '', notas: '',
+  etapa: 'prospecto', motivo_perdida: '', plan_interes: '', cuota_estimada: '', notas: '',
   vendedor_id: '', comision_pct: '', comision_cuotas: '', comision_inicio: '',
 }
 
+// La "próxima acción" no se guarda en la cuenta: es su tarea pendiente más
+// cercana (crm_tareas). Las columnas proxima_accion* quedan sin uso.
 const CAMPOS_TEXTO = ['nombre', 'contacto_nombre', 'contacto_cargo', 'telefono', 'email', 'ciudad', 'pais', 'direccion',
-  'tipo_local', 'fuente', 'etapa', 'motivo_perdida', 'plan_interes', 'proxima_accion', 'proxima_accion_fecha', 'notas']
+  'tipo_local', 'fuente', 'etapa', 'motivo_perdida', 'plan_interes', 'notas']
 
 function ahoraLocal() {
   const d = new Date()
@@ -121,8 +122,13 @@ export default function CrmFicha({
       ? supabase.from('crm_cuentas').insert(fila).select().single()
       : supabase.from('crm_cuentas').update(fila).eq('id', cuentaId).select().single()
     const { data, error: err } = await q
+    if (err) { setGuardando(false); setError(err.message); return }
+    // Cuenta nueva con primera tarea indicada en el formulario.
+    if (esNueva && nuevaTarea.titulo.trim()) {
+      const { error: tErr } = await supabase.from('crm_tareas').insert({ cuenta_id: data.id, titulo: nuevaTarea.titulo.trim(), vence_en: nuevaTarea.vence_en || hoyISO() })
+      if (tErr) setError(`Cuenta creada, pero no se pudo crear la tarea: ${tErr.message}`)
+    }
     setGuardando(false)
-    if (err) { setError(err.message); return }
     await onGuardado(data.id)
     if (!esNueva) await cargar()
   }
@@ -215,6 +221,7 @@ export default function CrmFicha({
   }, [actividades, historial, todosVendedores])
 
   const hoy = hoyISO()
+  const proximaTarea = tareas.filter(t => !t.completada).sort((a, b) => a.vence_en.localeCompare(b.vence_en))[0] || null
   const esCliente = !!cuenta?.restaurant_id
   const bloqueaEtapa = !esAdmin && esCliente
   const totalComisiones = comisiones.filter(c => c.estado !== 'anulada').reduce((s, c) => s + Number(c.importe), 0)
@@ -359,15 +366,26 @@ export default function CrmFicha({
                     <input style={S.input} type="number" min="0" step="0.01" value={form.cuota_estimada} onChange={e => set('cuota_estimada', e.target.value)} />
                   </div>
                 </div>
-                <div style={S.fila}>
-                  <div style={{ ...S.col, flex: 2 }}>
-                    <label style={S.label}>Próxima acción</label>
-                    <input style={S.input} value={form.proxima_accion} onChange={e => set('proxima_accion', e.target.value)} placeholder="Ej. Llamar para agendar demo" />
+                <label style={S.label}>Próxima acción</label>
+                {proximaTarea && (
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 14px', border: `0.5px solid ${proximaTarea.vence_en < hoy ? '#5a2a2a' : C.borde}`, borderRadius: 10, marginBottom: 8 }}>
+                    <div style={{ flex: 1, fontSize: 14 }}>{proximaTarea.titulo}</div>
+                    <div style={{ fontSize: 12, color: proximaTarea.vence_en < hoy ? C.mal : C.oro }}>{proximaTarea.vence_en < hoy ? '⚠ ' : ''}{fmtFecha(proximaTarea.vence_en)}</div>
+                    <button style={{ ...S.linkBtn, padding: '4px 10px' }} onClick={() => toggleTarea(proximaTarea)}>Hecha</button>
                   </div>
-                  <div style={S.col}>
-                    <label style={S.label}>Fecha</label>
-                    <input style={{ ...S.input, borderColor: form.proxima_accion_fecha && form.proxima_accion_fecha < hoy ? '#5a2a2a' : C.borde }} type="date" value={form.proxima_accion_fecha} onChange={e => set('proxima_accion_fecha', e.target.value)} />
-                  </div>
+                )}
+                <div style={{ ...S.fila, alignItems: 'center' }}>
+                  <input style={{ ...S.input, flex: 3 }} value={nuevaTarea.titulo}
+                    placeholder={proximaTarea ? 'Añadir otra tarea…' : 'Ej. Llamar para agendar demo'}
+                    onChange={e => setNuevaTarea(p => ({ ...p, titulo: e.target.value }))}
+                    onKeyDown={e => { if (e.key === 'Enter' && !esNueva) crearTarea() }} />
+                  <input style={{ ...S.input, flex: 1 }} type="date" value={nuevaTarea.vence_en} onChange={e => setNuevaTarea(p => ({ ...p, vence_en: e.target.value }))} />
+                  {!esNueva && <button style={S.linkBtn} onClick={crearTarea}>Añadir</button>}
+                </div>
+                <div style={S.hint}>
+                  {esNueva
+                    ? 'Opcional: se crea como primera tarea de la cuenta al guardarla.'
+                    : 'Es la tarea pendiente más cercana; el resto está en la pestaña Tareas.'}
                 </div>
                 <label style={S.label}>Notas</label>
                 <textarea style={{ ...S.input, minHeight: 80, resize: 'vertical' }} value={form.notas} onChange={e => set('notas', e.target.value)} />

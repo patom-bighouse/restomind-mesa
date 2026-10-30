@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
-import { S, FUENTES_LINK } from './estilos'
+import { S, C, FUENTES_LINK } from './estilos'
 import { hoyISO } from '../../lib/crm'
 import CrmTablero from './CrmTablero'
 import CrmLista from './CrmLista'
@@ -89,10 +89,20 @@ export default function CrmApp({ modo, subtitulo, navExtra, onLogout }) {
 
   const idsFiltrados = useMemo(() => new Set(cuentasFiltradas.map(c => c.id)), [cuentasFiltradas])
   const tareasFiltradas = useMemo(() => tareas.filter(t => idsFiltrados.has(t.cuenta_id)), [tareas, idsFiltrados])
-  const tareasPendientesHoy = useMemo(
-    () => tareasFiltradas.filter(t => !t.completada && t.vence_en <= hoyISO()).length,
-    [tareasFiltradas]
-  )
+  const contadorTareas = useMemo(() => {
+    const pendientes = tareasFiltradas.filter(t => !t.completada)
+    return { pendientes: pendientes.length, vencidas: pendientes.filter(t => t.vence_en < hoyISO()).length }
+  }, [tareasFiltradas])
+
+  // La "próxima acción" de cada cuenta es su tarea pendiente más cercana.
+  const proximaTarea = useMemo(() => {
+    const m = {}
+    for (const t of tareas) {
+      if (t.completada) continue
+      if (!m[t.cuenta_id] || t.vence_en < m[t.cuenta_id].vence_en) m[t.cuenta_id] = t
+    }
+    return m
+  }, [tareas])
 
   async function moverEtapa(cuenta, etapa) {
     if (cuenta.etapa === etapa) return
@@ -120,7 +130,11 @@ export default function CrmApp({ modo, subtitulo, navExtra, onLogout }) {
   const tabs = [
     { key: 'tablero', label: 'Tablero' },
     { key: 'lista', label: 'Lista' },
-    { key: 'tareas', label: `Tareas${tareasPendientesHoy ? ` (${tareasPendientesHoy})` : ''}` },
+    {
+      key: 'tareas',
+      label: `Tareas${contadorTareas.pendientes ? ` (${contadorTareas.pendientes})` : ''}`,
+      marca: contadorTareas.vencidas ? `${contadorTareas.vencidas} vencida${contadorTareas.vencidas > 1 ? 's' : ''}` : null,
+    },
     { key: 'clientes', label: 'Clientes' },
     { key: 'comisiones', label: 'Comisiones' },
     { key: 'metricas', label: 'Métricas' },
@@ -149,7 +163,10 @@ export default function CrmApp({ modo, subtitulo, navExtra, onLogout }) {
         {aviso && <div style={S.success} onClick={() => setAviso(null)} role="button" title="Click para cerrar">{aviso}</div>}
 
         <div style={S.tabBar}>
-          {tabs.map(t => <button key={t.key} style={S.tabBtn(tab === t.key)} onClick={() => cambiarTab(t.key)}>{t.label}</button>)}
+          {tabs.map(t => <button key={t.key} style={S.tabBtn(tab === t.key)} onClick={() => cambiarTab(t.key)}>
+            {t.label}
+            {t.marca && <span style={{ ...S.badge(C.malBg, C.mal), marginLeft: 6, padding: '1px 7px', fontSize: 10 }}>{t.marca}</span>}
+          </button>)}
         </div>
 
         {tabUsaFiltros && (
@@ -168,11 +185,11 @@ export default function CrmApp({ modo, subtitulo, navExtra, onLogout }) {
         )}
 
         {tab === 'tablero' && (
-          <CrmTablero cuentas={cuentasFiltradas} tareas={tareasFiltradas} esAdmin={esAdmin}
+          <CrmTablero cuentas={cuentasFiltradas} tareas={tareasFiltradas} proximaTarea={proximaTarea} esAdmin={esAdmin}
             nombreVendedor={nombreVendedor} onAbrir={abrirFicha} onMover={moverEtapa} />
         )}
         {tab === 'lista' && (
-          <CrmLista cuentas={cuentasFiltradas} esAdmin={esAdmin} planes={planes}
+          <CrmLista cuentas={cuentasFiltradas} proximaTarea={proximaTarea} esAdmin={esAdmin}
             nombreVendedor={nombreVendedor} onAbrir={abrirFicha} />
         )}
         {tab === 'tareas' && (
