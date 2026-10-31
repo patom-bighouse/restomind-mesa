@@ -247,7 +247,7 @@ export default function AdminClientes() {
       <div style={S.content}>
         <div style={S.sectionTitle}>Clientes ({clientes.length})</div>
         <div style={{ fontSize: 12, color: '#7a6a50', marginTop: -14, marginBottom: 20 }}>
-          Se cargan automáticamente al entregar un pedido de take away con teléfono. Por ahora no incluye pedidos de mesa.
+          Se cargan automáticamente al cerrar como pagada una mesa con teléfono asociado o al entregar un pedido de take away con teléfono.
         </div>
 
         {error && !redeemCliente && <div style={S.error}>{error}</div>}

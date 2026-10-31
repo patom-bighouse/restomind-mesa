@@ -85,6 +85,7 @@ export default function SuperAdminPlanes() {
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <a href="/superadmin/restaurantes" style={S.linkBtn}>← Restaurantes</a>
+          <a href="/superadmin/crm" style={S.linkBtn}>CRM</a>
           <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
         </div>
       </div>
