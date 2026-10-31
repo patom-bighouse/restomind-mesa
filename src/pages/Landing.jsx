@@ -561,7 +561,7 @@ export default function Landing() {
         })}
       </script>
 
-      <footer style={S.footer}>© {new Date().getFullYear()} Restomind</footer>
+      <footer style={S.footer}>© {new Date().getFullYear()} Restomind · <a href="/privacidad" style={{ color: C.textMuted }}>Política de privacidad</a></footer>
     </div>
   )
 }
