@@ -83,8 +83,21 @@ export function diasDesde(iso) {
 
 // Google Maps: el enlace exacto que haya pegado el vendedor o, si no, una
 // búsqueda por nombre + dirección + ciudad. null si no hay con qué ubicarlo.
+// Saca la URL de lo que se haya pegado: al compartir desde Google Maps a
+// veces se copia "Nombre del local https://maps.app.goo.gl/…", o el enlace
+// sin https://. Sin esquema el navegador lo trataría como ruta interna.
+export function normalizarUrl(texto) {
+  const t = (texto || '').trim()
+  if (!t) return ''
+  const m = t.match(/https?:\/\/\S+/i)
+  if (m) return m[0]
+  if (!/\s/.test(t) && /^[\w-]+(\.[\w-]+)+/.test(t)) return `https://${t}`
+  return t
+}
+
 export function enlaceMaps(c) {
-  if (c.maps_url) return c.maps_url
+  const url = normalizarUrl(c.maps_url)
+  if (/^https?:\/\//i.test(url)) return url
   if (!c.direccion && !c.ciudad) return null
   const q = [c.nombre, c.direccion, c.ciudad].filter(Boolean).join(', ')
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`
@@ -93,7 +106,10 @@ export function enlaceMaps(c) {
 // Ruta desde donde esté el vendedor. Con solo el enlace exacto (sin
 // dirección) no se puede armar la ruta: se abre el enlace y desde ahí "Cómo llegar".
 export function enlaceRuta(c) {
-  if (!c.direccion && !c.ciudad) return c.maps_url || null
+  if (!c.direccion && !c.ciudad) {
+    const url = normalizarUrl(c.maps_url)
+    return /^https?:\/\//i.test(url) ? url : null
+  }
   const q = [c.nombre, c.direccion, c.ciudad].filter(Boolean).join(', ')
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(q)}`
 }

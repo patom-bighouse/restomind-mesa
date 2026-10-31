@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { S, C, estiloEtapa } from './estilos'
 import {
   ETAPAS, TIPOS_ACTIVIDAD, FUENTES, TIPOS_LOCAL, MOTIVOS_PERDIDA,
-  etapaLabel, tipoActividad, hoyISO, fmtFecha, fmtFechaHora, fmtEuro, fmtMes, enlaceMaps, enlaceRuta,
+  etapaLabel, tipoActividad, hoyISO, fmtFecha, fmtFechaHora, fmtEuro, fmtMes, enlaceMaps, enlaceRuta, normalizarUrl,
 } from '../../lib/crm'
 
 const VACIO = {
@@ -91,7 +91,7 @@ export default function CrmFicha({
   async function guardar() {
     if (!form.nombre.trim()) { setError('El nombre de la cuenta es obligatorio.'); return }
     if (form.etapa === 'perdido' && !form.motivo_perdida) { setError('Indica el motivo de pérdida.'); return }
-    if (form.maps_url.trim() && !/^https?:\/\//i.test(form.maps_url.trim())) {
+    if (form.maps_url.trim() && !/^https?:\/\//i.test(normalizarUrl(form.maps_url))) {
       setError('El enlace de Google Maps debe empezar por https:// (cópialo desde Compartir → Copiar enlace).'); return
     }
     if (esAdmin && form.comision_pct !== '' && (Number(form.comision_pct) < 0 || Number(form.comision_pct) > 100)) {
@@ -101,6 +101,7 @@ export default function CrmFicha({
     setError(null)
     const fila = {}
     for (const k of CAMPOS_TEXTO) fila[k] = form[k].trim?.() ? form[k].trim() : null
+    fila.maps_url = normalizarUrl(form.maps_url) || null
     fila.nombre = form.nombre.trim()
     fila.etapa = form.etapa
     fila.num_mesas = form.num_mesas === '' ? null : parseInt(form.num_mesas, 10)
