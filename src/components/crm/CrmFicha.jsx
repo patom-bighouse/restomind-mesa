@@ -258,6 +258,16 @@ export default function CrmFicha({
               {tabs.map(t => <button key={t.key} style={S.tabBtn(tab === t.key)} onClick={() => setTab(t.key)}>{t.label}</button>)}
             </div>
 
+            {esAdmin && !esNueva && cuenta.etapa === 'ganado' && !esCliente && (
+              <div style={{ ...S.card, marginTop: 14, borderColor: '#5a4a2a', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 220, fontSize: 13, color: C.texto2, lineHeight: 1.5 }}>
+                  <span style={{ color: C.oro, fontWeight: 500 }}>Pendiente de alta.</span> Crea el restaurante con los datos de esta ficha ya rellenados.
+                </div>
+                <button style={S.primaryBtn(false)} onClick={() => navigate(`/superadmin/restaurantes?cuenta=${cuentaId}`)}>Convertir en restaurante</button>
+                {tab !== 'comercial' && <button style={S.linkBtn} onClick={() => setTab('comercial')}>Vincular a uno existente</button>}
+              </div>
+            )}
+
             {error && <div style={{ ...S.error, marginTop: 12 }}>{error}</div>}
 
             {tab === 'datos' && (
