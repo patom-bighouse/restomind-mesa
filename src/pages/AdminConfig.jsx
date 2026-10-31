@@ -632,7 +632,7 @@ export default function AdminConfig() {
         <div style={S.infoCard}>
           <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 4 }}>Fidelización (puntos)</div>
           <div style={{ fontSize: 12, color: '#7a6a50', marginBottom: 12 }}>
-            Los puntos se otorgan automáticamente al marcar un pedido de take away como "Entregado". Por ahora solo aplica a pedidos por WhatsApp (take away), no a pedidos de mesa.
+            Los puntos se otorgan automáticamente al cerrar como pagada una mesa con teléfono asociado y al marcar un pedido de take away como "Entregado".
           </div>
           <div style={S.minutosRow}>
             <span style={{ fontSize: 13, color: '#8a7560' }}>Puntos por cada 1€ gastado</span>
