@@ -1,6 +1,6 @@
 // Política de privacidad pública (restomind.app/privacidad). Meta la exige
 // para publicar la app de WhatsApp; también sirve a restaurantes y clientes.
-const EMAIL_CONTACTO = 'patricio@restomind.com'
+const EMAIL_CONTACTO = 'patriciomara@gmail.com'
 const ULTIMA_ACTUALIZACION = '31 de octubre de 2026'
 
 const C = {
