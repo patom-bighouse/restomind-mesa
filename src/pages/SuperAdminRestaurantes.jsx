@@ -49,6 +49,20 @@ function slugify(text) {
     .replace(/(^-|-$)/g, '')
 }
 
+// Phone number ID de Meta: el número de WhatsApp al que escriben los
+// clientes; el enrutador de n8n identifica el restaurante con él.
+function phoneIdValido(id) {
+  return !id.trim() || /^\d{6,20}$/.test(id.trim())
+}
+
+// Índice único restaurants_whatsapp_phone_number_id_unique (sql/whatsapp_phone_number_id.sql)
+function errorPhoneId(err) {
+  if (err.code === '23505' && err.message?.includes('whatsapp_phone_number_id')) {
+    return new Error('Ese Phone number ID de WhatsApp ya está asignado a otro restaurante.')
+  }
+  return err
+}
+
 // Mismos países/monedas habilitados en el check constraint de la base
 // (restaurants_moneda_check). Si añades una moneda nueva ahí, súmala aquí
 // también para que aparezca en el selector.
@@ -74,7 +88,7 @@ export default function SuperAdminRestaurantes() {
   const [editingId, setEditingId] = useState(null)
   const [creating, setCreating] = useState(false)
   const [form, setForm] = useState({
-    nombre: '', email: '', password: '', whatsapp: '',
+    nombre: '', email: '', password: '', whatsapp: '', whatsappPhoneId: '',
     pais: 'ES', moneda: 'EUR', direccion: '',
     iban: '', titularCuenta: '',
   })
@@ -210,7 +224,7 @@ export default function SuperAdminRestaurantes() {
   async function loadRestaurants() {
     const { data, error: err } = await supabase
       .from('restaurants')
-      .select('id, nombre, slug, whatsapp, activo, created_at, user_id, pais, moneda, direccion, email_dueno, plan, trial_termina_en, precio_override, precio_override_hasta')
+      .select('id, nombre, slug, whatsapp, whatsapp_phone_number_id, activo, created_at, user_id, pais, moneda, direccion, email_dueno, plan, trial_termina_en, precio_override, precio_override_hasta')
       .order('created_at', { ascending: false })
     if (err) { setError(err.message); setLoading(false); return }
     setRestaurants(data || [])
@@ -219,7 +233,7 @@ export default function SuperAdminRestaurantes() {
 
   function openCreateModal() {
     setForm({
-      nombre: '', email: '', password: '', whatsapp: '',
+      nombre: '', email: '', password: '', whatsapp: '', whatsappPhoneId: '',
       pais: 'ES', moneda: 'EUR', direccion: '',
       iban: '', titularCuenta: '',
     })
@@ -260,6 +274,7 @@ export default function SuperAdminRestaurantes() {
       nombre: rest.nombre || '',
       email: rest.email_dueno || '', password: '',
       whatsapp: rest.whatsapp || '',
+      whatsappPhoneId: rest.whatsapp_phone_number_id || '',
       pais: rest.pais || 'ES',
       moneda: rest.moneda || 'EUR',
       direccion: rest.direccion || '',
@@ -314,6 +329,10 @@ export default function SuperAdminRestaurantes() {
       setError('Nombre, email y contraseña son obligatorios.')
       return
     }
+    if (!phoneIdValido(form.whatsappPhoneId)) {
+      setError('El Phone number ID de WhatsApp solo lleva números (lo copias de Meta, no es el teléfono).')
+      return
+    }
     if (form.password.length < 8) {
       setError('La contraseña debe tener al menos 8 caracteres.')
       return
@@ -326,6 +345,14 @@ export default function SuperAdminRestaurantes() {
     setError(null)
 
     try {
+      // Antes del signUp: si el insert fallara después por el índice único,
+      // quedaría creado un usuario sin restaurante.
+      if (form.whatsappPhoneId.trim()) {
+        const { data: ocupado } = await supabase.from('restaurants').select('nombre')
+          .eq('whatsapp_phone_number_id', form.whatsappPhoneId.trim()).maybeSingle()
+        if (ocupado) throw new Error(`Ese Phone number ID de WhatsApp ya está asignado a "${ocupado.nombre}".`)
+      }
+
       // Cliente Supabase separado para no afectar la sesión del superadmin
       // persistSession/autoRefreshToken en false: sin esto, el signUp()
       // de más abajo pisa en localStorage la sesión del superadmin (los
@@ -353,6 +380,7 @@ export default function SuperAdminRestaurantes() {
           nombre: form.nombre.trim(),
           slug,
           whatsapp: form.whatsapp.trim() || null,
+          whatsapp_phone_number_id: form.whatsappPhoneId.trim() || null,
           direccion: form.direccion.trim() || null,
           pais: form.pais,
           moneda: form.moneda,
@@ -361,7 +389,7 @@ export default function SuperAdminRestaurantes() {
           activo: true,
         })
         .select().single()
-      if (restErr) throw restErr
+      if (restErr) throw errorPhoneId(restErr)
 
       // Categoría demo
       const { data: catData, error: catErr } = await supabase
@@ -456,6 +484,10 @@ export default function SuperAdminRestaurantes() {
       setError('El nombre es obligatorio.')
       return
     }
+    if (!phoneIdValido(form.whatsappPhoneId)) {
+      setError('El Phone number ID de WhatsApp solo lleva números (lo copias de Meta, no es el teléfono).')
+      return
+    }
     if (form.iban.trim() && !isValidIban(form.iban)) {
       setError('El IBAN no parece válido. Revísalo (o déjalo vacío).')
       return
@@ -468,13 +500,14 @@ export default function SuperAdminRestaurantes() {
         .update({
           nombre: form.nombre.trim(),
           whatsapp: form.whatsapp.trim() || null,
+          whatsapp_phone_number_id: form.whatsappPhoneId.trim() || null,
           direccion: form.direccion.trim() || null,
           pais: form.pais,
           moneda: form.moneda,
           email_dueno: form.email.trim() || null,
         })
         .eq('id', editingId)
-      if (restErr) throw restErr
+      if (restErr) throw errorPhoneId(restErr)
 
       // upsert: si ya había datos bancarios los actualiza, si no, los crea.
       // Si se vació el campo, en vez de dejar un IBAN viejo guardado, se borra.
@@ -658,6 +691,10 @@ export default function SuperAdminRestaurantes() {
 
                 <label style={S.label}>WhatsApp (opcional)</label>
                 <input style={S.input} value={form.whatsapp} onChange={e => setForm(prev => ({ ...prev, whatsapp: e.target.value }))} placeholder="+34600000000" />
+
+                <label style={S.label}>WhatsApp – Phone number ID (opcional)</label>
+                <input style={S.input} inputMode="numeric" value={form.whatsappPhoneId} onChange={e => setForm(prev => ({ ...prev, whatsappPhoneId: e.target.value.trim() }))} placeholder="Ej. 1067078033150321" />
+                <div style={S.hint}>Con esto el agente de WhatsApp sabe que los mensajes a ese número son de este restaurante. Se copia en Meta: WhatsApp Manager › Números de teléfono (o API Setup), campo "Phone number ID". No es el teléfono.</div>
 
                 <div style={{ display: 'flex', gap: 12 }}>
                   <div style={{ flex: 1 }}>
