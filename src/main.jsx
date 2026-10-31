@@ -31,13 +31,18 @@ import VendedorCRM from './pages/VendedorCRM'
 import NotFound from './pages/NotFound'
 import GuardRestaurante from './components/GuardRestaurante'
 
-// El enlace de recuperación de Supabase aterriza en la Site URL (normalmente "/"):
-// al detectar el evento PASSWORD_RECOVERY llevamos al usuario a la pantalla de nueva contraseña.
+// El enlace de recuperación de Supabase aterriza en la Site URL (normalmente "/")
+// si la URL de vuelta no está permitida en Supabase: al detectar el evento
+// PASSWORD_RECOVERY llevamos al usuario a la pantalla de nueva contraseña.
+// Los vendedores van a la suya (lo marca VendedorLogin al pedir el enlace).
 function RecuperacionRedirect() {
   const navigate = useNavigate()
   React.useEffect(() => {
     const { data: sub } = supabase.auth.onAuthStateChange((evento) => {
-      if (evento === 'PASSWORD_RECOVERY') navigate('/admin/restablecer', { replace: true })
+      if (evento !== 'PASSWORD_RECOVERY') return
+      if (window.location.pathname.endsWith('/restablecer')) return
+      const vendedor = localStorage.getItem('recuperacion_destino') === 'vendedor'
+      navigate(vendedor ? '/vendedor/restablecer' : '/admin/restablecer', { replace: true })
     })
     return () => sub.subscription.unsubscribe()
   }, [navigate])
@@ -75,6 +80,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/superadmin/crm" element={<SuperAdminCRM />} />
         <Route path="/vendedor/login" element={<VendedorLogin />} />
         <Route path="/vendedor/crm" element={<VendedorCRM />} />
+        <Route path="/vendedor/restablecer" element={<AdminRestablecer loginPath="/vendedor/login" />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>

@@ -37,8 +37,9 @@ export default function CrmVendedores({ vendedores, cuentas, clientesInfo, onCam
 
   function validar() {
     if (!form.nombre.trim() || !form.email.trim()) return 'Nombre y email son obligatorios.'
-    // Misma política que exige Supabase Auth en el proyecto.
-    if (modal === 'crear' && (form.password.length < 8 || !/[a-z]/.test(form.password) || !/[A-Z]/.test(form.password) || !/\d/.test(form.password))) {
+    // Misma política que exige Supabase Auth en el proyecto. Al editar, la
+    // contraseña es opcional: vacía = no se cambia.
+    if ((modal === 'crear' || form.password) && (form.password.length < 8 || !/[a-z]/.test(form.password) || !/[A-Z]/.test(form.password) || !/\d/.test(form.password))) {
       return 'La contraseña debe tener al menos 8 caracteres, con una minúscula, una mayúscula y un número.'
     }
     const pct = Number(form.comision_pct)
@@ -74,6 +75,11 @@ export default function CrmVendedores({ vendedores, cuentas, clientesInfo, onCam
       } else {
         const { error } = await supabase.from('vendedores').update(datos).eq('id', modal.id)
         if (error) throw error
+        if (form.password) {
+          const { error: pwErr } = await supabase.rpc('fn_crm_vendedor_cambiar_password', { p_vendedor: modal.id, p_password: form.password })
+          if (pwErr) throw pwErr
+          onAviso(`Contraseña de "${datos.nombre}" actualizada.\n\nAcceso: ${modal.email} / (la nueva contraseña)\nPanel: /vendedor/login`)
+        }
       }
       setModal(null)
       onCambio()
@@ -199,13 +205,13 @@ export default function CrmVendedores({ vendedores, cuentas, clientesInfo, onCam
             <input style={S.input} type="email" value={form.email} onChange={e => set('email', e.target.value)} />
             {modal !== 'crear' && <div style={S.hint}>Solo referencia: no cambia el login. Para eso, Authentication → Users en Supabase.</div>}
 
-            {modal === 'crear' && (
-              <>
-                <label style={S.label}>Contraseña inicial *</label>
-                <input style={S.input} type="text" value={form.password} onChange={e => set('password', e.target.value)} placeholder="mín. 8, con minúscula, mayúscula y número" />
-                <div style={S.hint}>Compártesela al vendedor; entrará en /vendedor/login</div>
-              </>
-            )}
+            <label style={S.label}>{modal === 'crear' ? 'Contraseña inicial *' : 'Nueva contraseña'}</label>
+            <input style={S.input} type="text" value={form.password} onChange={e => set('password', e.target.value)} placeholder={modal === 'crear' ? 'mín. 8, con minúscula, mayúscula y número' : 'Déjala vacía para no cambiarla'} autoComplete="new-password" />
+            <div style={S.hint}>
+              {modal === 'crear'
+                ? 'Compártesela al vendedor; entrará en /vendedor/login'
+                : 'Mín. 8, con minúscula, mayúscula y número. El vendedor también puede restablecerla él mismo desde "¿Olvidaste tu contraseña?" en /vendedor/login.'}
+            </div>
 
             <label style={S.label}>Teléfono</label>
             <input style={S.input} value={form.telefono} onChange={e => set('telefono', e.target.value)} />

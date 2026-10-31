@@ -14,7 +14,8 @@ const S = {
   ok: { background: '#1a2a14', border: '0.5px solid #2e6a20', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#8ae87a', marginBottom: 16 },
 }
 
-export default function AdminRestablecer() {
+// loginPath: a dónde volver tras guardar (dueños → /admin/login, vendedores → /vendedor/login).
+export default function AdminRestablecer({ loginPath = '/admin/login' }) {
   const [password, setPassword] = useState('')
   const [repetir, setRepetir] = useState('')
   const [loading, setLoading] = useState(false)
@@ -35,15 +36,20 @@ export default function AdminRestablecer() {
   async function handleSubmit(e) {
     e.preventDefault()
     setError(null)
-    if (password.length < 8) { setError('La contraseña debe tener al menos 8 caracteres.'); return }
+    // Misma política que exige Supabase Auth en el proyecto.
+    if (password.length < 8 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password)) {
+      setError('La contraseña debe tener al menos 8 caracteres, con una minúscula, una mayúscula y un número.')
+      return
+    }
     if (password !== repetir) { setError('Las contraseñas no coinciden.'); return }
     setLoading(true)
     const { error: err } = await supabase.auth.updateUser({ password })
     if (err) { setError(err.message); setLoading(false); return }
     await supabase.auth.signOut()
+    localStorage.removeItem('recuperacion_destino')
     setListo(true)
     setLoading(false)
-    setTimeout(() => navigate('/admin/login'), 2500)
+    setTimeout(() => navigate(loginPath), 2500)
   }
 
   return (
@@ -57,13 +63,13 @@ export default function AdminRestablecer() {
         ) : sesion === false ? (
           <>
             <div style={S.error}>El enlace no es válido o ha caducado. Pide uno nuevo.</div>
-            <button style={S.btn(false)} onClick={() => navigate('/admin/login')}>Ir al inicio de sesión</button>
+            <button style={S.btn(false)} onClick={() => navigate(loginPath)}>Ir al inicio de sesión</button>
           </>
         ) : (
           <form onSubmit={handleSubmit}>
             {error && <div style={S.error}>{error}</div>}
             <label style={S.label}>Nueva contraseña</label>
-            <input style={S.input} type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Mínimo 8 caracteres" required autoComplete="new-password" />
+            <input style={S.input} type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Mín. 8, con minúscula, mayúscula y número" required autoComplete="new-password" />
             <label style={S.label}>Repite la contraseña</label>
             <input style={S.input} type="password" value={repetir} onChange={e => setRepetir(e.target.value)} placeholder="••••••••" required autoComplete="new-password" />
             <button style={S.btn(loading || sesion === null)} type="submit" disabled={loading || sesion === null}>
