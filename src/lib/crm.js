@@ -80,3 +80,20 @@ export function diasDesde(iso) {
   if (!iso) return null
   return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
 }
+
+// Google Maps: el enlace exacto que haya pegado el vendedor o, si no, una
+// búsqueda por nombre + dirección + ciudad. null si no hay con qué ubicarlo.
+export function enlaceMaps(c) {
+  if (c.maps_url) return c.maps_url
+  if (!c.direccion && !c.ciudad) return null
+  const q = [c.nombre, c.direccion, c.ciudad].filter(Boolean).join(', ')
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`
+}
+
+// Ruta desde donde esté el vendedor. Con solo el enlace exacto (sin
+// dirección) no se puede armar la ruta: se abre el enlace y desde ahí "Cómo llegar".
+export function enlaceRuta(c) {
+  if (!c.direccion && !c.ciudad) return c.maps_url || null
+  const q = [c.nombre, c.direccion, c.ciudad].filter(Boolean).join(', ')
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(q)}`
+}

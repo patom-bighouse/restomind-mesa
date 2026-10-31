@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { S, C, estiloEtapa } from './estilos'
-import { ETAPAS, etapaLabel, fmtFecha, fmtEuro, hoyISO } from '../../lib/crm'
+import { ETAPAS, etapaLabel, fmtFecha, fmtEuro, hoyISO, enlaceMaps } from '../../lib/crm'
 
 const COLUMNAS = [
   { key: 'nombre', label: 'Cuenta' },
@@ -12,12 +12,12 @@ const COLUMNAS = [
 ]
 
 function exportarCsv(filas, proximaTarea, nombreVendedor) {
-  const cab = ['Nombre', 'Contacto', 'Teléfono', 'Email', 'Ciudad', 'Tipo', 'Etapa', 'Vendedor', 'Fuente', 'Plan', 'Cuota estimada', 'Próxima tarea', 'Fecha próxima tarea', 'Motivo pérdida']
+  const cab = ['Nombre', 'Contacto', 'Teléfono', 'Email', 'Ciudad', 'Tipo', 'Etapa', 'Vendedor', 'Fuente', 'Plan', 'Cuota estimada', 'Próxima tarea', 'Fecha próxima tarea', 'Motivo pérdida', 'Google Maps']
   const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`
   const lineas = filas.map(c => [
     c.nombre, c.contacto_nombre, c.telefono, c.email, c.ciudad, c.tipo_local, etapaLabel(c.etapa),
     nombreVendedor(c.vendedor_id), c.fuente, c.plan_interes, c.cuota_estimada, proximaTarea[c.id]?.titulo,
-    proximaTarea[c.id]?.vence_en, c.motivo_perdida,
+    proximaTarea[c.id]?.vence_en, c.motivo_perdida, enlaceMaps(c),
   ].map(esc).join(';'))
   const blob = new Blob(['﻿' + [cab.map(esc).join(';'), ...lineas].join('\n')], { type: 'text/csv;charset=utf-8' })
   const a = document.createElement('a')
@@ -88,7 +88,13 @@ export default function CrmLista({ cuentas, proximaTarea, esAdmin, nombreVendedo
             {filas.map(c => (
               <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => onAbrir(c.id)}>
                 <td style={S.td}>
-                  <div style={{ fontWeight: 500 }}>{c.nombre}</div>
+                  <div style={{ fontWeight: 500 }}>
+                    {c.nombre}
+                    {enlaceMaps(c) && (
+                      <a href={enlaceMaps(c)} target="_blank" rel="noreferrer" title="Ver en Google Maps"
+                        onClick={e => e.stopPropagation()} style={{ textDecoration: 'none', marginLeft: 6 }}>📍</a>
+                    )}
+                  </div>
                   <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
                     {[c.contacto_nombre, c.ciudad, c.telefono].filter(Boolean).join(' · ') || '—'}
                   </div>
