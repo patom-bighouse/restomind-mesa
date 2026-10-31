@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { S, C } from './estilos'
-import { ETAPAS, DIAS_SIN_ACTIVIDAD, ETAPAS_ABIERTAS, hoyISO, fmtFecha, fmtEuro, diasDesde } from '../../lib/crm'
+import { ETAPAS, DIAS_SIN_ACTIVIDAD, ETAPAS_ABIERTAS, hoyISO, fmtFecha, fmtEuro, diasDesde, enlaceMaps } from '../../lib/crm'
 
 const MAX_PERDIDOS = 30
 
@@ -86,7 +86,13 @@ export default function CrmTablero({ cuentas, tareas, proximaTarea, esAdmin, nom
                   onDragEnd={() => { setArrastrando(null); setSobre(null) }}
                   onClick={() => onAbrir(c.id)}
                 >
-                  <div style={T.cardNombre}>{c.nombre}</div>
+                  <div style={{ ...T.cardNombre, display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+                    <span>{c.nombre}</span>
+                    {enlaceMaps(c) && (
+                      <a href={enlaceMaps(c)} target="_blank" rel="noreferrer" title="Ver en Google Maps" draggable={false}
+                        onClick={e => e.stopPropagation()} style={{ textDecoration: 'none', flexShrink: 0 }}>📍</a>
+                    )}
+                  </div>
                   {(c.ciudad || c.tipo_local) && <div style={T.cardLinea}>{[c.tipo_local, c.ciudad].filter(Boolean).join(' · ')}</div>}
                   {c.cuota_estimada != null && <div style={T.cardLinea}>{fmtEuro(c.cuota_estimada)}/mes{c.plan_interes ? ` · ${c.plan_interes}` : ''}</div>}
                   {proxima ? (

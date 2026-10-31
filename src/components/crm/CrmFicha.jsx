@@ -4,19 +4,19 @@ import { supabase } from '../../lib/supabase'
 import { S, C, estiloEtapa } from './estilos'
 import {
   ETAPAS, TIPOS_ACTIVIDAD, FUENTES, TIPOS_LOCAL, MOTIVOS_PERDIDA,
-  etapaLabel, tipoActividad, hoyISO, fmtFecha, fmtFechaHora, fmtEuro, fmtMes,
+  etapaLabel, tipoActividad, hoyISO, fmtFecha, fmtFechaHora, fmtEuro, fmtMes, enlaceMaps, enlaceRuta, normalizarUrl,
 } from '../../lib/crm'
 
 const VACIO = {
   nombre: '', contacto_nombre: '', contacto_cargo: '', telefono: '', email: '',
-  ciudad: '', pais: 'ES', direccion: '', tipo_local: '', num_mesas: '', fuente: '',
+  ciudad: '', pais: 'ES', direccion: '', maps_url: '', tipo_local: '', num_mesas: '', fuente: '',
   etapa: 'prospecto', motivo_perdida: '', plan_interes: '', cuota_estimada: '', notas: '',
   vendedor_id: '', comision_pct: '', comision_cuotas: '', comision_inicio: '',
 }
 
 // La "próxima acción" no se guarda en la cuenta: es su tarea pendiente más
 // cercana (crm_tareas). Las columnas proxima_accion* quedan sin uso.
-const CAMPOS_TEXTO = ['nombre', 'contacto_nombre', 'contacto_cargo', 'telefono', 'email', 'ciudad', 'pais', 'direccion',
+const CAMPOS_TEXTO = ['nombre', 'contacto_nombre', 'contacto_cargo', 'telefono', 'email', 'ciudad', 'pais', 'direccion', 'maps_url',
   'tipo_local', 'fuente', 'etapa', 'motivo_perdida', 'plan_interes', 'notas']
 
 function ahoraLocal() {
@@ -91,6 +91,9 @@ export default function CrmFicha({
   async function guardar() {
     if (!form.nombre.trim()) { setError('El nombre de la cuenta es obligatorio.'); return }
     if (form.etapa === 'perdido' && !form.motivo_perdida) { setError('Indica el motivo de pérdida.'); return }
+    if (form.maps_url.trim() && !/^https?:\/\//i.test(normalizarUrl(form.maps_url))) {
+      setError('El enlace de Google Maps debe empezar por https:// (cópialo desde Compartir → Copiar enlace).'); return
+    }
     if (esAdmin && form.comision_pct !== '' && (Number(form.comision_pct) < 0 || Number(form.comision_pct) > 100)) {
       setError('La comisión debe estar entre 0 y 100 %.'); return
     }
@@ -98,6 +101,7 @@ export default function CrmFicha({
     setError(null)
     const fila = {}
     for (const k of CAMPOS_TEXTO) fila[k] = form[k].trim?.() ? form[k].trim() : null
+    fila.maps_url = normalizarUrl(form.maps_url) || null
     fila.nombre = form.nombre.trim()
     fila.etapa = form.etapa
     fila.num_mesas = form.num_mesas === '' ? null : parseInt(form.num_mesas, 10)
@@ -354,6 +358,18 @@ export default function CrmFicha({
                 </div>
                 <label style={S.label}>Dirección</label>
                 <input style={S.input} value={form.direccion} onChange={e => set('direccion', e.target.value)} placeholder="Calle, número, ciudad" />
+                <label style={S.label}>Enlace de Google Maps (ubicación exacta)</label>
+                <input style={S.input} type="url" value={form.maps_url} onChange={e => set('maps_url', e.target.value)} placeholder="https://maps.app.goo.gl/…" />
+                <div style={S.hint}>
+                  Opcional: busca el local en Google Maps, pulsa Compartir → Copiar enlace y pégalo aquí. Si lo dejas vacío, se ubica por la dirección.
+                  {enlaceMaps(form) && (
+                    <> {' · '}
+                      <a href={enlaceMaps(form)} target="_blank" rel="noreferrer" style={{ color: C.oro }}>📍 Ver en Maps</a>
+                      {' · '}
+                      <a href={enlaceRuta(form)} target="_blank" rel="noreferrer" style={{ color: C.oro }}>Cómo llegar</a>
+                    </>
+                  )}
+                </div>
 
                 <div style={{ fontSize: 13, color: C.oro, fontWeight: 500, marginTop: 20 }}>Oportunidad</div>
                 <div style={S.fila}>
