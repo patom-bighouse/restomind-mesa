@@ -31,9 +31,59 @@ export function tipoActividad(key) {
   return TIPOS_ACTIVIDAD.find(t => t.key === key) || { key, label: key, icono: '•' }
 }
 
-export const FUENTES = ['Puerta fría', 'Referido', 'Web', 'Redes sociales', 'Evento', 'Llamada entrante', 'Cliente existente', 'Otro']
+export const FUENTES = ['Puerta fría', 'Referido', 'Web', 'Redes sociales', 'Evento', 'Llamada entrante', 'Cliente existente', 'Búsqueda Google', 'Otro']
 
 export const TIPOS_LOCAL = ['Restaurante', 'Bar', 'Cafetería', 'Pizzería', 'Hamburguesería', 'Comida rápida', 'Take away', 'Hotel', 'Otro']
+
+// Tipos del buscador de restaurantes (Google Places). Las claves deben
+// coincidir con TIPOS de supabase/functions/crm-buscar-restaurantes.
+// tipoLocal: con qué "Tipo" del CRM se importa.
+export const TIPOS_BUSQUEDA = [
+  { key: 'restaurante', label: 'Restaurantes (todos)', tipoLocal: 'Restaurante' },
+  { key: 'bar', label: 'Bares', tipoLocal: 'Bar' },
+  { key: 'tapas', label: 'Bares de tapas', tipoLocal: 'Bar' },
+  { key: 'cafeteria', label: 'Cafeterías', tipoLocal: 'Cafetería' },
+  { key: 'pizzeria', label: 'Pizzerías', tipoLocal: 'Pizzería' },
+  { key: 'hamburgueseria', label: 'Hamburgueserías', tipoLocal: 'Hamburguesería' },
+  { key: 'comida_rapida', label: 'Comida rápida', tipoLocal: 'Comida rápida' },
+  { key: 'espanol', label: 'Cocina española', tipoLocal: 'Restaurante' },
+  { key: 'italiano', label: 'Italianos', tipoLocal: 'Restaurante' },
+  { key: 'japones', label: 'Japoneses / sushi', tipoLocal: 'Restaurante' },
+  { key: 'chino', label: 'Chinos', tipoLocal: 'Restaurante' },
+  { key: 'mexicano', label: 'Mexicanos', tipoLocal: 'Restaurante' },
+  { key: 'marisqueria', label: 'Marisquerías', tipoLocal: 'Restaurante' },
+  { key: 'asador', label: 'Asadores / parrillas', tipoLocal: 'Restaurante' },
+  { key: 'vegetariano', label: 'Vegetarianos', tipoLocal: 'Restaurante' },
+  { key: 'brunch', label: 'Brunch', tipoLocal: 'Cafetería' },
+]
+
+export const PAISES_BUSQUEDA = [
+  { key: 'ES', label: 'España' }, { key: 'PT', label: 'Portugal' }, { key: 'AR', label: 'Argentina' },
+  { key: 'MX', label: 'México' }, { key: 'CO', label: 'Colombia' }, { key: 'CL', label: 'Chile' },
+  { key: 'UY', label: 'Uruguay' }, { key: 'PE', label: 'Perú' },
+]
+
+// Tamaño estimado por nº de reseñas en Google (no hay dato de mesas). Es
+// orientativo: las reseñas también crecen con la antigüedad y el turismo.
+export const TAMANOS = [
+  { key: 'pequeno', label: 'Pequeño', min: 0 },
+  { key: 'mediano', label: 'Mediano', min: 150 },
+  { key: 'grande', label: 'Grande', min: 600 },
+  { key: 'muy_grande', label: 'Muy grande', min: 1500 },
+]
+
+export function tamanoPorResenas(n) {
+  if (n == null) return null
+  return [...TAMANOS].reverse().find(t => n >= t.min).key
+}
+
+export function tamanoLabel(key) {
+  return TAMANOS.find(t => t.key === key)?.label || null
+}
+
+export function nivelPrecioLabel(n) {
+  return n == null ? null : n === 0 ? 'Gratis' : '€'.repeat(n)
+}
 
 export const MOTIVOS_PERDIDA = ['Precio', 'Ya tiene otra solución', 'No ve el valor', 'Mal momento', 'No responde', 'Cerró el local', 'Otro']
 
