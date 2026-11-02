@@ -27,7 +27,8 @@ function exportarCsv(filas, proximaTarea, nombreVendedor) {
   URL.revokeObjectURL(a.href)
 }
 
-export default function CrmLista({ cuentas, proximaTarea, esAdmin, nombreVendedor, onAbrir }) {
+// onBuscar: solo llega si quien mira puede usar el buscador de restaurantes.
+export default function CrmLista({ cuentas, proximaTarea, esAdmin, nombreVendedor, onAbrir, onBuscar }) {
   const [etapa, setEtapa] = useState('todas')
   // Por defecto: lo más urgente arriba (próxima tarea ascendente, sin tarea
   // al final) y, a igual fecha, por nombre.
@@ -64,6 +65,7 @@ export default function CrmLista({ cuentas, proximaTarea, esAdmin, nombreVendedo
         </select>
         <span style={{ fontSize: 12, color: C.muted }}>{filas.length} cuentas</span>
         <div style={{ flex: 1 }} />
+        {onBuscar && <button style={S.linkBtn} onClick={onBuscar}>🔍 Buscar restaurantes</button>}
         <button style={S.linkBtn} onClick={() => exportarCsv(filas, proximaTarea, nombreVendedor)}>Exportar CSV</button>
       </div>
 

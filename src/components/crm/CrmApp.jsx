@@ -10,6 +10,7 @@ import CrmComisiones from './CrmComisiones'
 import CrmMetricas from './CrmMetricas'
 import CrmVendedores from './CrmVendedores'
 import CrmFicha from './CrmFicha'
+import CrmBuscador from './CrmBuscador'
 
 /**
  * CRM de vendedores. La misma pantalla sirve a los dos roles:
@@ -34,6 +35,7 @@ export default function CrmApp({ modo, subtitulo, navExtra, onLogout }) {
   const [filtroVendedor, setFiltroVendedor] = useState('todos') // todos | sin | <id>
   const [fichaId, setFichaId] = useState(null) // null | 'nueva' | uuid
   const [fichaEtapaInicial, setFichaEtapaInicial] = useState(null)
+  const [buscadorAbierto, setBuscadorAbierto] = useState(false)
 
   const cargar = useCallback(async () => {
     const [cu, ta, ve, pl, ci] = await Promise.all([
@@ -190,7 +192,8 @@ export default function CrmApp({ modo, subtitulo, navExtra, onLogout }) {
         )}
         {tab === 'lista' && (
           <CrmLista cuentas={cuentasFiltradas} proximaTarea={proximaTarea} esAdmin={esAdmin}
-            nombreVendedor={nombreVendedor} onAbrir={abrirFicha} />
+            nombreVendedor={nombreVendedor} onAbrir={abrirFicha}
+            onBuscar={esAdmin ? () => setBuscadorAbierto(true) : null} />
         )}
         {tab === 'tareas' && (
           <CrmTareas tareas={tareasFiltradas} cuentas={cuentas} esAdmin={esAdmin}
@@ -213,6 +216,12 @@ export default function CrmApp({ modo, subtitulo, navExtra, onLogout }) {
             onCambio={cargar} onError={setError} onAviso={setAviso} />
         )}
       </div>
+
+      {/* De momento solo el superadmin; la base ya admite habilitarlo a
+          vendedores (crm_config.vendedores_pueden_buscar). */}
+      {buscadorAbierto && esAdmin && (
+        <CrmBuscador vendedores={vendedoresActivos} onCerrar={() => setBuscadorAbierto(false)} onImportado={cargar} />
+      )}
 
       {fichaId && (
         <CrmFicha
