@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { S, C } from './estilos'
 import {
   TIPOS_BUSQUEDA, PAISES_BUSQUEDA, TAMANOS, tamanoPorResenas, tamanoLabel, nivelPrecioLabel,
+  diasDesde, fmtFechaHora,
 } from '../../lib/crm'
 
 const B = {
@@ -11,10 +12,13 @@ const B = {
   barra: { flex: '1 1 160px', height: 6, background: '#222', borderRadius: 3, overflow: 'hidden', minWidth: 120 },
   bloque: { background: C.bg, border: `0.5px solid ${C.borde}`, borderRadius: 12, padding: '4px 16px 16px', marginTop: 14 },
   chk: { fontSize: 12, color: C.texto2, display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', whiteSpace: 'nowrap' },
+  reciente: activa => ({ background: activa ? '#1a1810' : 'transparent', border: `0.5px solid ${activa ? C.oro : C.borde}`, borderRadius: 8, padding: '7px 12px', fontSize: 12, color: C.texto, cursor: 'pointer', textAlign: 'left', fontFamily: "'Inter', sans-serif" }),
   pie: { position: 'sticky', bottom: -24, background: C.card, borderTop: `0.5px solid ${C.borde}`, padding: '14px 0 0', marginTop: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' },
 }
 
 const fmtUsd = n => `${Number(n || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} US$`
+const tipoBusquedaLabel = key => TIPOS_BUSQUEDA.find(t => t.key === key)?.label || key
+const hace = iso => { const d = diasDesde(iso); return d === 0 ? 'hoy' : d === 1 ? 'ayer' : `hace ${d} días` }
 const normalizarNombre = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '')
 
 async function mensajeError(err, data) {
@@ -43,6 +47,10 @@ export default function CrmBuscador({ vendedores, onCerrar, onImportado }) {
   const [aviso, setAviso] = useState(null)
   const [locales, setLocales] = useState(null) // null = aún no se buscó
   const [buscado, setBuscado] = useState(null) // parámetros de la última búsqueda
+  const [busquedaId, setBusquedaId] = useState(null) // búsqueda guardada que se está viendo
+  const [recientes, setRecientes] = useState([])
+  const [verTodasRecientes, setVerTodasRecientes] = useState(false)
+  const [abriendo, setAbriendo] = useState(null)
 
   // Filtros sobre los resultados (no gastan consultas)
   const [tamanos, setTamanos] = useState(TAMANOS.map(t => t.key))
@@ -61,7 +69,35 @@ export default function CrmBuscador({ vendedores, onCerrar, onImportado }) {
     if (err) { setError(err.message); return }
     setUso(data?.[0] || null)
   }
-  useEffect(() => { cargarUso() }, [])
+  async function cargarRecientes() {
+    const { data, error: err } = await supabase.rpc('fn_crm_busquedas_recientes')
+    if (err) { setError(err.message); return }
+    setRecientes(data || [])
+  }
+  useEffect(() => { cargarUso(); cargarRecientes() }, [])
+
+  // Reabre una búsqueda guardada sin consultar a Google.
+  async function abrirBusqueda(b) {
+    setAbriendo(b.id)
+    setError(null)
+    setAviso(null)
+    const { data, error: err } = await supabase.rpc('fn_crm_busqueda_cargar', { p_id: b.id })
+    setAbriendo(null)
+    if (err) { setError(err.message); return }
+    const fila = data?.[0]
+    if (!fila) { setError('Esta búsqueda ya no está disponible (los resultados se guardan 30 días).'); cargarRecientes(); return }
+    const p = fila.parametros || {}
+    setZona(p.zona || '')
+    setTipo(p.tipo || 'restaurante')
+    setPais(p.pais || 'ES')
+    setValoracionMin(String(p.valoracion_min ?? 0))
+    setPaginas(String(p.paginas || 3))
+    setLocales(fila.locales || [])
+    setBuscado(p)
+    setBusquedaId(b.id)
+    setSeleccion(new Set())
+    setAviso(`Búsqueda del ${fmtFechaHora(fila.created_at)} abierta sin gastar consultas. Los datos de Google son de ese día; "Ya en el CRM" está actualizado a hoy.`)
+  }
 
   async function guardarAjustes() {
     const gratis = parseInt(ajustes.gratis, 10)
@@ -90,8 +126,10 @@ export default function CrmBuscador({ vendedores, onCerrar, onImportado }) {
     if (data.uso) setUso(data.uso)
     setLocales(data.locales || [])
     setBuscado(parametros)
+    setBusquedaId(data.busqueda_id || null)
     setSeleccion(new Set())
     if (data.aviso) setAviso(data.aviso)
+    cargarRecientes()
   }
 
   // Mismo nombre en varias direcciones dentro de los resultados → cadena.
@@ -269,6 +307,31 @@ export default function CrmBuscador({ vendedores, onCerrar, onImportado }) {
             </span>
           </div>
         </form>
+
+        {/* Búsquedas guardadas */}
+        {recientes.length > 0 && (
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 12, color: C.texto2, marginBottom: 8 }}>
+              Búsquedas recientes · se abren <strong style={{ color: C.ok }}>sin gastar consultas</strong> · se guardan 30 días
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {(verTodasRecientes ? recientes : recientes.slice(0, 6)).map(b => (
+                <button key={b.id} type="button" style={B.reciente(b.id === busquedaId)} disabled={!!abriendo} onClick={() => abrirBusqueda(b)}
+                  title={`${fmtFechaHora(b.created_at)} · ${b.autor_nombre || ''}`}>
+                  <div style={{ fontWeight: 500 }}>{abriendo === b.id ? 'Abriendo…' : `${tipoBusquedaLabel(b.parametros?.tipo)} · ${b.parametros?.zona || '—'}`}</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                    {b.resultados} locales{Number(b.parametros?.valoracion_min) > 0 ? ` · ★ ${String(b.parametros.valoracion_min).replace('.', ',')}+` : ''} · {hace(b.created_at)}
+                  </div>
+                </button>
+              ))}
+              {recientes.length > 6 && (
+                <button type="button" style={S.linkBtn} onClick={() => setVerTodasRecientes(v => !v)}>
+                  {verTodasRecientes ? 'Ver menos' : `Ver las ${recientes.length}`}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {error && <div style={{ ...S.error, marginTop: 14 }} onClick={() => setError(null)} role="button">{error}</div>}
         {aviso && <div style={{ ...S.success, marginTop: 14 }} onClick={() => setAviso(null)} role="button">{aviso}</div>}

@@ -146,20 +146,25 @@ Deno.serve(async (req) => {
     }
 
     // Se registra aunque Google haya fallado a mitad: las páginas que sí
-    // respondieron ya cuentan para la facturación.
+    // respondieron ya cuentan para la facturación. Los locales se guardan
+    // (sin "duplicado", que se recalcula al reabrir) para "Búsquedas
+    // recientes".
+    let busquedaId: string | null = null
     if (consultas > 0) {
-      const { error: regErr } = await supabase.rpc('fn_crm_registrar_busqueda', {
+      const { data: id, error: regErr } = await supabase.rpc('fn_crm_registrar_busqueda', {
         p_parametros: { zona, tipo, pais, valoracion_min: valoracionMin, paginas },
         p_consultas: consultas,
         p_resultados: locales.length,
+        p_locales: locales.map(({ duplicado: _d, ...l }) => l),
       })
       if (regErr) return json({ error: regErr.message }, 500)
+      busquedaId = id
     }
 
     const { data: uso } = await supabase.rpc('fn_crm_uso_places')
 
     if (errorGoogle && locales.length === 0) return json({ error: `Google Places: ${errorGoogle}`, uso: uso?.[0] ?? null }, 502)
-    return json({ locales, consultas, aviso: errorGoogle ? `Google cortó la búsqueda: ${errorGoogle}` : null, uso: uso?.[0] ?? null })
+    return json({ locales, consultas, busqueda_id: busquedaId, aviso: errorGoogle ? `Google cortó la búsqueda: ${errorGoogle}` : null, uso: uso?.[0] ?? null })
   } catch (e) {
     return json({ error: (e as Error).message }, 500)
   }
