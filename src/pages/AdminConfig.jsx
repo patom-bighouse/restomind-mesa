@@ -109,7 +109,7 @@ export default function AdminConfig() {
   async function loadData() {
     const { data: rest } = await supabase
       .from('restaurants')
-      .select('nombre, whatsapp, config, modo_cocina, minutos_limite_agrupado, subdominio')
+      .select('nombre, whatsapp, config, modo_cocina, minutos_limite_agrupado, subdominio, plan, permanencia_hasta')
       .eq('id', restaurantId)
       .single()
     if (rest) {
@@ -349,6 +349,20 @@ export default function AdminConfig() {
         {(pestana === 'general' || !tieneModulo('info_restaurante')) && (<>
         {error && <div style={S.error}>{error}</div>}
         {success && <div style={S.success}>{success}</div>}
+
+        {/* Suscripción: solo restaurantes con permanencia (altas nuevas) */}
+        {restaurant?.permanencia_hasta && (
+          <div style={S.infoCard}>
+            <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 8 }}>Tu suscripción</div>
+            <div style={{ fontSize: 14, color: '#f0e8d8', lineHeight: 1.7 }}>
+              {restaurant.plan && <div>Plan <strong style={{ textTransform: 'capitalize' }}>{restaurant.plan}</strong></div>}
+              {restaurant.permanencia_hasta >= new Date().toISOString().slice(0, 10)
+                ? <div>Permanencia mínima hasta el <strong>{new Date(restaurant.permanencia_hasta + 'T00:00:00').toLocaleDateString('es-ES')}</strong>. Después, mes a mes.</div>
+                : <div>Permanencia cumplida el {new Date(restaurant.permanencia_hasta + 'T00:00:00').toLocaleDateString('es-ES')}: ahora es mes a mes, sin compromiso.</div>}
+            </div>
+            <a href="/condiciones" target="_blank" rel="noreferrer" style={{ fontSize: 12, color: '#e8c97a', display: 'inline-block', marginTop: 8 }}>Condiciones del servicio ↗</a>
+          </div>
+        )}
 
         {/* Datos básicos */}
         <div style={S.infoCard}>

@@ -10,6 +10,17 @@ function mesAnterior() {
   return mesISO(d).slice(0, 7)
 }
 
+// Comisiones ya pagadas de un cliente que se dio de baja dentro de la
+// permanencia: se restan del siguiente pago al vendedor.
+const ESTADOS = {
+  pendiente: { label: 'Pendiente', badge: S.badge('#2a2414', C.oro) },
+  pagada: { label: 'Pagada', badge: S.badge(C.okBg, C.ok) },
+  anulada: { label: 'Anulada', badge: S.badge('#1f1f1f', C.muted) },
+  a_descontar: { label: 'A descontar', badge: S.badge(C.malBg, C.mal) },
+  descontada: { label: 'Descontada', badge: S.badge('#1f1f1f', C.texto2) },
+}
+const esNegativa = estado => estado === 'a_descontar' || estado === 'descontada'
+
 function Kpi({ titulo, valor, detalle }) {
   return (
     <div style={{ ...S.card, flex: '1 1 180px' }}>
@@ -73,9 +84,10 @@ export default function CrmComisiones({ esAdmin, cuentas, clientesInfo, vendedor
 
   async function cambiarEstado(ids, estado) {
     if (!ids.length) return
-    const { error } = await supabase.from('crm_comisiones')
-      .update({ estado, pagada_en: estado === 'pagada' ? new Date().toISOString() : null })
-      .in('id', ids)
+    const cambios = { estado }
+    if (estado === 'pagada') cambios.pagada_en = new Date().toISOString()
+    if (estado === 'pendiente') cambios.pagada_en = null
+    const { error } = await supabase.from('crm_comisiones').update(cambios).in('id', ids)
     if (error) { onError(error.message); return }
     cargar()
   }
@@ -88,17 +100,33 @@ export default function CrmComisiones({ esAdmin, cuentas, clientesInfo, vendedor
   }
 
   const pendientesFiltradas = filas.filter(c => c.estado === 'pendiente')
+  const aDescontarFiltradas = filas.filter(c => c.estado === 'a_descontar')
+  const netoFiltrado = suma(pendientesFiltradas, 'pendiente') - suma(aDescontarFiltradas, 'a_descontar')
+
+  // Liquidar: las pendientes pasan a pagadas y lo que había que descontar,
+  // a descontado.
+  async function liquidar() {
+    const texto = [
+      pendientesFiltradas.length && `${pendientesFiltradas.length} comisiones como pagadas`,
+      aDescontarFiltradas.length && `${aDescontarFiltradas.length} como descontadas`,
+    ].filter(Boolean).join(' y ')
+    if (!window.confirm(`¿Marcar ${texto}? Neto a pagar: ${fmtEuro(netoFiltrado)}.`)) return
+    if (pendientesFiltradas.length) await cambiarEstado(pendientesFiltradas.map(c => c.id), 'pagada')
+    if (aDescontarFiltradas.length) await cambiarEstado(aDescontarFiltradas.map(c => c.id), 'descontada')
+  }
 
   const resumenVendedores = useMemo(() => {
     if (!esAdmin) return []
     const m = {}
     for (const c of comisiones) {
       if (c.estado === 'anulada') continue
-      m[c.vendedor_id] ??= { pendiente: 0, pagada: 0, mes: 0 }
+      m[c.vendedor_id] ??= { pendiente: 0, pagada: 0, mes: 0, a_descontar: 0, descontada: 0 }
       m[c.vendedor_id][c.estado] += Number(c.importe)
       if (c.periodo.startsWith(mesAnterior())) m[c.vendedor_id].mes += Number(c.importe)
     }
-    return Object.entries(m).map(([id, v]) => ({ id, nombre: nombreVendedor(id), ...v })).sort((a, b) => b.pendiente - a.pendiente)
+    return Object.entries(m)
+      .map(([id, v]) => ({ id, nombre: nombreVendedor(id), ...v, pendiente: v.pendiente - v.a_descontar }))
+      .sort((a, b) => b.pendiente - a.pendiente)
   }, [comisiones, esAdmin, vendedores])
 
   if (cargando) return <div style={S.vacio}>Cargando…</div>
@@ -106,7 +134,12 @@ export default function CrmComisiones({ esAdmin, cuentas, clientesInfo, vendedor
   return (
     <>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
-        <Kpi titulo="Pendiente de pago" valor={fmtEuro(suma(filtroVendedor === 'todos' ? comisiones : comisiones.filter(c => c.vendedor_id === filtroVendedor), 'pendiente'))} />
+        {(() => {
+          const lista = filtroVendedor === 'todos' ? comisiones : comisiones.filter(c => c.vendedor_id === filtroVendedor)
+          const descontar = suma(lista, 'a_descontar')
+          return <Kpi titulo="Pendiente de pago" valor={fmtEuro(suma(lista, 'pendiente') - descontar)}
+            detalle={descontar ? `Ya restados ${fmtEuro(descontar)} de bajas dentro de la permanencia` : null} />
+        })()}
         <Kpi titulo="Pagado" valor={fmtEuro(suma(filtroVendedor === 'todos' ? comisiones : comisiones.filter(c => c.vendedor_id === filtroVendedor), 'pagada'))} />
         {!esAdmin && <Kpi titulo={`Generado en ${fmtMes(mesAnterior() + '-01')}`} valor={fmtEuro(generadasMesPasado)} />}
         <Kpi titulo="Estimación mensual" valor={fmtEuro(proyeccion)} detalle="Con la cartera activa y las cuotas de hoy" />
@@ -156,14 +189,16 @@ export default function CrmComisiones({ esAdmin, cuentas, clientesInfo, vendedor
           <option value="pendiente">Pendientes</option>
           <option value="pagada">Pagadas</option>
           <option value="anulada">Anuladas</option>
+          <option value="a_descontar">A descontar</option>
+          <option value="descontada">Descontadas</option>
         </select>
         <input style={S.inputSm} type="month" value={filtroMes} onChange={e => setFiltroMes(e.target.value)} />
         {filtroMes && <button style={S.linkBtn} onClick={() => setFiltroMes('')}>Todos los meses</button>}
         <div style={{ flex: 1 }} />
-        {esAdmin && pendientesFiltradas.length > 0 && (
-          <button style={S.linkBtn} onClick={() => {
-            if (window.confirm(`¿Marcar como pagadas ${pendientesFiltradas.length} comisiones (${fmtEuro(suma(pendientesFiltradas, 'pendiente'))})?`)) cambiarEstado(pendientesFiltradas.map(c => c.id), 'pagada')
-          }}>Marcar {pendientesFiltradas.length} como pagadas</button>
+        {esAdmin && (pendientesFiltradas.length > 0 || aDescontarFiltradas.length > 0) && (
+          <button style={S.linkBtn} onClick={liquidar}>
+            {aDescontarFiltradas.length ? `Liquidar (neto ${fmtEuro(netoFiltrado)})` : `Marcar ${pendientesFiltradas.length} como pagadas`}
+          </button>
         )}
       </div>
 
@@ -191,18 +226,19 @@ export default function CrmComisiones({ esAdmin, cuentas, clientesInfo, vendedor
                   <td style={S.td}>{cuenta?.nombre || '—'}</td>
                   <td style={S.td}>#{c.numero_cuota}{cuenta?.comision_cuotas ? ` de ${cuenta.comision_cuotas}` : ''}</td>
                   <td style={S.td}>{fmtEuro(c.cuota_base)}</td>
-                  <td style={S.td}><span style={{ fontWeight: 500 }}>{fmtEuro(c.importe)}</span> <span style={{ fontSize: 11, color: C.muted }}>({c.porcentaje}%)</span></td>
+                  <td style={S.td}><span style={{ fontWeight: 500, color: esNegativa(c.estado) ? C.mal : C.texto }}>{esNegativa(c.estado) ? '−' : ''}{fmtEuro(c.importe)}</span> <span style={{ fontSize: 11, color: C.muted }}>({c.porcentaje}%)</span></td>
                   <td style={S.td}>
-                    <span style={c.estado === 'pagada' ? S.badge(C.okBg, C.ok) : c.estado === 'anulada' ? S.badge('#1f1f1f', C.muted) : S.badge('#2a2414', C.oro)}>
-                      {c.estado === 'pagada' ? 'Pagada' : c.estado === 'anulada' ? 'Anulada' : 'Pendiente'}
-                    </span>
-                    {c.pagada_en && <div style={{ fontSize: 11, color: C.muted, marginTop: 3 }}>{fmtFecha(c.pagada_en)}</div>}
+                    <span style={(ESTADOS[c.estado] || ESTADOS.pendiente).badge}>{(ESTADOS[c.estado] || ESTADOS.pendiente).label}</span>
+                    {c.pagada_en && <div style={{ fontSize: 11, color: C.muted, marginTop: 3 }}>{c.estado === 'pagada' ? '' : 'Pagada '}{fmtFecha(c.pagada_en)}</div>}
+                    {c.nota && <div style={{ fontSize: 11, color: C.muted, marginTop: 3, maxWidth: 220 }}>{c.nota}</div>}
                   </td>
                   {esAdmin && (
                     <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
                       {c.estado === 'pendiente' && <button style={{ ...S.linkBtn, marginRight: 6 }} onClick={() => cambiarEstado([c.id], 'pagada')}>Pagada</button>}
                       {c.estado === 'pendiente' && <button style={{ ...S.logoutBtn, padding: '6px 10px', fontSize: 12, marginRight: 6 }} onClick={() => cambiarEstado([c.id], 'anulada')}>Anular</button>}
-                      {c.estado !== 'pendiente' && <button style={{ ...S.logoutBtn, padding: '6px 10px', fontSize: 12, marginRight: 6 }} onClick={() => cambiarEstado([c.id], 'pendiente')}>Volver a pendiente</button>}
+                      {c.estado === 'a_descontar' && <button style={{ ...S.linkBtn, marginRight: 6 }} onClick={() => cambiarEstado([c.id], 'descontada')}>Descontada</button>}
+                      {c.estado === 'descontada' && <button style={{ ...S.logoutBtn, padding: '6px 10px', fontSize: 12, marginRight: 6 }} onClick={() => cambiarEstado([c.id], 'a_descontar')}>Volver a "a descontar"</button>}
+                      {(c.estado === 'pagada' || c.estado === 'anulada') && <button style={{ ...S.logoutBtn, padding: '6px 10px', fontSize: 12, marginRight: 6 }} onClick={() => cambiarEstado([c.id], 'pendiente')}>Volver a pendiente</button>}
                       <button style={{ ...S.logoutBtn, padding: '6px 10px', fontSize: 12 }} onClick={() => borrar(c)} title="Borrar">✕</button>
                     </td>
                   )}

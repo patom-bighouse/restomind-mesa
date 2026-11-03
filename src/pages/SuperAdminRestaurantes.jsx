@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { createClient } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { isValidIban, formatIbanDisplay } from '../lib/iban'
+import { PENALIZACION_PCT, CONDICIONES_VERSION } from '../lib/condiciones'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -41,6 +42,12 @@ const S = {
   tabBar: { display: 'flex', gap: 4, marginTop: 16, marginBottom: 4, borderBottom: '0.5px solid #2a2a2a' },
   tabBtn: (active) => ({ background: 'transparent', border: 'none', borderBottom: active ? '2px solid #e8c97a' : '2px solid transparent', color: active ? '#e8c97a' : '#8a8a8a', padding: '8px 4px', marginRight: 18, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }),
 }
+
+const MOTIVOS_BAJA = ['Precio', 'No lo usa', 'Cerró el local', 'Se va a otra solución', 'Problemas con el servicio', 'Otro']
+
+const fmtFechaES = iso => new Date(iso + 'T00:00:00').toLocaleDateString('es-ES')
+const hoyISO = () => new Date().toISOString().slice(0, 10)
+const fmtEur = n => `${Number(n || 0).toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}€`
 
 function slugify(text) {
   return text.toLowerCase()
@@ -98,7 +105,11 @@ export default function SuperAdminRestaurantes() {
   const [editTab, setEditTab] = useState('datos') // 'datos' | 'facturacion' | 'modulos'
   const [planes, setPlanes] = useState([])
   const [aplicandoPlan, setAplicandoPlan] = useState(null) // key del plan que se está aplicando, o null
-  const [trialInfo, setTrialInfo] = useState({ trial_termina_en: null, precio_override: null, precio_override_hasta: null })
+  const [trialInfo, setTrialInfo] = useState({ trial_termina_en: null, precio_override: null, precio_override_hasta: null, permanencia_hasta: null })
+  const [permanenciaEdit, setPermanenciaEdit] = useState('')
+  const [aceptaciones, setAceptaciones] = useState({}) // restaurant_id → aceptación de la versión vigente
+  // Desactivar: elegir entre suspender (temporal) o dar de baja (se va).
+  const [bajaModal, setBajaModal] = useState(null) // null | { rest, paso: 'elegir' | 'baja', calc, motivo, detalle, cobrar, guardando }
   const [descuentoPrecio, setDescuentoPrecio] = useState('')
   const [descuentoDias, setDescuentoDias] = useState('30')
   const [guardandoTrial, setGuardandoTrial] = useState(false)
@@ -213,6 +224,18 @@ export default function SuperAdminRestaurantes() {
     await loadRestaurants()
   }
 
+  async function guardarPermanencia() {
+    if (!editingId) return
+    setGuardandoTrial(true)
+    const { data: filas, error: err } = await supabase.from('restaurants')
+      .update({ permanencia_hasta: permanenciaEdit || null }).eq('id', editingId).select('id')
+    setGuardandoTrial(false)
+    if (err) { setError(err.message); return }
+    if (!filas?.length) { setError('No se ha guardado: tu sesión de superadmin ya no está activa en este navegador.'); return }
+    setTrialInfo(prev => ({ ...prev, permanencia_hasta: permanenciaEdit || null }))
+    await loadRestaurants()
+  }
+
   async function checkAuth() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { navigate('/superadmin/login'); return }
@@ -224,11 +247,16 @@ export default function SuperAdminRestaurantes() {
   async function loadRestaurants() {
     const { data, error: err } = await supabase
       .from('restaurants')
-      .select('id, nombre, slug, whatsapp, whatsapp_phone_number_id, activo, created_at, user_id, pais, moneda, direccion, email_dueno, plan, trial_termina_en, precio_override, precio_override_hasta')
+      .select('id, nombre, slug, whatsapp, whatsapp_phone_number_id, activo, created_at, user_id, pais, moneda, direccion, email_dueno, plan, trial_termina_en, precio_override, precio_override_hasta, permanencia_hasta, baja_en, baja_motivo, baja_penalizacion')
       .order('created_at', { ascending: false })
     if (err) { setError(err.message); setLoading(false); return }
     setRestaurants(data || [])
     setLoading(false)
+    // Quién aceptó las condiciones vigentes. Si la tabla aún no existe
+    // (SQL pendiente), simplemente no se muestra.
+    const { data: acep } = await supabase.from('condiciones_aceptaciones')
+      .select('restaurant_id, aceptado_en, ip').eq('version', CONDICIONES_VERSION)
+    setAceptaciones(Object.fromEntries((acep || []).map(a => [a.restaurant_id, a])))
   }
 
   function openCreateModal() {
@@ -266,7 +294,9 @@ export default function SuperAdminRestaurantes() {
       trial_termina_en: rest.trial_termina_en || null,
       precio_override: rest.precio_override ?? null,
       precio_override_hasta: rest.precio_override_hasta || null,
+      permanencia_hasta: rest.permanencia_hasta || null,
     })
+    setPermanenciaEdit(rest.permanencia_hasta || '')
     setDescuentoPrecio('')
     setDescuentoDias('30')
     setEditTab('datos')
@@ -469,7 +499,8 @@ export default function SuperAdminRestaurantes() {
         setCuentaOrigen(null)
       }
 
-      setSuccess(`Restaurante "${form.nombre}" creado correctamente.\n\nAcceso del cliente: ${form.email} / (la contraseña que definiste)\nPanel: /admin/login${avisoCrm}`)
+      const avisoPermanencia = restData.permanencia_hasta ? `\nPermanencia hasta el ${fmtFechaES(restData.permanencia_hasta)} (al entrar al panel, el dueño tendrá que aceptar las condiciones).` : ''
+      setSuccess(`Restaurante "${form.nombre}" creado correctamente.\n\nAcceso del cliente: ${form.email} / (la contraseña que definiste)\nPanel: /admin/login${avisoPermanencia}${avisoCrm}`)
       setModalMode(null)
       loadRestaurants()
     } catch (e) {
@@ -547,22 +578,62 @@ export default function SuperAdminRestaurantes() {
     }
   }
 
+  // Activo → abre el diálogo para elegir entre suspender o dar de baja.
+  // Inactivo → reactivar (borra los datos de la baja, si la hubo).
   async function toggleActivo(rest) {
-    const nuevo = !rest.activo
-    const aviso = nuevo
-      ? `¿Reactivar "${rest.nombre}"? El dueño, su personal y sus clientes vuelven a tener acceso.`
-      : `¿Desactivar "${rest.nombre}"? Se bloquea todo: el dueño no podrá entrar al panel, el personal no podrá usar Cocina ni Camarero, y no se aceptarán pedidos ni reservas por ningún canal (QR, WhatsApp, web).`
+    if (rest.activo) {
+      setBajaModal({ rest, paso: 'elegir', calc: null, motivo: '', detalle: '', cobrar: true, guardando: false })
+      return
+    }
+    const aviso = `¿Reactivar "${rest.nombre}"? El dueño, su personal y sus clientes vuelven a tener acceso.`
+      + (rest.baja_en ? '\n\nSe borrarán los datos de la baja. Las comisiones retiradas al vendedor no se restauran solas: revísalas en CRM → Comisiones.' : '')
     if (!window.confirm(aviso)) return
+    await cambiarActivo(rest, true, { baja_en: null, baja_motivo: null, baja_penalizacion: null })
+  }
+
+  async function cambiarActivo(rest, nuevo, extra = {}) {
     // .select() para saber si de verdad se cambió alguna fila: si la sesión
     // ya no es la del superadmin (hay una sola por navegador y el login de
     // un dueño la sustituye), RLS descarta el update sin dar error.
-    const { data: filas, error: err } = await supabase.from('restaurants').update({ activo: nuevo }).eq('id', rest.id).select('id')
-    if (err) { setError(err.message); return }
+    const { data: filas, error: err } = await supabase.from('restaurants').update({ activo: nuevo, ...extra }).eq('id', rest.id).select('id')
+    if (err) { setError(err.message); return false }
     if (!filas?.length) {
       setError('No se ha guardado el cambio: tu sesión de superadmin ya no está activa en este navegador. Vuelve a iniciar sesión como superadmin.')
-      return
+      return false
     }
-    setRestaurants(prev => prev.map(r => r.id === rest.id ? { ...r, activo: nuevo } : r))
+    setRestaurants(prev => prev.map(r => r.id === rest.id ? { ...r, activo: nuevo, ...extra } : r))
+    return true
+  }
+
+  async function suspender() {
+    if (await cambiarActivo(bajaModal.rest, false)) setBajaModal(null)
+  }
+
+  async function prepararBaja() {
+    setBajaModal(m => ({ ...m, guardando: true }))
+    const { data, error: err } = await supabase.rpc('fn_permanencia_penalizacion', { p_restaurant_id: bajaModal.rest.id })
+    if (err) { setError(err.message); setBajaModal(null); return }
+    setBajaModal(m => ({ ...m, paso: 'baja', calc: data?.[0] || null, guardando: false }))
+  }
+
+  async function confirmarBaja() {
+    const { rest, motivo, detalle, cobrar } = bajaModal
+    if (!motivo) return
+    setBajaModal(m => ({ ...m, guardando: true }))
+    const { data, error: err } = await supabase.rpc('fn_dar_baja_restaurante', {
+      p_restaurant_id: rest.id,
+      p_motivo: [motivo, detalle.trim()].filter(Boolean).join(': '),
+      p_cobrar_penalizacion: cobrar,
+    })
+    if (err) { setError(err.message); setBajaModal(m => ({ ...m, guardando: false })); return }
+    const r = data?.[0] || {}
+    const partes = [`"${rest.nombre}" dado de baja.`]
+    if (Number(r.penalizacion) > 0) partes.push(`Penalización a facturar: ${fmtEur(r.penalizacion)}.`)
+    if (r.comisiones_anuladas) partes.push(`${r.comisiones_anuladas} comisiones pendientes anuladas.`)
+    if (r.comisiones_a_descontar) partes.push(`${r.comisiones_a_descontar} comisiones ya pagadas quedan "a descontar" del vendedor.`)
+    setSuccess(partes.join(' '))
+    setBajaModal(null)
+    loadRestaurants()
   }
 
   async function handleLogout() {
@@ -626,10 +697,27 @@ export default function SuperAdminRestaurantes() {
                       {rest.precio_override}€ hasta {new Date(rest.precio_override_hasta + 'T00:00:00').toLocaleDateString('es-ES')}
                     </div>
                   )}
+                  {rest.permanencia_hasta && !rest.baja_en && (
+                    <div style={{ fontSize: 11, color: rest.permanencia_hasta >= hoyISO() ? '#9aa7e8' : '#555', marginTop: 2 }}>
+                      {rest.permanencia_hasta >= hoyISO() ? 'Permanencia hasta' : 'Permanencia cumplida'} {fmtFechaES(rest.permanencia_hasta)}
+                    </div>
+                  )}
+                  {rest.permanencia_hasta && (aceptaciones[rest.id] ? (
+                    <div style={{ fontSize: 11, color: '#2ecc71', marginTop: 2 }} title={`Versión ${CONDICIONES_VERSION}${aceptaciones[rest.id].ip ? ` · IP ${aceptaciones[rest.id].ip}` : ''}`}>
+                      Condiciones aceptadas {new Date(aceptaciones[rest.id].aceptado_en).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11, color: '#e8a33a', marginTop: 2 }}>Condiciones sin aceptar</div>
+                  ))}
+                  {rest.baja_en && (
+                    <div style={{ fontSize: 11, color: '#e74c3c', marginTop: 2 }} title={rest.baja_motivo || ''}>
+                      Baja {fmtFechaES(rest.baja_en)}{Number(rest.baja_penalizacion) > 0 ? ` · penalización ${fmtEur(rest.baja_penalizacion)}` : ''}
+                    </div>
+                  )}
                 </td>
                 <td style={S.td}>
                   <span style={S.badge(rest.activo)} onClick={() => toggleActivo(rest)} role="button" title="Click para cambiar">
-                    {rest.activo ? 'Activo' : 'Inactivo'}
+                    {rest.activo ? 'Activo' : rest.baja_en ? 'Baja' : 'Inactivo'}
                   </span>
                 </td>
                 <td style={S.td}>
@@ -748,7 +836,7 @@ export default function SuperAdminRestaurantes() {
               <>
                 {modalMode === 'edit' && (
                   <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '0.5px solid #2a2a2a' }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, color: '#e8c97a', marginBottom: 8 }}>Trial y descuentos</div>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: '#e8c97a', marginBottom: 8 }}>Trial, descuentos y permanencia</div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
                       {trialInfo.trial_termina_en ? (
@@ -779,7 +867,12 @@ export default function SuperAdminRestaurantes() {
                         </>
                       )}
                     </div>
-                    <div style={S.hint}>Esto no cobra ni descuenta nada solo — es para que sepas qué precio y hasta cuándo le corresponde a este restaurante quien lo facture a mano.</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                      <span style={{ fontSize: 12, color: '#8a8a8a' }}>Permanencia hasta</span>
+                      <input style={{ ...S.input, width: 160 }} type="date" value={permanenciaEdit} onChange={e => setPermanenciaEdit(e.target.value)} />
+                      <button style={{ ...S.linkBtn, cursor: 'pointer' }} disabled={guardandoTrial || permanenciaEdit === (trialInfo.permanencia_hasta || '')} onClick={guardarPermanencia}>Guardar</button>
+                    </div>
+                    <div style={S.hint}>Esto no cobra ni descuenta nada solo — es para que sepas qué precio y hasta cuándo le corresponde a este restaurante quien lo facture a mano. La permanencia se pone sola al dar de alta (alta + 3 meses); vacía = sin permanencia.</div>
                   </div>
                 )}
                 {modalMode === 'edit' && planes.length > 0 && (
@@ -837,6 +930,72 @@ export default function SuperAdminRestaurantes() {
                 {creating ? 'Guardando...' : modalMode === 'create' ? 'Crear restaurante' : 'Guardar cambios'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {bajaModal && (
+        <div style={S.modal}>
+          <div style={S.modalBox}>
+            <div style={S.modalTitle}>Desactivar "{bajaModal.rest.nombre}"</div>
+
+            {bajaModal.paso === 'elegir' && (
+              <>
+                <div style={{ fontSize: 13, color: '#8a8a8a', lineHeight: 1.6, marginBottom: 14 }}>
+                  En los dos casos se bloquea todo: el dueño no podrá entrar al panel, el personal no podrá usar Cocina ni Camarero, y no se aceptarán pedidos ni reservas por ningún canal (QR, WhatsApp, web).
+                </div>
+                <button style={{ ...S.cancelBtn, width: '100%', textAlign: 'left', marginBottom: 10, color: '#f0f0f0' }} disabled={bajaModal.guardando} onClick={suspender}>
+                  <strong>Suspender</strong>
+                  <div style={{ fontSize: 12, color: '#8a8a8a', marginTop: 4 }}>Temporal, por ejemplo por impago. Sigue siendo cliente: no cuenta como baja ni toca la permanencia.</div>
+                </button>
+                <button style={{ ...S.cancelBtn, width: '100%', textAlign: 'left', color: '#f0f0f0' }} disabled={bajaModal.guardando} onClick={prepararBaja}>
+                  <strong>Dar de baja</strong>
+                  <div style={{ fontSize: 12, color: '#8a8a8a', marginTop: 4 }}>El cliente se va. Se registra la baja y, si está en permanencia, la penalización.</div>
+                </button>
+                <div style={S.modalBtns}>
+                  <button style={S.cancelBtn} onClick={() => setBajaModal(null)}>Cancelar</button>
+                </div>
+              </>
+            )}
+
+            {bajaModal.paso === 'baja' && (() => {
+              const c = bajaModal.calc
+              return (
+                <>
+                  {!c?.permanencia_hasta && <div style={{ fontSize: 13, color: '#8a8a8a', marginBottom: 6 }}>Este restaurante no tiene permanencia: la baja no tiene coste.</div>}
+                  {c?.permanencia_hasta && !c.en_permanencia && <div style={{ fontSize: 13, color: '#8a8a8a', marginBottom: 6 }}>Permanencia cumplida el {fmtFechaES(c.permanencia_hasta)}: la baja no tiene coste.</div>}
+                  {c?.en_permanencia && c.en_trial && <div style={{ fontSize: 13, color: '#8a8a8a', marginBottom: 6 }}>Está en periodo de prueba: la baja no tiene coste. Si tiene comisiones, se retiran igualmente.</div>}
+                  {c?.en_permanencia && !c.en_trial && (
+                    <div style={{ background: '#2a2014', border: '0.5px solid #5a4a2a', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: '#e8c97a', lineHeight: 1.6, marginBottom: 6 }}>
+                      En permanencia hasta el <strong>{fmtFechaES(c.permanencia_hasta)}</strong>.<br />
+                      Faltan {c.meses_pendientes} cuota{c.meses_pendientes === 1 ? '' : 's'} de {fmtEur(c.cuota)} → penalización del {Number(c.porcentaje) || PENALIZACION_PCT} %: <strong>{fmtEur(c.penalizacion)}</strong>
+                      <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, color: '#f0f0f0', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={bajaModal.cobrar} onChange={e => setBajaModal(m => ({ ...m, cobrar: e.target.checked }))} />
+                        Cobrar la penalización
+                      </label>
+                    </div>
+                  )}
+                  {c?.en_permanencia && (
+                    <div style={S.hint}>Al estar en permanencia, las comisiones del vendedor por este cliente se retiran: las pendientes se anulan y las ya pagadas quedan "a descontar".</div>
+                  )}
+
+                  <label style={S.label}>Motivo de la baja *</label>
+                  <select style={S.input} value={bajaModal.motivo} onChange={e => setBajaModal(m => ({ ...m, motivo: e.target.value }))}>
+                    <option value="">Elige un motivo</option>
+                    {MOTIVOS_BAJA.map(mo => <option key={mo} value={mo}>{mo}</option>)}
+                  </select>
+                  <label style={S.label}>Detalle (opcional)</label>
+                  <input style={S.input} value={bajaModal.detalle} onChange={e => setBajaModal(m => ({ ...m, detalle: e.target.value }))} placeholder="Lo que haya contado el cliente" />
+
+                  <div style={S.modalBtns}>
+                    <button style={S.cancelBtn} onClick={() => setBajaModal(null)}>Cancelar</button>
+                    <button style={S.saveBtn(bajaModal.guardando || !bajaModal.motivo)} disabled={bajaModal.guardando || !bajaModal.motivo} onClick={confirmarBaja}>
+                      {bajaModal.guardando ? 'Guardando...' : 'Dar de baja'}
+                    </button>
+                  </div>
+                </>
+              )
+            })()}
           </div>
         </div>
       )}

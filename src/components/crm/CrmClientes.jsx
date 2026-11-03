@@ -10,7 +10,11 @@ const DIAS_AVISO = 7
 function alertas(info) {
   const out = []
   const hoy = hoyISO()
-  if (!info.activo) out.push({ texto: 'Suspendido', color: C.mal, bg: C.malBg })
+  if (!info.activo) out.push({ texto: info.baja_en ? `Baja ${fmtFecha(info.baja_en)}` : 'Suspendido', color: C.mal, bg: C.malBg })
+  if (info.activo && info.permanencia_hasta && info.permanencia_hasta >= hoy) {
+    const d = -diasDesde(info.permanencia_hasta + 'T00:00:00')
+    if (d <= DIAS_AVISO) out.push({ texto: `Permanencia vence en ${d} d`, color: C.aviso, bg: '#2a2014' })
+  }
   if (info.trial_termina_en) {
     const d = -diasDesde(info.trial_termina_en + 'T00:00:00')
     if (info.trial_termina_en >= hoy && d <= DIAS_AVISO) out.push({ texto: `Trial vence en ${d} d`, color: C.aviso, bg: '#2a2014' })
@@ -68,6 +72,7 @@ export default function CrmClientes({ cuentas, clientesInfo, planes, esAdmin, no
               <th style={S.th}>Plan</th>
               <th style={S.th}>Cuota actual</th>
               <th style={S.th}>Cliente desde</th>
+              <th style={S.th}>Permanencia</th>
               <th style={S.th}>Estado</th>
             </tr>
           </thead>
@@ -82,9 +87,12 @@ export default function CrmClientes({ cuentas, clientesInfo, planes, esAdmin, no
                 <td style={S.td}>{planNombre(info.plan)}</td>
                 <td style={S.td}>{fmtEuro(info.cuota_actual)}</td>
                 <td style={S.td}>{fmtFecha(cuenta.ganado_en || info.alta_en)}</td>
+                <td style={{ ...S.td, color: info.permanencia_hasta && info.permanencia_hasta >= hoyISO() ? C.texto : C.muted }}>
+                  {info.permanencia_hasta ? (info.permanencia_hasta >= hoyISO() ? `Hasta ${fmtFecha(info.permanencia_hasta)}` : 'Cumplida') : '—'}
+                </td>
                 <td style={S.td}>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {info.activo && !al.some(a => a.texto === 'Suspendido') && <span style={S.badge(C.okBg, C.ok)}>Activo</span>}
+                    {info.activo && <span style={S.badge(C.okBg, C.ok)}>Activo</span>}
                     {al.map(a => <span key={a.texto} style={S.badge(a.bg, a.color)}>{a.texto}</span>)}
                   </div>
                 </td>

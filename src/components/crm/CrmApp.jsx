@@ -38,12 +38,13 @@ export default function CrmApp({ modo, subtitulo, navExtra, onLogout }) {
   const [buscadorAbierto, setBuscadorAbierto] = useState(false)
 
   const cargar = useCallback(async () => {
-    const [cu, ta, ve, pl, ci] = await Promise.all([
+    const [cu, ta, ve, pl, ci, pe] = await Promise.all([
       supabase.from('crm_cuentas').select('*').order('updated_at', { ascending: false }),
       supabase.from('crm_tareas').select('*').order('vence_en'),
       supabase.from('vendedores').select('*').order('nombre'),
       supabase.from('planes').select('key, nombre, precio, orden').order('orden'),
       supabase.rpc('fn_crm_restaurantes_cuentas'),
+      supabase.rpc('fn_crm_permanencias'),
     ])
     const err = cu.error || ta.error || ve.error || pl.error || ci.error
     if (err) setError(err.message)
@@ -51,7 +52,10 @@ export default function CrmApp({ modo, subtitulo, navExtra, onLogout }) {
     setTareas(ta.data || [])
     setVendedores(ve.data || [])
     setPlanes(pl.data || [])
-    setClientesInfo(Object.fromEntries((ci.data || []).map(r => [r.cuenta_id, r])))
+    // Permanencia y baja: se suman a los datos de cada cliente. Si la
+    // función aún no existe (SQL pendiente), el CRM funciona sin ellas.
+    const perm = Object.fromEntries((pe.data || []).map(r => [r.cuenta_id, r]))
+    setClientesInfo(Object.fromEntries((ci.data || []).map(r => [r.cuenta_id, { ...r, ...perm[r.cuenta_id] }])))
     setLoading(false)
   }, [])
 
