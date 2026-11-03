@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { createClient } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { isValidIban, formatIbanDisplay } from '../lib/iban'
-import { PENALIZACION_PCT } from '../lib/condiciones'
+import { PENALIZACION_PCT, CONDICIONES_VERSION } from '../lib/condiciones'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -107,6 +107,7 @@ export default function SuperAdminRestaurantes() {
   const [aplicandoPlan, setAplicandoPlan] = useState(null) // key del plan que se está aplicando, o null
   const [trialInfo, setTrialInfo] = useState({ trial_termina_en: null, precio_override: null, precio_override_hasta: null, permanencia_hasta: null })
   const [permanenciaEdit, setPermanenciaEdit] = useState('')
+  const [aceptaciones, setAceptaciones] = useState({}) // restaurant_id → aceptación de la versión vigente
   // Desactivar: elegir entre suspender (temporal) o dar de baja (se va).
   const [bajaModal, setBajaModal] = useState(null) // null | { rest, paso: 'elegir' | 'baja', calc, motivo, detalle, cobrar, guardando }
   const [descuentoPrecio, setDescuentoPrecio] = useState('')
@@ -251,6 +252,11 @@ export default function SuperAdminRestaurantes() {
     if (err) { setError(err.message); setLoading(false); return }
     setRestaurants(data || [])
     setLoading(false)
+    // Quién aceptó las condiciones vigentes. Si la tabla aún no existe
+    // (SQL pendiente), simplemente no se muestra.
+    const { data: acep } = await supabase.from('condiciones_aceptaciones')
+      .select('restaurant_id, aceptado_en, ip').eq('version', CONDICIONES_VERSION)
+    setAceptaciones(Object.fromEntries((acep || []).map(a => [a.restaurant_id, a])))
   }
 
   function openCreateModal() {
@@ -696,6 +702,13 @@ export default function SuperAdminRestaurantes() {
                       {rest.permanencia_hasta >= hoyISO() ? 'Permanencia hasta' : 'Permanencia cumplida'} {fmtFechaES(rest.permanencia_hasta)}
                     </div>
                   )}
+                  {rest.permanencia_hasta && (aceptaciones[rest.id] ? (
+                    <div style={{ fontSize: 11, color: '#2ecc71', marginTop: 2 }} title={`Versión ${CONDICIONES_VERSION}${aceptaciones[rest.id].ip ? ` · IP ${aceptaciones[rest.id].ip}` : ''}`}>
+                      Condiciones aceptadas {new Date(aceptaciones[rest.id].aceptado_en).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11, color: '#e8a33a', marginTop: 2 }}>Condiciones sin aceptar</div>
+                  ))}
                   {rest.baja_en && (
                     <div style={{ fontSize: 11, color: '#e74c3c', marginTop: 2 }} title={rest.baja_motivo || ''}>
                       Baja {fmtFechaES(rest.baja_en)}{Number(rest.baja_penalizacion) > 0 ? ` · penalización ${fmtEur(rest.baja_penalizacion)}` : ''}
