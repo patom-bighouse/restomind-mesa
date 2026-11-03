@@ -74,6 +74,10 @@ const FAQS = [
     respuesta: 'Desde 35€/mes en el plan Básico. Los planes Profesional (89€/mes) y Premium (169€/mes) suman reservas, fidelización, agente de WhatsApp y más funciones, según lo que necesite tu restaurante.',
   },
   {
+    pregunta: '¿Hay permanencia?',
+    respuesta: 'Sí, una permanencia mínima de 3 meses desde el alta, que incluye el periodo de prueba si lo hay. Después es mes a mes y puedes darte de baja cuando quieras. Si te das de baja durante la prueba, no pagas nada; si lo haces antes de cumplir los 3 meses, se cobra el 50 % de las cuotas que falten.',
+  },
+  {
     pregunta: '¿Restomind gestiona reservas y pedidos por WhatsApp?',
     respuesta: 'Sí. En el plan Premium, un agente responde consultas, gestiona reservas y toma pedidos para llevar por WhatsApp, siempre confirmando antes de darlos por hechos.',
   },
@@ -221,6 +225,7 @@ const S = {
 
   pricing: { padding: '10px clamp(20px, 5vw, 60px) 100px', maxWidth: 1100, margin: '0 auto' },
   pricingGrid: { display: 'flex', flexWrap: 'wrap', gap: 22, justifyContent: 'center' },
+  pricingNota: { textAlign: 'center', fontSize: 14, color: C.textMuted, lineHeight: 1.6, marginTop: 26, maxWidth: 640, marginLeft: 'auto', marginRight: 'auto' },
   planCard: (variante) => ({
     flex: '1 1 270px', maxWidth: 310, borderRadius: 18, padding: '30px 28px',
     display: 'flex', flexDirection: 'column',
@@ -534,6 +539,10 @@ export default function Landing() {
             </div>
           ))}
         </div>
+        <p style={S.pricingNota}>
+          Precios por restaurante. Permanencia mínima de 3 meses desde el alta; después, mes a mes y sin compromiso.{' '}
+          <a href="/condiciones" style={{ color: C.textMuted }}>Ver condiciones</a>
+        </p>
       </section>
 
       <section style={S.faqSection}>
@@ -561,7 +570,7 @@ export default function Landing() {
         })}
       </script>
 
-      <footer style={S.footer}>© {new Date().getFullYear()} Restomind · <a href="/privacidad" style={{ color: C.textMuted }}>Política de privacidad</a></footer>
+      <footer style={S.footer}>© {new Date().getFullYear()} Restomind · <a href="/condiciones" style={{ color: C.textMuted }}>Condiciones del servicio</a> · <a href="/privacidad" style={{ color: C.textMuted }}>Política de privacidad</a></footer>
     </div>
   )
 }

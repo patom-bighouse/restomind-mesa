@@ -519,7 +519,9 @@ export default function CrmFicha({
                       <div><div style={{ fontSize: 11, color: C.muted }}>Nombre</div>{clienteInfo.nombre}</div>
                       <div><div style={{ fontSize: 11, color: C.muted }}>Plan</div>{planes.find(p => p.key === clienteInfo.plan)?.nombre || '—'}</div>
                       <div><div style={{ fontSize: 11, color: C.muted }}>Cuota actual</div>{fmtEuro(clienteInfo.cuota_actual)}</div>
-                      <div><div style={{ fontSize: 11, color: C.muted }}>Estado</div><span style={{ color: clienteInfo.activo ? C.ok : C.mal }}>{clienteInfo.activo ? 'Activo' : 'Suspendido'}</span></div>
+                      <div><div style={{ fontSize: 11, color: C.muted }}>Estado</div><span style={{ color: clienteInfo.activo ? C.ok : C.mal }}>{clienteInfo.activo ? 'Activo' : clienteInfo.baja_en ? `Baja ${fmtFecha(clienteInfo.baja_en)}` : 'Suspendido'}</span></div>
+                      {clienteInfo.permanencia_hasta && <div><div style={{ fontSize: 11, color: C.muted }}>Permanencia</div>{clienteInfo.permanencia_hasta >= hoy ? `Hasta ${fmtFecha(clienteInfo.permanencia_hasta)}` : 'Cumplida'}</div>}
+                      {Number(clienteInfo.baja_penalizacion) > 0 && <div><div style={{ fontSize: 11, color: C.muted }}>Penalización por baja</div>{fmtEuro(clienteInfo.baja_penalizacion)}</div>}
                       {clienteInfo.trial_termina_en && <div><div style={{ fontSize: 11, color: C.muted }}>Trial hasta</div>{fmtFecha(clienteInfo.trial_termina_en)}</div>}
                       {clienteInfo.precio_override_hasta && <div><div style={{ fontSize: 11, color: C.muted }}>Descuento</div>{fmtEuro(clienteInfo.precio_override)} hasta {fmtFecha(clienteInfo.precio_override_hasta)}</div>}
                     </div>

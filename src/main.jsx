@@ -5,6 +5,7 @@ import { supabase } from './lib/supabase'
 import AdminRestablecer from './pages/AdminRestablecer'
 import Landing from './pages/Landing'
 import Privacidad from './pages/Privacidad'
+import Condiciones from './pages/Condiciones'
 import Mesa from './pages/Mesa'
 import Camarero from './pages/Camarero'
 import Cocina from './pages/Cocina'
@@ -58,6 +59,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/admin/restablecer" element={<AdminRestablecer />} />
         <Route path="/" element={<Landing />} />
         <Route path="/privacidad" element={<Privacidad />} />
+        <Route path="/condiciones" element={<Condiciones />} />
         <Route path="/mesa/:token" element={<Mesa />} />
         <Route path="/camarero/:restaurantId" element={<GuardRestaurante><Camarero /></GuardRestaurante>} />
         <Route path="/cocina/:restaurantId" element={<GuardRestaurante><Cocina /></GuardRestaurante>} />
