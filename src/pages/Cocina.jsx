@@ -293,7 +293,7 @@ export default function Cocina() {
   async function loadOrders() {
     const { data, error: err } = await supabase
       .from('orders')
-      .select('id, table_id, estado, total, created_at, tipo, notas, metodo_entrega, tomado_por')
+      .select('id, table_id, estado, total, created_at, tipo, notas, metodo_entrega, tomado_por, cliente_nombre, cliente_telefono')
       .eq('restaurant_id', restaurantId)
       .in('estado', ['pendiente', 'preparando', 'listo'])
       .order('created_at', { ascending: true })
@@ -685,6 +685,17 @@ export default function Cocina() {
                   {order.tipo === 'mesa' && tableSessions[order.table_id] && (
                     <div style={{ fontSize: 11, color: '#5a9c7a' }}>
                       🟢 Sesión desde {formatHora(tableSessions[order.table_id].abierta_at)}
+                    </div>
+                  )}
+                  {/* Quién recoge el pedido (lo deja el agente de WhatsApp) */}
+                  {order.tipo === 'takeaway' && (order.cliente_nombre || order.cliente_telefono) && (
+                    <div style={{ fontSize: 13, color: '#e8c97a', marginTop: 2 }}>
+                      🙋 {order.cliente_nombre || 'Cliente'}
+                      {order.cliente_telefono && (
+                        <a href={`tel:${order.cliente_telefono}`} style={{ color: '#8a7560', marginLeft: 6, textDecoration: 'none' }}>
+                          📞 {order.cliente_telefono}
+                        </a>
+                      )}
                     </div>
                   )}
                   {order.tipo === 'takeaway' && tieneModulo('takeaway_delivery') && (
