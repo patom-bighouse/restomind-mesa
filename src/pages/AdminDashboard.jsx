@@ -276,7 +276,7 @@ export default function AdminDashboard() {
     const { from, to } = getRangeDates(range, customFrom, customTo)
     const { data, error: err } = await supabase
       .from('orders')
-      .select('id, table_id, table_session_id, estado, total, tipo, created_at, notas, preparando_at, listo_at, entregado_at, tomado_por')
+      .select('id, table_id, table_session_id, estado, total, tipo, created_at, notas, preparando_at, listo_at, entregado_at, tomado_por, cliente_nombre, cliente_telefono')
       .eq('restaurant_id', restaurantId)
       .gte('created_at', from.toISOString())
       .lt('created_at', to.toISOString())
@@ -555,6 +555,14 @@ export default function AdminDashboard() {
     return `Mesa ${t.numero} (${zonaCapitalizada})`
   }
 
+  // "Mesa 3 (Interior)" o, para takeaway, "Takeaway · Luis (677226644)":
+  // el nombre y el teléfono los guarda el agente de WhatsApp en el pedido.
+  function pedidoLabel(o) {
+    if (o.tipo === 'mesa') return mesaLabel(o.table_id)
+    const cliente = [o.cliente_nombre, o.cliente_telefono && `(${o.cliente_telefono})`].filter(Boolean).join(' ')
+    return cliente ? `Takeaway · ${cliente}` : 'Takeaway'
+  }
+
   // ---------- Filtros de los listados ----------
   const hayFiltroPedidos = !!(filtroPedidoMesa || filtroPedidoEstado || filtroPedidoBusqueda.trim() || filtroPedidoAtendidoPor)
   function limpiarFiltrosPedidos() {
@@ -573,7 +581,8 @@ export default function AdminDashboard() {
     if (filtroPedidoBusqueda.trim()) {
       const q = filtroPedidoBusqueda.trim().toLowerCase()
       const items = orderItemsMap[o.id] || []
-      if (!items.some(i => i.nombre_snapshot?.toLowerCase().includes(q))) return false
+      const coincideCliente = [o.cliente_nombre, o.cliente_telefono].some(v => v?.toLowerCase().includes(q))
+      if (!coincideCliente && !items.some(i => i.nombre_snapshot?.toLowerCase().includes(q))) return false
     }
     return true
   })
@@ -624,7 +633,7 @@ export default function AdminDashboard() {
         return [
           fecha.toLocaleDateString('es-ES'),
           fecha.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
-          o.tipo === 'mesa' ? mesaLabel(o.table_id) : 'Takeaway',
+          pedidoLabel(o),
           items,
           o.total,
           o.estado,
@@ -1094,7 +1103,7 @@ export default function AdminDashboard() {
                 <option value="entregado">Entregado</option>
                 <option value="cancelado">Cancelado</option>
               </select>
-              <input style={S.filterInput} type="text" placeholder="Buscar plato..." value={filtroPedidoBusqueda} onChange={e => setFiltroPedidoBusqueda(e.target.value)} />
+              <input style={S.filterInput} type="text" placeholder="Buscar plato o cliente..." value={filtroPedidoBusqueda} onChange={e => setFiltroPedidoBusqueda(e.target.value)} />
               <select style={S.filterSelect} value={filtroPedidoAtendidoPor} onChange={e => setFiltroPedidoAtendidoPor(e.target.value)}>
                 <option value="">Todos — cliente y camareros</option>
                 <option value="cliente">Solo autogestionados (cliente)</option>
@@ -1123,7 +1132,14 @@ export default function AdminDashboard() {
                     {ordersFiltrados.map(o => (
                       <tr key={o.id}>
                         <td style={S.td}>{new Date(o.created_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
-                        <td style={S.td}>{o.tipo === 'mesa' ? mesaLabel(o.table_id) : 'Takeaway'}</td>
+                        <td style={S.td}>
+                          {o.tipo === 'mesa' ? mesaLabel(o.table_id) : 'Takeaway'}
+                          {o.tipo === 'takeaway' && (o.cliente_nombre || o.cliente_telefono) && (
+                            <div style={{ fontSize: 12, color: '#8a7560', marginTop: 2 }}>
+                              🙋 {o.cliente_nombre || 'Cliente'}{o.cliente_telefono ? ` · ${o.cliente_telefono}` : ''}
+                            </div>
+                          )}
+                        </td>
                         <td style={S.td}>{(orderItemsMap[o.id] || []).map(i => `${i.cantidad}× ${i.nombre_snapshot}`).join(', ') || '—'}</td>
                         <td style={S.td}>{formatMoney(o.total, restaurant?.moneda)}</td>
                         <td style={S.td}><span style={S.estadoBadge(o.estado)}>{o.estado}</span></td>
@@ -1180,7 +1196,7 @@ export default function AdminDashboard() {
             {orders.map(o => (
               <tr key={o.id}>
                 <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{new Date(o.created_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
-                <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{o.tipo === 'mesa' ? mesaLabel(o.table_id) : 'Takeaway'}</td>
+                <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{pedidoLabel(o)}</td>
                 <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{(orderItemsMap[o.id] || []).map(i => `${i.cantidad}x ${i.nombre_snapshot}`).join(', ') || '—'}</td>
                 <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>{formatMoney(o.total, restaurant?.moneda)}</td>
                 <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{o.estado}</td>
