@@ -73,6 +73,9 @@ export default function AdminMenus() {
   const [horaInicio, setHoraInicio] = useState('')
   const [horaFin, setHoraFin] = useState('')
   const [diasSemana, setDiasSemana] = useState([])
+  // Aplicar también a los pedidos de WhatsApp: solo en menús sin zona
+  // (un pedido para llevar no tiene zona de mesa).
+  const [aplicaWhatsapp, setAplicaWhatsapp] = useState(false)
   const [adding, setAdding] = useState(false)
   const [editingMenuId, setEditingMenuId] = useState(null) // null = alta nueva
 
@@ -104,7 +107,7 @@ export default function AdminMenus() {
   async function loadMenus() {
     const { data, error: err } = await supabase
       .from('menus')
-      .select('id, nombre, zona, hora_inicio, hora_fin, dias_semana, activo, orden')
+      .select('id, nombre, zona, hora_inicio, hora_fin, dias_semana, activo, orden, aplica_whatsapp')
       .eq('restaurant_id', restaurantId)
       .order('orden')
     if (err) { setError(err.message); return }
@@ -132,11 +135,17 @@ export default function AdminMenus() {
     setHoraInicio(menu.hora_inicio ? menu.hora_inicio.slice(0, 5) : '')
     setHoraFin(menu.hora_fin ? menu.hora_fin.slice(0, 5) : '')
     setDiasSemana(menu.dias_semana || [])
+    setAplicaWhatsapp(!!menu.aplica_whatsapp)
   }
 
   function cancelarEdicion() {
     setEditingMenuId(null)
-    setNombre(''); setZona(''); setHoraInicio(''); setHoraFin(''); setDiasSemana([])
+    setNombre(''); setZona(''); setHoraInicio(''); setHoraFin(''); setDiasSemana([]); setAplicaWhatsapp(false)
+  }
+
+  function cambiarZona(valor) {
+    setZona(valor)
+    if (valor) setAplicaWhatsapp(false)
   }
 
   async function guardarMenu() {
@@ -149,6 +158,7 @@ export default function AdminMenus() {
       hora_inicio: horaInicio || null,
       hora_fin: horaFin || null,
       dias_semana: diasSemana.length ? diasSemana : null,
+      aplica_whatsapp: !zona && aplicaWhatsapp,
     }
     const { error: err } = editingMenuId
       ? await supabase.from('menus').update(payload).eq('id', editingMenuId)
@@ -156,7 +166,7 @@ export default function AdminMenus() {
     setAdding(false)
     if (err) { setError(err.message); return }
     setEditingMenuId(null)
-    setNombre(''); setZona(''); setHoraInicio(''); setHoraFin(''); setDiasSemana([])
+    setNombre(''); setZona(''); setHoraInicio(''); setHoraFin(''); setDiasSemana([]); setAplicaWhatsapp(false)
     await loadMenus()
   }
 
@@ -285,7 +295,7 @@ export default function AdminMenus() {
           </div>
           <div style={S.field}>
             <span style={S.label}>Zona</span>
-            <select style={S.select} value={zona} onChange={e => setZona(e.target.value)}>
+            <select style={S.select} value={zona} onChange={e => cambiarZona(e.target.value)}>
               <option value="">Cualquiera</option>
               {ZONAS.map(z => <option key={z} value={z}>{z.charAt(0).toUpperCase() + z.slice(1)}</option>)}
             </select>
@@ -308,6 +318,23 @@ export default function AdminMenus() {
               ))}
             </div>
           </div>
+          {tieneModulo('takeaway_delivery') && (
+            <div style={S.field}>
+              <span style={S.label}>WhatsApp</span>
+              <label
+                style={{ ...S.excluirLabel, fontSize: 12, opacity: zona ? 0.5 : 1, cursor: zona ? 'not-allowed' : 'pointer' }}
+                title={zona ? 'Solo menús con zona "Cualquiera": un pedido para llevar no tiene zona de mesa.' : 'Aplicar estos precios también a los pedidos de WhatsApp'}
+              >
+                <input
+                  type="checkbox"
+                  checked={!zona && aplicaWhatsapp}
+                  disabled={!!zona}
+                  onChange={e => setAplicaWhatsapp(e.target.checked)}
+                />
+                Aplicar también a pedidos de WhatsApp
+              </label>
+            </div>
+          )}
           <button style={S.addBtn} onClick={guardarMenu} disabled={adding || !nombre.trim()}>
             {adding ? 'Guardando...' : editingMenuId ? 'Guardar cambios' : '+ Añadir menú'}
           </button>
@@ -335,6 +362,7 @@ export default function AdminMenus() {
                     {m.zona && <span style={S.chip}>{m.zona.charAt(0).toUpperCase() + m.zona.slice(1)}</span>}
                     {franjaLabel(m) && <span style={S.chip}>{franjaLabel(m)}</span>}
                     {diasLabel(m) && <span style={S.chip}>{diasLabel(m)}</span>}
+                    {m.aplica_whatsapp && tieneModulo('takeaway_delivery') && <span style={S.chip}>📱 WhatsApp</span>}
                     {!m.zona && !franjaLabel(m) && !diasLabel(m) && <span style={{ color: '#555' }}>Siempre</span>}
                   </td>
                   <td style={{ ...S.td, display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
