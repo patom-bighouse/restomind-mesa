@@ -29,6 +29,12 @@ export function hoyMadrid() {
   return fechaISOMadrid()
 }
 
+// 'HH:MM' en España de un instante (Date o texto ISO de la base de datos).
+export function horaMadrid(instante) {
+  const m = partesMadrid(new Date(instante)).minutos
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+}
+
 // Suma días (o años con sumarAnios) a una fecha 'YYYY-MM-DD' sin pasar por
 // ninguna zona horaria.
 export function sumarDiasISO(fechaISO, dias) {

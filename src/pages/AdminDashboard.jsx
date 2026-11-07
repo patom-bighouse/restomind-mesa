@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/money'
 import { useRestaurantModulos } from '../lib/modulos'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { fechaISOMadrid } from '../lib/fechas'
+import { fechaISOMadrid, horaMadrid } from '../lib/fechas'
 
 const S = {
   app: { minHeight: '100vh', background: '#111', color: '#f0e8d8', fontFamily: "'Inter', sans-serif" },
@@ -277,7 +277,7 @@ export default function AdminDashboard() {
     const { from, to } = getRangeDates(range, customFrom, customTo)
     const { data, error: err } = await supabase
       .from('orders')
-      .select('id, table_id, table_session_id, estado, total, tipo, created_at, notas, preparando_at, listo_at, entregado_at, tomado_por, cliente_nombre, cliente_telefono')
+      .select('id, table_id, table_session_id, estado, total, tipo, created_at, notas, preparando_at, listo_at, entregado_at, tomado_por, cliente_nombre, cliente_telefono, hora_recogida')
       .eq('restaurant_id', restaurantId)
       .gte('created_at', from.toISOString())
       .lt('created_at', to.toISOString())
@@ -556,12 +556,12 @@ export default function AdminDashboard() {
     return `Mesa ${t.numero} (${zonaCapitalizada})`
   }
 
-  // "Mesa 3 (Interior)" o, para takeaway, "Takeaway · Luis (677226644)":
-  // el nombre y el teléfono los guarda el agente de WhatsApp en el pedido.
+  // "Mesa 3 (Interior)" o, para takeaway, "Takeaway · Luis (677226644) ·
+  // recoge 21:30": nombre, teléfono y hora los guarda el agente de WhatsApp.
   function pedidoLabel(o) {
     if (o.tipo === 'mesa') return mesaLabel(o.table_id)
     const cliente = [o.cliente_nombre, o.cliente_telefono && `(${o.cliente_telefono})`].filter(Boolean).join(' ')
-    return cliente ? `Takeaway · ${cliente}` : 'Takeaway'
+    return ['Takeaway', cliente, o.hora_recogida && `recoge ${horaMadrid(o.hora_recogida)}`].filter(Boolean).join(' · ')
   }
 
   // ---------- Filtros de los listados ----------
@@ -1138,6 +1138,11 @@ export default function AdminDashboard() {
                           {o.tipo === 'takeaway' && (o.cliente_nombre || o.cliente_telefono) && (
                             <div style={{ fontSize: 12, color: '#8a7560', marginTop: 2 }}>
                               🙋 {o.cliente_nombre || 'Cliente'}{o.cliente_telefono ? ` · ${o.cliente_telefono}` : ''}
+                            </div>
+                          )}
+                          {o.tipo === 'takeaway' && o.hora_recogida && (
+                            <div style={{ fontSize: 12, color: '#c4a85a', marginTop: 2 }}>
+                              🕐 Recoge a las {horaMadrid(o.hora_recogida)}
                             </div>
                           )}
                         </td>

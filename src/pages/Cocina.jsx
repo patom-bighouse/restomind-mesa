@@ -5,6 +5,7 @@ import { formatMoney } from '../lib/money'
 import { playNewOrderChime, playWaiterBell, unlockAudio } from '../lib/sound'
 import { useRestaurantModulos } from '../lib/modulos'
 import { ESTADOS_DELIVERY } from '../lib/delivery/DeliveryProvider'
+import { horaMadrid } from '../lib/fechas'
 
 const ESTADOS = ['pendiente', 'preparando', 'listo', 'entregado']
 
@@ -79,6 +80,24 @@ function timeAgo(dateStr) {
   return `${Math.floor(diff / 3600)}h`
 }
 
+// Minutos de preparación de un takeaway por defecto: Cocina lo coloca en
+// la lista cuando hay que empezar a prepararlo (hora de recogida - esto).
+// Cada restaurante puede ajustarlo con config.takeaway_minutos_preparacion.
+const MINUTOS_PREPARACION_TAKEAWAY = 20
+
+// "Recoge a las 21:30 · en 25 min", con color según lo que falta: dorado,
+// ámbar a 15 min o menos, rojo si ya pasó la hora.
+function estadoRecogida(horaRecogida, ahora) {
+  const diff = Math.round((new Date(horaRecogida).getTime() - ahora) / 60000)
+  const duracion = m => (m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}` : `${m} min`)
+  let texto
+  if (diff > 0) texto = `en ${duracion(diff)}`
+  else if (diff === 0) texto = 'ahora'
+  else texto = `hace ${duracion(-diff)}`
+  const color = diff < 0 ? '#e74c3c' : diff <= 15 ? '#f39c12' : '#e8c97a'
+  return { hora: horaMadrid(horaRecogida), texto, color }
+}
+
 function formatHora(dateStr) {
   return new Date(dateStr).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
 }
@@ -106,6 +125,9 @@ export default function Cocina() {
   const [menuItemSector, setMenuItemSector] = useState({}) // menu_item_id -> sector_cocina_id
   const [activeSector, setActiveSector] = useState('todos')
   const [sectorConfirmaciones, setSectorConfirmaciones] = useState({}) // order_id -> [{sector_cocina_id, confirmado_preparando, confirmado_listo}]
+  const [minutosPreparacionTakeaway, setMinutosPreparacionTakeaway] = useState(MINUTOS_PREPARACION_TAKEAWAY)
+  // Reloj de la pantalla: refresca cada 30 s los "en 25 min" de recogida.
+  const [ahora, setAhora] = useState(Date.now())
 
   async function loadRestaurant() {
     const { data } = await supabase
@@ -114,6 +136,8 @@ export default function Cocina() {
       .eq('id', restaurantId)
       .single()
     if (data?.moneda) setMoneda(data.moneda)
+    const minutosPrep = Number(data?.config?.takeaway_minutos_preparacion)
+    if (minutosPrep > 0) setMinutosPreparacionTakeaway(minutosPrep)
     setSectoresCocinaActivo(data?.config?.sectores_cocina_activo || false)
     if (data?.config?.sectores_cocina_activo) {
       await loadSectores()
@@ -293,7 +317,7 @@ export default function Cocina() {
   async function loadOrders() {
     const { data, error: err } = await supabase
       .from('orders')
-      .select('id, table_id, estado, total, created_at, tipo, notas, metodo_entrega, tomado_por, cliente_nombre, cliente_telefono')
+      .select('id, table_id, estado, total, created_at, tipo, notas, metodo_entrega, tomado_por, cliente_nombre, cliente_telefono, hora_recogida')
       .eq('restaurant_id', restaurantId)
       .in('estado', ['pendiente', 'preparando', 'listo'])
       .order('created_at', { ascending: true })
@@ -305,6 +329,11 @@ export default function Cocina() {
       await loadOrderDeliveries((data || []).filter(o => o.tipo === 'takeaway').map(o => o.id))
     }
   }
+
+  useEffect(() => {
+    const t = setInterval(() => setAhora(Date.now()), 30000)
+    return () => clearInterval(t)
+  }, [])
 
   useEffect(() => {
     // Desbloquea el audio con la primera interacción real del usuario,
@@ -558,7 +587,16 @@ export default function Cocina() {
     navigate('/admin/login')
   }
 
-  const byTab = orders.filter(o => o.estado === activeTab)
+  // Orden de la lista: los pedidos de mesa, por hora de llegada; los
+  // takeaway con hora de recogida, por cuándo hay que empezar a
+  // prepararlos (recogida - minutos de preparación). Así un pedido hecho a
+  // las 19:00 para recoger a las 21:30 no se adelanta a las mesas.
+  const momentoOrden = o => (o.tipo === 'takeaway' && o.hora_recogida)
+    ? new Date(o.hora_recogida).getTime() - minutosPreparacionTakeaway * 60000
+    : new Date(o.created_at).getTime()
+  const byTab = orders
+    .filter(o => o.estado === activeTab)
+    .sort((a, b) => momentoOrden(a) - momentoOrden(b))
   const counts = { pendiente: 0, preparando: 0, listo: 0 }
   orders.forEach(o => { if (counts[o.estado] !== undefined) counts[o.estado]++ })
 
@@ -698,6 +736,14 @@ export default function Cocina() {
                       )}
                     </div>
                   )}
+                  {order.tipo === 'takeaway' && order.hora_recogida && (() => {
+                    const r = estadoRecogida(order.hora_recogida, ahora)
+                    return (
+                      <div style={{ fontSize: 14, fontWeight: 600, color: r.color, marginTop: 4 }}>
+                        🕐 Recoge a las {r.hora} · {r.texto}
+                      </div>
+                    )
+                  })()}
                   {order.tipo === 'takeaway' && tieneModulo('takeaway_delivery') && (
                     <div style={{ fontSize: 11, color: '#8a7560', marginTop: 2 }}>
                       {order.metodo_entrega === 'domicilio' ? '🛵 Entrega a domicilio' : '🥡 Retiro en el local'}
@@ -754,7 +800,8 @@ export default function Cocina() {
                 )}
               </div>
 
-              {order.notas && (
+              {/* La nota "Recogida a las HH:MM" que deja el agente sobra si ya se muestra la hora arriba. */}
+              {order.notas && !(order.hora_recogida && /^Recogida a las \d{1,2}:\d{2}$/.test(order.notas.trim())) && (
                 <div style={{ fontSize: 12, color: '#f1c40f', background: '#2a2010', border: '0.5px solid #4a3a10', borderRadius: 8, padding: '6px 10px' }}>
                   📋 {order.notas}
                 </div>
