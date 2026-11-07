@@ -6,6 +6,7 @@ import { resolverMenuActivo, aplicarPreciosMenu } from '../lib/menus'
 import { IDIOMAS_CARTA } from '../lib/idiomas'
 import { traducirAlergenos } from '../lib/alergenosI18n'
 import RestauranteSuspendido from '../components/RestauranteSuspendido'
+import { hoyMadrid } from '../lib/fechas'
 
 // Mismo catálogo fijo que AdminCarta.jsx (Reglamento UE 1169/2011).
 const ALERGENOS = [
@@ -608,7 +609,7 @@ export default function Mesa() {
       return
     }
     const vale = data[0]
-    const hoy = new Date().toISOString().slice(0, 10)
+    const hoy = hoyMadrid()
     if (!vale.activo) { setValeError('Ese vale ya no está activo.'); return }
     if (vale.fecha_vencimiento < hoy) { setValeError('Ese vale ya venció.'); return }
     if (vale.saldo_actual <= 0) { setValeError('Ese vale ya no tiene saldo.'); return }

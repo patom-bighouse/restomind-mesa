@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useRestaurantModulos } from '../lib/modulos'
+import { hoyMadrid } from '../lib/fechas'
 
 const ZONAS = ['sin preferencia', 'interior', 'terraza', 'privado', 'barra']
 
@@ -105,7 +106,7 @@ export default function AdminReservas() {
     return () => { supabase.removeChannel(channel) }
   }, [restaurantId])
 
-  const hoy = new Date().toISOString().slice(0, 10)
+  const hoy = hoyMadrid()
   const reservasFiltradas = reservas.filter(r => {
     if (filtro === 'proximas') return r.fecha >= hoy && r.estado !== 'cancelada'
     if (filtro === 'todas') return true

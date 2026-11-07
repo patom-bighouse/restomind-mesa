@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/money'
 import { useRestaurantModulos } from '../lib/modulos'
+import { hoyMadrid, sumarAniosISO } from '../lib/fechas'
 
 function generarCodigo() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // sin caracteres fáciles de confundir (0/O, 1/I)
@@ -12,9 +13,7 @@ function generarCodigo() {
 }
 
 function fechaEnUnAnio() {
-  const d = new Date()
-  d.setFullYear(d.getFullYear() + 1)
-  return d.toISOString().slice(0, 10)
+  return sumarAniosISO(hoyMadrid(), 1)
 }
 
 const S = {
@@ -116,7 +115,7 @@ export default function AdminVales() {
 
   function estadoVale(vale) {
     if (!vale.activo) return { label: 'Desactivado', color: '#666' }
-    if (vale.fecha_vencimiento < new Date().toISOString().slice(0, 10)) return { label: 'Caducado', color: '#e87a7a' }
+    if (vale.fecha_vencimiento < hoyMadrid()) return { label: 'Caducado', color: '#e87a7a' }
     if (vale.saldo_actual <= 0) return { label: 'Agotado', color: '#e8a03a' }
     return { label: 'Activo', color: '#2ecc71' }
   }

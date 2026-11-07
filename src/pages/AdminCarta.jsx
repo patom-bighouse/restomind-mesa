@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { formatMoney, getCurrencySymbol } from '../lib/money'
 import { useRestaurantModulos } from '../lib/modulos'
 import { IDIOMAS_CARTA } from '../lib/idiomas'
+import { hoyMadrid } from '../lib/fechas'
 
 // Los 14 alérgenos del Anexo II del Reglamento UE 1169/2011. Es un
 // catálogo fijo por ley, no configurable por restaurante — por eso vive
@@ -343,7 +344,7 @@ export default function AdminCarta() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `carta-${(restaurant?.nombre || 'restomind').toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().slice(0, 10)}.json`
+    a.download = `carta-${(restaurant?.nombre || 'restomind').toLowerCase().replace(/\s+/g, '-')}-${hoyMadrid()}.json`
     a.click()
     URL.revokeObjectURL(url)
   }

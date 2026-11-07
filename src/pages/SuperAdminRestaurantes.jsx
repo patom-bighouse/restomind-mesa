@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { isValidIban, formatIbanDisplay } from '../lib/iban'
 import { PENALIZACION_PCT, CONDICIONES_VERSION } from '../lib/condiciones'
+import { hoyMadrid, sumarDiasISO } from '../lib/fechas'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -46,7 +47,7 @@ const S = {
 const MOTIVOS_BAJA = ['Precio', 'No lo usa', 'Cerró el local', 'Se va a otra solución', 'Problemas con el servicio', 'Otro']
 
 const fmtFechaES = iso => new Date(iso + 'T00:00:00').toLocaleDateString('es-ES')
-const hoyISO = () => new Date().toISOString().slice(0, 10)
+const hoyISO = () => hoyMadrid()
 const fmtEur = n => `${Number(n || 0).toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}€`
 
 function slugify(text) {
@@ -179,9 +180,8 @@ export default function SuperAdminRestaurantes() {
     const { error: err } = await supabase.rpc('fn_iniciar_trial', { p_restaurant_id: editingId, p_dias: 14 })
     setGuardandoTrial(false)
     if (err) { setError(err.message); return }
-    const fecha = new Date()
-    fecha.setDate(fecha.getDate() + 14)
-    setTrialInfo(prev => ({ ...prev, trial_termina_en: fecha.toISOString().slice(0, 10) }))
+    // Igual que fn_iniciar_trial: hoy (España) + 14 días.
+    setTrialInfo(prev => ({ ...prev, trial_termina_en: sumarDiasISO(hoyMadrid(), 14) }))
     await loadRestaurants()
   }
 
@@ -207,9 +207,8 @@ export default function SuperAdminRestaurantes() {
     })
     setGuardandoTrial(false)
     if (err) { setError(err.message); return }
-    const fecha = new Date()
-    fecha.setDate(fecha.getDate() + dias)
-    setTrialInfo(prev => ({ ...prev, precio_override: precio, precio_override_hasta: fecha.toISOString().slice(0, 10) }))
+    // Igual que fn_aplicar_descuento: hoy (España) + días.
+    setTrialInfo(prev => ({ ...prev, precio_override: precio, precio_override_hasta: sumarDiasISO(hoyMadrid(), dias) }))
     setDescuentoPrecio('')
     await loadRestaurants()
   }

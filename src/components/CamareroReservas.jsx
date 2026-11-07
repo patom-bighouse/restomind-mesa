@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { hoyMadrid } from '../lib/fechas'
 
 const ZONAS = ['sin preferencia', 'interior', 'terraza', 'privado', 'barra']
 
@@ -62,7 +63,7 @@ export default function CamareroReservas({ camarero, restaurantId, onVolver }) {
     setReservas(data || [])
   }
 
-  const hoy = new Date().toISOString().slice(0, 10)
+  const hoy = hoyMadrid()
   const reservasFiltradas = reservas.filter(r => {
     if (filtro === 'proximas') return r.fecha >= hoy && r.estado !== 'cancelada'
     return true

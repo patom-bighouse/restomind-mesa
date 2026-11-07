@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useRestaurantModulos } from '../lib/modulos'
 import ConfigInformacion from '../components/ConfigInformacion'
+import { hoyMadrid } from '../lib/fechas'
 
 const DIAS = [
   { key: 'lunes',     label: 'Lunes' },
@@ -356,7 +357,7 @@ export default function AdminConfig() {
             <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 8 }}>Tu suscripción</div>
             <div style={{ fontSize: 14, color: '#f0e8d8', lineHeight: 1.7 }}>
               {restaurant.plan && <div>Plan <strong style={{ textTransform: 'capitalize' }}>{restaurant.plan}</strong></div>}
-              {restaurant.permanencia_hasta >= new Date().toISOString().slice(0, 10)
+              {restaurant.permanencia_hasta >= hoyMadrid()
                 ? <div>Permanencia mínima hasta el <strong>{new Date(restaurant.permanencia_hasta + 'T00:00:00').toLocaleDateString('es-ES')}</strong>. Después, mes a mes.</div>
                 : <div>Permanencia cumplida el {new Date(restaurant.permanencia_hasta + 'T00:00:00').toLocaleDateString('es-ES')}: ahora es mes a mes, sin compromiso.</div>}
             </div>
