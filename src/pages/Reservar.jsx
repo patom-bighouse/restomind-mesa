@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { hoyMadrid } from '../lib/fechas'
 
 const ZONAS = ['sin preferencia', 'interior', 'terraza', 'privado', 'barra']
 
@@ -58,7 +59,7 @@ export default function Reservar() {
     load()
   }, [restaurantId])
 
-  const hoy = new Date().toISOString().slice(0, 10)
+  const hoy = hoyMadrid()
   const puedeEnviar = nombre.trim() && telefono.trim() && fecha && hora && parseInt(personas, 10) > 0
 
   async function enviarReserva() {

@@ -8,6 +8,7 @@ import CamareroClientes from '../components/CamareroClientes'
 import CamareroReservas from '../components/CamareroReservas'
 import CamareroLimpieza from '../components/CamareroLimpieza'
 import CamareroCocina from '../components/CamareroCocina'
+import { hoyMadrid } from '../lib/fechas'
 
 const PERMISOS_IMPLEMENTADOS = ['pedidos', 'clientes', 'reservas', 'limpieza', 'cocina']
 const PERMISOS_LABEL = { pedidos: 'Pedidos', clientes: 'Clientes', reservas: 'Reservas', limpieza: 'Limpieza', cocina: 'Cocina' }
@@ -780,7 +781,7 @@ export default function Camarero() {
       return
     }
     const vale = data[0]
-    const hoy = new Date().toISOString().slice(0, 10)
+    const hoy = hoyMadrid()
     if (!vale.activo) { setValeError('Ese vale ya no está activo.'); return }
     if (vale.fecha_vencimiento < hoy) { setValeError('Ese vale ya venció.'); return }
     if (vale.saldo_actual <= 0) { setValeError('Ese vale ya no tiene saldo.'); return }

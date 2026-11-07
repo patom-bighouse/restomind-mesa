@@ -3,9 +3,7 @@
 // excepciones de precio/exclusión sobre la carta base. Sin ningún
 // menú configurado (o si ninguno encaja), se usa la carta normal.
 
-function minutosDesdeMedianoche(date) {
-  return date.getHours() * 60 + date.getMinutes()
-}
+import { partesMadrid } from './fechas'
 
 function horaAMinutos(horaStr) {
   const [h, m] = horaStr.split(':').map(Number)
@@ -32,11 +30,13 @@ function especificidad(menu) {
   return (menu.zona ? 1 : 0) + (menu.hora_inicio ? 1 : 0) + (menu.dias_semana?.length ? 1 : 0)
 }
 
+// Hora y día de la semana de España (no los del móvil del cliente), igual
+// que comprueba fn_registrar_pedido al guardar el pedido.
 export function resolverMenuActivo(menus, zona, ahora = new Date()) {
-  const minutosActuales = minutosDesdeMedianoche(ahora)
+  const { minutos: minutosActuales, dia } = partesMadrid(ahora)
   const candidatos = (menus || [])
     .filter(m => m.activo)
-    .filter(m => (!m.zona || m.zona === zona) && enFranjaHoraria(m, minutosActuales) && enDiaSemana(m, ahora.getDay()))
+    .filter(m => (!m.zona || m.zona === zona) && enFranjaHoraria(m, minutosActuales) && enDiaSemana(m, dia))
   if (!candidatos.length) return null
   candidatos.sort((a, b) => especificidad(b) - especificidad(a) || (a.orden - b.orden))
   return candidatos[0]

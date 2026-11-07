@@ -6,6 +6,7 @@ import { useRestaurantModulos } from '../lib/modulos'
 import { playWaiterBell, unlockAudio } from '../lib/sound'
 import CuentaMesa from '../components/CuentaMesa'
 import QRCode from 'qrcode'
+import { hoyMadrid } from '../lib/fechas'
 
 // Dominios reales de producción — si el panel se ve desde cualquier
 // otro host (preview de staging, localhost) seguimos usando ese mismo
@@ -254,7 +255,7 @@ export default function AdminMesas() {
   // "hay N reservas hoy en esta zona" — no se puede mostrar por mesa
   // puntual porque una reserva no queda atada a una mesa específica.
   async function loadReservasHoy() {
-    const hoy = new Date().toISOString().slice(0, 10)
+    const hoy = hoyMadrid()
     const { data } = await supabase
       .from('reservations')
       .select('zona, personas, hora')

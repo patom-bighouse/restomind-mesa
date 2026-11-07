@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/money'
 import { useRestaurantModulos } from '../lib/modulos'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { fechaISOMadrid } from '../lib/fechas'
 
 const S = {
   app: { minHeight: '100vh', background: '#111', color: '#f0e8d8', fontFamily: "'Inter', sans-serif" },
@@ -650,7 +651,7 @@ export default function AdminDashboard() {
     const a = document.createElement('a')
     const { from } = getRangeDates(range, customFrom, customTo)
     a.href = url
-    a.download = `pedidos_${restaurant?.nombre?.replace(/\s+/g, '_') || 'restomind'}_${from.toISOString().slice(0, 10)}.csv`
+    a.download = `pedidos_${restaurant?.nombre?.replace(/\s+/g, '_') || 'restomind'}_${fechaISOMadrid(from)}.csv`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
