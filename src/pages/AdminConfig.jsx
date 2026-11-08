@@ -91,6 +91,8 @@ export default function AdminConfig() {
   const [controlStockActivo, setControlStockActivo] = useState(false)
   const [envasesSostenibles, setEnvasesSostenibles] = useState(false)
   const [puntosPorEuro, setPuntosPorEuro] = useState(1)
+  // Última reserva por WhatsApp: minutos antes del cierre de cada franja.
+  const [reservasMinutosAntesCierre, setReservasMinutosAntesCierre] = useState(60)
   const [sectores, setSectores] = useState([])
   const [nuevoSectorNombre, setNuevoSectorNombre] = useState('')
   const [sectorError, setSectorError] = useState(null)
@@ -126,6 +128,7 @@ export default function AdminConfig() {
       setControlStockActivo(rest.config?.control_stock_activo || false)
       setEnvasesSostenibles(rest.config?.envases_sostenibles_takeaway || false)
       setPuntosPorEuro(rest.config?.puntos_por_euro ?? 1)
+      setReservasMinutosAntesCierre(rest.config?.reservas_minutos_antes_cierre ?? 60)
       // Init horario with defaults for any missing days
       const h = rest.config?.horario || {}
       const horarioCompleto = {}
@@ -283,7 +286,7 @@ export default function AdminConfig() {
           nombre: nombre.trim(),
           whatsapp: whatsapp.trim(),
           subdominio: subdominioLimpio || null,
-          config: { ...restaurant?.config, horario, umbral_margen_alerta: umbral, modo_pedidos: modoPedidos, sectores_cocina_activo: sectoresCocinaActivo, control_stock_activo: controlStockActivo, envases_sostenibles_takeaway: envasesSostenibles, puntos_por_euro: parseFloat(puntosPorEuro) || 1 },
+          config: { ...restaurant?.config, horario, umbral_margen_alerta: umbral, modo_pedidos: modoPedidos, sectores_cocina_activo: sectoresCocinaActivo, control_stock_activo: controlStockActivo, envases_sostenibles_takeaway: envasesSostenibles, puntos_por_euro: parseFloat(puntosPorEuro) || 1, reservas_minutos_antes_cierre: Math.max(0, parseInt(reservasMinutosAntesCierre, 10) || 0) },
           modo_cocina: modoCocina,
           minutos_limite_agrupado: minutos,
         })
@@ -664,6 +667,21 @@ export default function AdminConfig() {
 
         {/* Horarios */}
         <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 16 }}>Horarios de apertura</div>
+
+        {tieneModulo('reservas') && (
+          <div style={{ ...S.minutosRow, marginTop: 0, marginBottom: 16 }}>
+            <span style={{ fontSize: 13, color: '#8a7560' }}>Última reserva</span>
+            <input
+              style={S.minutosInput}
+              type="number"
+              min="0"
+              step="5"
+              value={reservasMinutosAntesCierre}
+              onChange={e => setReservasMinutosAntesCierre(e.target.value)}
+            />
+            <span style={{ fontSize: 13, color: '#8a7560' }}>minutos antes del cierre de cada turno, en las reservas por WhatsApp (0 = hasta el cierre)</span>
+          </div>
+        )}
 
         {DIAS.map(({ key, label }) => {
           const dia = horario[key] || { ...DEFAULT_DIA }

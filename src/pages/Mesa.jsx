@@ -194,6 +194,12 @@ export default function Mesa() {
     setResenaEstado('enviada')
   }
 
+  // Menús cargados y menú aplicado en la carta: cada minuto se vuelve a
+  // resolver el menú activo y, si ha cambiado (p. ej. empieza el menú de
+  // las 20:00 con la mesa ya abierta), se recarga la carta. Así lo que ve
+  // el cliente coincide con lo que cobra fn_registrar_pedido.
+  const menusCargadosRef = useRef({ menus: null, zona: null, menuId: null })
+
   async function loadMenu(restaurantId, zona, idiomasCarta) {
     const { data: cats } = await supabase
       .from('categories')
@@ -219,6 +225,7 @@ export default function Mesa() {
       .select('id, nombre, zona, hora_inicio, hora_fin, dias_semana, activo, orden')
       .eq('restaurant_id', restaurantId)
     const menuActivo = resolverMenuActivo(menusData, zona)
+    menusCargadosRef.current = { menus: menusData, zona, menuId: menuActivo?.id || null }
     let itemsFinal = menuItems || []
     if (menuActivo) {
       const { data: precios } = await supabase
@@ -446,6 +453,21 @@ export default function Mesa() {
 
     return () => { supabase.removeChannel(channel) }
   }, [table?.restaurant_id, table?.id])
+
+  // Cambio de menú por horario con la carta ya abierta (ver
+  // menusCargadosRef): sin peticiones salvo cuando cambia.
+  useEffect(() => {
+    if (!table?.restaurant_id) return
+    const interval = setInterval(() => {
+      const { menus, zona, menuId } = menusCargadosRef.current
+      if (!menus) return
+      const ahora = resolverMenuActivo(menus, zona)
+      if ((ahora?.id || null) !== menuId) {
+        loadMenu(table.restaurant_id, table.zona, restaurant?.config?.idiomas_carta)
+      }
+    }, 60000)
+    return () => clearInterval(interval)
+  }, [table?.restaurant_id, table?.zona, restaurant?.config?.idiomas_carta])
 
   // table_sessions ya no tiene una política de SELECT abierta para
   // anon (para que nadie pueda listar teléfono/nombre de otras mesas
