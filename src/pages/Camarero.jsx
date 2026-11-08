@@ -583,6 +583,21 @@ export default function Camarero() {
   }
 
   // ---------- Carta ----------
+  // Igual que en Mesa.jsx: cada minuto se vuelve a resolver el menú activo
+  // y, si ha cambiado por horario, se recarga la carta de la mesa abierta.
+  const menusCargadosRef = useRef({ menus: null, zona: null, menuId: null })
+
+  useEffect(() => {
+    if (!selectedTable) return
+    const interval = setInterval(() => {
+      const { menus, zona, menuId } = menusCargadosRef.current
+      if (!menus) return
+      const ahora = resolverMenuActivo(menus, zona)
+      if ((ahora?.id || null) !== menuId) loadMenu(zona)
+    }, 60000)
+    return () => clearInterval(interval)
+  }, [selectedTable?.id])
+
   async function loadMenu(zona) {
     const { data: cats } = await supabase
       .from('categories')
@@ -604,6 +619,7 @@ export default function Camarero() {
       .select('id, nombre, zona, hora_inicio, hora_fin, dias_semana, activo, orden')
       .eq('restaurant_id', restaurantId)
     const menuActivo = resolverMenuActivo(menusData, zona)
+    menusCargadosRef.current = { menus: menusData, zona, menuId: menuActivo?.id || null }
     let itemsFinal = menuItems || []
     if (menuActivo) {
       const { data: precios } = await supabase
