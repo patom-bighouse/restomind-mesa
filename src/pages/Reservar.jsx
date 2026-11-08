@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { hoyMadrid } from '../lib/fechas'
+import { horasReserva } from '../lib/horarioReservas'
 
 const ZONAS = ['sin preferencia', 'interior', 'terraza', 'privado', 'barra']
 
@@ -15,6 +16,7 @@ const S = {
   input: { width: '100%', background: '#221c14', border: '0.5px solid #3a2e20', borderRadius: 10, padding: '12px 14px', fontSize: 14, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', boxSizing: 'border-box' },
   row: { display: 'flex', gap: 12 },
   submitBtn: (disabled) => ({ width: '100%', background: disabled ? '#5a4a2a' : '#e8c97a', color: disabled ? '#8a7560' : '#1a1410', border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 500, fontFamily: "'Inter', sans-serif", cursor: disabled ? 'not-allowed' : 'pointer', marginTop: 8 }),
+  aviso: { fontSize: 12, color: '#e8a87a', marginTop: 6 },
   error: { background: '#2a1410', border: '0.5px solid #6a2e20', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#e87a7a', marginBottom: 16 },
   center: { textAlign: 'center', padding: '40px 0' },
   big: { fontSize: 40, marginBottom: 14 },
@@ -47,7 +49,7 @@ export default function Reservar() {
 
   useEffect(() => {
     async function load() {
-      const { data, error: err } = await supabase.from('restaurants').select('nombre').eq('id', restaurantId).single()
+      const { data, error: err } = await supabase.from('restaurants').select('nombre, config').eq('id', restaurantId).single()
       if (err || !data) { setError('No encontramos este restaurante.'); setLoading(false); return }
       setRestaurant(data)
       // Solo devuelve algo si el restaurante tiene el módulo de información
@@ -60,7 +62,18 @@ export default function Reservar() {
   }, [restaurantId])
 
   const hoy = hoyMadrid()
-  const puedeEnviar = nombre.trim() && telefono.trim() && fecha && hora && parseInt(personas, 10) > 0
+  // Horas válidas del día elegido según el horario del restaurante (null si
+  // no tiene horario: entonces la hora es libre). La base de datos lo vuelve
+  // a comprobar al guardar.
+  const disponibles = horasReserva(restaurant?.config, fecha)
+  const horaValida = !disponibles || disponibles.horas.includes(hora)
+  const puedeEnviar = nombre.trim() && telefono.trim() && fecha && hora && horaValida && parseInt(personas, 10) > 0
+
+  function cambiarFecha(nuevaFecha) {
+    setFecha(nuevaFecha)
+    const d = horasReserva(restaurant?.config, nuevaFecha)
+    if (d && !d.horas.includes(hora)) setHora('')
+  }
 
   async function enviarReserva() {
     if (!puedeEnviar) return
@@ -135,13 +148,25 @@ export default function Reservar() {
         <div style={{ ...S.row, ...S.field }}>
           <div style={{ flex: 1 }}>
             <label style={S.label}>Fecha</label>
-            <input style={S.input} type="date" value={fecha} min={hoy} onChange={e => setFecha(e.target.value)} />
+            <input style={S.input} type="date" value={fecha} min={hoy} onChange={e => cambiarFecha(e.target.value)} />
           </div>
           <div style={{ flex: 1 }}>
             <label style={S.label}>Hora</label>
-            <input style={S.input} type="time" value={hora} onChange={e => setHora(e.target.value)} />
+            {disponibles === null && !restaurant?.config?.horario ? (
+              <input style={S.input} type="time" value={hora} onChange={e => setHora(e.target.value)} />
+            ) : (
+              <select style={S.input} value={hora} onChange={e => setHora(e.target.value)} disabled={!fecha || disponibles?.horas.length === 0}>
+                <option value="">{!fecha ? 'Elige la fecha' : disponibles?.horas.length ? 'Elige la hora' : 'Sin horas'}</option>
+                {disponibles?.horas.map(h => <option key={h} value={h}>{h}</option>)}
+              </select>
+            )}
           </div>
         </div>
+        {disponibles && disponibles.horas.length === 0 && (
+          <div style={{ ...S.aviso, marginTop: -8, marginBottom: 16 }}>
+            {disponibles.cerrado ? 'El restaurante está cerrado ese día. Elige otra fecha.' : 'Ese día ya no quedan horas para reservar. Elige otra fecha.'}
+          </div>
+        )}
         <div style={{ ...S.row, ...S.field }}>
           <div style={{ flex: 1 }}>
             <label style={S.label}>Personas</label>

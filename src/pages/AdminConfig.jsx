@@ -93,6 +93,7 @@ export default function AdminConfig() {
   const [puntosPorEuro, setPuntosPorEuro] = useState(1)
   // Última reserva por WhatsApp: minutos antes del cierre de cada franja.
   const [reservasMinutosAntesCierre, setReservasMinutosAntesCierre] = useState(60)
+  const [takeawayMinutosAntesCierre, setTakeawayMinutosAntesCierre] = useState(0)
   const [sectores, setSectores] = useState([])
   const [nuevoSectorNombre, setNuevoSectorNombre] = useState('')
   const [sectorError, setSectorError] = useState(null)
@@ -129,6 +130,7 @@ export default function AdminConfig() {
       setEnvasesSostenibles(rest.config?.envases_sostenibles_takeaway || false)
       setPuntosPorEuro(rest.config?.puntos_por_euro ?? 1)
       setReservasMinutosAntesCierre(rest.config?.reservas_minutos_antes_cierre ?? 60)
+      setTakeawayMinutosAntesCierre(rest.config?.takeaway_minutos_antes_cierre ?? 0)
       // Init horario with defaults for any missing days
       const h = rest.config?.horario || {}
       const horarioCompleto = {}
@@ -286,7 +288,7 @@ export default function AdminConfig() {
           nombre: nombre.trim(),
           whatsapp: whatsapp.trim(),
           subdominio: subdominioLimpio || null,
-          config: { ...restaurant?.config, horario, umbral_margen_alerta: umbral, modo_pedidos: modoPedidos, sectores_cocina_activo: sectoresCocinaActivo, control_stock_activo: controlStockActivo, envases_sostenibles_takeaway: envasesSostenibles, puntos_por_euro: parseFloat(puntosPorEuro) || 1, reservas_minutos_antes_cierre: Math.max(0, parseInt(reservasMinutosAntesCierre, 10) || 0) },
+          config: { ...restaurant?.config, horario, umbral_margen_alerta: umbral, modo_pedidos: modoPedidos, sectores_cocina_activo: sectoresCocinaActivo, control_stock_activo: controlStockActivo, envases_sostenibles_takeaway: envasesSostenibles, puntos_por_euro: parseFloat(puntosPorEuro) || 1, reservas_minutos_antes_cierre: Math.max(0, parseInt(reservasMinutosAntesCierre, 10) || 0), takeaway_minutos_antes_cierre: Math.max(0, parseInt(takeawayMinutosAntesCierre, 10) || 0) },
           modo_cocina: modoCocina,
           minutos_limite_agrupado: minutos,
         })
@@ -679,7 +681,22 @@ export default function AdminConfig() {
               value={reservasMinutosAntesCierre}
               onChange={e => setReservasMinutosAntesCierre(e.target.value)}
             />
-            <span style={{ fontSize: 13, color: '#8a7560' }}>minutos antes del cierre de cada turno, en las reservas por WhatsApp (0 = hasta el cierre)</span>
+            <span style={{ fontSize: 13, color: '#8a7560' }}>minutos antes del cierre de cada turno, en las reservas por WhatsApp y por la web (0 = hasta el cierre)</span>
+          </div>
+        )}
+
+        {tieneModulo('takeaway_delivery') && (
+          <div style={{ ...S.minutosRow, marginTop: 0, marginBottom: 16 }}>
+            <span style={{ fontSize: 13, color: '#8a7560' }}>Última recogida</span>
+            <input
+              style={S.minutosInput}
+              type="number"
+              min="0"
+              step="5"
+              value={takeawayMinutosAntesCierre}
+              onChange={e => setTakeawayMinutosAntesCierre(e.target.value)}
+            />
+            <span style={{ fontSize: 13, color: '#8a7560' }}>minutos antes del cierre de cada turno, en los pedidos para llevar por WhatsApp (0 = hasta el cierre)</span>
           </div>
         )}
 
