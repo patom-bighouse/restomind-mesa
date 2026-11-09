@@ -94,6 +94,8 @@ export default function AdminConfig() {
   // Última reserva por WhatsApp: minutos antes del cierre de cada franja.
   const [reservasMinutosAntesCierre, setReservasMinutosAntesCierre] = useState(60)
   const [takeawayMinutosAntesCierre, setTakeawayMinutosAntesCierre] = useState(0)
+  const [reservasMaxPersonas, setReservasMaxPersonas] = useState('')
+  const [telefonoReservas, setTelefonoReservas] = useState('')
   const [sectores, setSectores] = useState([])
   const [nuevoSectorNombre, setNuevoSectorNombre] = useState('')
   const [sectorError, setSectorError] = useState(null)
@@ -131,6 +133,8 @@ export default function AdminConfig() {
       setPuntosPorEuro(rest.config?.puntos_por_euro ?? 1)
       setReservasMinutosAntesCierre(rest.config?.reservas_minutos_antes_cierre ?? 60)
       setTakeawayMinutosAntesCierre(rest.config?.takeaway_minutos_antes_cierre ?? 0)
+      setReservasMaxPersonas(rest.config?.reservas_max_personas ?? '')
+      setTelefonoReservas(rest.config?.telefono_reservas ?? '')
       // Init horario with defaults for any missing days
       const h = rest.config?.horario || {}
       const horarioCompleto = {}
@@ -288,7 +292,7 @@ export default function AdminConfig() {
           nombre: nombre.trim(),
           whatsapp: whatsapp.trim(),
           subdominio: subdominioLimpio || null,
-          config: { ...restaurant?.config, horario, umbral_margen_alerta: umbral, modo_pedidos: modoPedidos, sectores_cocina_activo: sectoresCocinaActivo, control_stock_activo: controlStockActivo, envases_sostenibles_takeaway: envasesSostenibles, puntos_por_euro: parseFloat(puntosPorEuro) || 1, reservas_minutos_antes_cierre: Math.max(0, parseInt(reservasMinutosAntesCierre, 10) || 0), takeaway_minutos_antes_cierre: Math.max(0, parseInt(takeawayMinutosAntesCierre, 10) || 0) },
+          config: { ...restaurant?.config, horario, umbral_margen_alerta: umbral, modo_pedidos: modoPedidos, sectores_cocina_activo: sectoresCocinaActivo, control_stock_activo: controlStockActivo, envases_sostenibles_takeaway: envasesSostenibles, puntos_por_euro: parseFloat(puntosPorEuro) || 1, reservas_minutos_antes_cierre: Math.max(0, parseInt(reservasMinutosAntesCierre, 10) || 0), takeaway_minutos_antes_cierre: Math.max(0, parseInt(takeawayMinutosAntesCierre, 10) || 0), reservas_max_personas: parseInt(reservasMaxPersonas, 10) > 0 ? parseInt(reservasMaxPersonas, 10) : null, telefono_reservas: telefonoReservas.trim() || null },
           modo_cocina: modoCocina,
           minutos_limite_agrupado: minutos,
         })
@@ -682,6 +686,34 @@ export default function AdminConfig() {
               onChange={e => setReservasMinutosAntesCierre(e.target.value)}
             />
             <span style={{ fontSize: 13, color: '#8a7560' }}>minutos antes del cierre de cada turno, en las reservas por WhatsApp y por la web (0 = hasta el cierre)</span>
+          </div>
+        )}
+
+        {tieneModulo('reservas') && (
+          <div style={{ ...S.minutosRow, marginTop: 0, marginBottom: 16 }}>
+            <span style={{ fontSize: 13, color: '#8a7560' }}>Grupos de más de</span>
+            <input
+              style={S.minutosInput}
+              type="number"
+              min="1"
+              value={reservasMaxPersonas}
+              placeholder="auto"
+              onChange={e => setReservasMaxPersonas(e.target.value)}
+            />
+            <span style={{ fontSize: 13, color: '#8a7560' }}>personas: por WhatsApp se les pide que llamen (vacío = según la mesa más grande)</span>
+          </div>
+        )}
+        {tieneModulo('reservas') && (
+          <div style={{ ...S.minutosRow, marginTop: 0, marginBottom: 16 }}>
+            <span style={{ fontSize: 13, color: '#8a7560' }}>Teléfono para grupos y cambios</span>
+            <input
+              style={{ ...S.minutosInput, width: 150, textAlign: 'left' }}
+              type="tel"
+              value={telefonoReservas}
+              placeholder="954 000 000"
+              onChange={e => setTelefonoReservas(e.target.value)}
+            />
+            <span style={{ fontSize: 13, color: '#8a7560' }}>el agente lo da a grupos grandes y a quien no encuentre su reserva</span>
           </div>
         )}
 
