@@ -106,8 +106,9 @@ export default function SuperAdminRestaurantes() {
   const [editTab, setEditTab] = useState('datos') // 'datos' | 'facturacion' | 'modulos'
   const [planes, setPlanes] = useState([])
   const [aplicandoPlan, setAplicandoPlan] = useState(null) // key del plan que se está aplicando, o null
-  const [trialInfo, setTrialInfo] = useState({ trial_termina_en: null, precio_override: null, precio_override_hasta: null, permanencia_hasta: null })
+  const [trialInfo, setTrialInfo] = useState({ plan: null, precio_contrato: null, trial_termina_en: null, precio_override: null, precio_override_hasta: null, permanencia_hasta: null })
   const [permanenciaEdit, setPermanenciaEdit] = useState('')
+  const [precioContratoEdit, setPrecioContratoEdit] = useState('')
   const [aceptaciones, setAceptaciones] = useState({}) // restaurant_id → aceptación de la versión vigente
   // Desactivar: elegir entre suspender (temporal) o dar de baja (se va).
   const [bajaModal, setBajaModal] = useState(null) // null | { rest, paso: 'elegir' | 'baja', calc, motivo, detalle, cobrar, guardando }
@@ -154,7 +155,7 @@ export default function SuperAdminRestaurantes() {
   }
 
   async function loadPlanes() {
-    const { data } = await supabase.from('planes').select('key, nombre, descripcion, orden').order('orden')
+    const { data } = await supabase.from('planes').select('key, nombre, descripcion, orden, precio').order('orden')
     setPlanes(data || [])
   }
 
@@ -171,7 +172,14 @@ export default function SuperAdminRestaurantes() {
       .eq('restaurant_id', editingId)
       .eq('activo', true)
     setModulosActivos(new Set((modActivos || []).map(m => m.modulo_key)))
+    // fn_asignar_plan fija el precio de contrato si el plan ha cambiado.
+    const { data: rest } = await supabase.from('restaurants').select('plan, precio_contrato').eq('id', editingId).maybeSingle()
+    if (rest) {
+      setTrialInfo(prev => ({ ...prev, plan: rest.plan, precio_contrato: rest.precio_contrato ?? null }))
+      setPrecioContratoEdit(rest.precio_contrato != null ? String(rest.precio_contrato) : '')
+    }
     setAplicandoPlan(null)
+    await loadRestaurants()
   }
 
   async function iniciarTrial() {
@@ -235,6 +243,25 @@ export default function SuperAdminRestaurantes() {
     await loadRestaurants()
   }
 
+  // p_precio null = pasarlo a la tarifa actual de su plan.
+  async function guardarPrecioContrato(aTarifa) {
+    if (!editingId) return
+    let precio = null
+    if (!aTarifa) {
+      precio = parseFloat(String(precioContratoEdit).replace(',', '.'))
+      if (isNaN(precio) || precio < 0) { setError('Indica un precio de contrato válido.'); return }
+    }
+    setGuardandoTrial(true)
+    const { data: nuevo, error: err } = await supabase.rpc('fn_actualizar_precio_contrato', {
+      p_restaurant_id: editingId, p_precio: precio,
+    })
+    setGuardandoTrial(false)
+    if (err) { setError(err.message); return }
+    setTrialInfo(prev => ({ ...prev, precio_contrato: nuevo }))
+    setPrecioContratoEdit(nuevo != null ? String(nuevo) : '')
+    await loadRestaurants()
+  }
+
   async function checkAuth() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { navigate('/superadmin/login'); return }
@@ -246,7 +273,7 @@ export default function SuperAdminRestaurantes() {
   async function loadRestaurants() {
     const { data, error: err } = await supabase
       .from('restaurants')
-      .select('id, nombre, slug, whatsapp, whatsapp_phone_number_id, activo, created_at, user_id, pais, moneda, direccion, email_dueno, plan, trial_termina_en, precio_override, precio_override_hasta, permanencia_hasta, baja_en, baja_motivo, baja_penalizacion')
+      .select('id, nombre, slug, whatsapp, whatsapp_phone_number_id, activo, created_at, user_id, pais, moneda, direccion, email_dueno, plan, precio_contrato, trial_termina_en, precio_override, precio_override_hasta, permanencia_hasta, baja_en, baja_motivo, baja_penalizacion')
       .order('created_at', { ascending: false })
     if (err) { setError(err.message); setLoading(false); return }
     setRestaurants(data || [])
@@ -290,12 +317,15 @@ export default function SuperAdminRestaurantes() {
       .eq('activo', true)
     setModulosActivos(new Set((modActivos || []).map(m => m.modulo_key)))
     setTrialInfo({
+      plan: rest.plan || null,
+      precio_contrato: rest.precio_contrato ?? null,
       trial_termina_en: rest.trial_termina_en || null,
       precio_override: rest.precio_override ?? null,
       precio_override_hasta: rest.precio_override_hasta || null,
       permanencia_hasta: rest.permanencia_hasta || null,
     })
     setPermanenciaEdit(rest.permanencia_hasta || '')
+    setPrecioContratoEdit(rest.precio_contrato != null ? String(rest.precio_contrato) : '')
     setDescuentoPrecio('')
     setDescuentoDias('30')
     setEditTab('datos')
@@ -686,6 +716,15 @@ export default function SuperAdminRestaurantes() {
                 <td style={S.td}>{rest.whatsapp || '—'}</td>
                 <td style={S.td}>
                   <div style={{ fontSize: 13, color: '#f0f0f0', textTransform: 'capitalize' }}>{rest.plan || '—'}</div>
+                  {rest.precio_contrato != null && (() => {
+                    const tarifa = planes.find(p => p.key === rest.plan)?.precio
+                    const distinta = tarifa != null && Number(tarifa) !== Number(rest.precio_contrato)
+                    return (
+                      <div style={{ fontSize: 11, color: '#8a8a8a', marginTop: 2 }}>
+                        {fmtEur(rest.precio_contrato)}/mes{distinta ? ` · tarifa actual ${fmtEur(tarifa)}` : ''}
+                      </div>
+                    )
+                  })()}
                   {rest.trial_termina_en && (
                     <div style={{ fontSize: 11, color: new Date(rest.trial_termina_en) < new Date() ? '#e74c3c' : '#e8c97a', marginTop: 2 }}>
                       Trial hasta {new Date(rest.trial_termina_en + 'T00:00:00').toLocaleDateString('es-ES')}
@@ -837,6 +876,29 @@ export default function SuperAdminRestaurantes() {
                   <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '0.5px solid #2a2a2a' }}>
                     <div style={{ fontSize: 13, fontWeight: 500, color: '#e8c97a', marginBottom: 8 }}>Trial, descuentos y permanencia</div>
 
+                    {trialInfo.plan && (() => {
+                      const tarifa = planes.find(p => p.key === trialInfo.plan)?.precio
+                      const distinta = tarifa != null && Number(tarifa) !== Number(trialInfo.precio_contrato)
+                      const sinCambios = precioContratoEdit === (trialInfo.precio_contrato != null ? String(trialInfo.precio_contrato) : '')
+                      return (
+                        <div style={{ marginBottom: 10 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 12, color: '#8a8a8a' }}>Precio de contrato</span>
+                            <input style={{ ...S.input, width: 100 }} type="number" min="0" step="0.01" placeholder="€/mes" value={precioContratoEdit} onChange={e => setPrecioContratoEdit(e.target.value)} />
+                            <button style={{ ...S.linkBtn, cursor: 'pointer' }} disabled={guardandoTrial || sinCambios || precioContratoEdit === ''} onClick={() => guardarPrecioContrato(false)}>Guardar</button>
+                            {distinta && (
+                              <button style={{ ...S.linkBtn, cursor: 'pointer' }} disabled={guardandoTrial} onClick={() => guardarPrecioContrato(true)}>Pasar a tarifa actual ({fmtEur(tarifa)})</button>
+                            )}
+                          </div>
+                          {distinta && (
+                            <div style={{ fontSize: 11, color: '#e8c97a', marginTop: 4 }}>
+                              {trialInfo.precio_contrato != null ? `Paga ${fmtEur(trialInfo.precio_contrato)}` : 'Sin precio de contrato'} · la tarifa actual del plan es {fmtEur(tarifa)}.
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
+
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
                       {trialInfo.trial_termina_en ? (
                         <>
@@ -871,7 +933,7 @@ export default function SuperAdminRestaurantes() {
                       <input style={{ ...S.input, width: 160 }} type="date" value={permanenciaEdit} onChange={e => setPermanenciaEdit(e.target.value)} />
                       <button style={{ ...S.linkBtn, cursor: 'pointer' }} disabled={guardandoTrial || permanenciaEdit === (trialInfo.permanencia_hasta || '')} onClick={guardarPermanencia}>Guardar</button>
                     </div>
-                    <div style={S.hint}>Esto no cobra ni descuenta nada solo — es para que sepas qué precio y hasta cuándo le corresponde a este restaurante quien lo facture a mano. La permanencia se pone sola al dar de alta (alta + 3 meses); vacía = sin permanencia.</div>
+                    <div style={S.hint}>Esto no cobra ni descuenta nada solo — es para que sepas qué precio y hasta cuándo le corresponde a este restaurante quien lo facture a mano. El precio de contrato se fija al aplicarle un plan y no cambia aunque cambie la tarifa del plan; el descuento, mientras dure, va por delante. La permanencia se pone sola al dar de alta (alta + 3 meses); vacía = sin permanencia.</div>
                   </div>
                 )}
                 {modalMode === 'edit' && planes.length > 0 && (

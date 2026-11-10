@@ -149,7 +149,7 @@ export default function CrmComisiones({ esAdmin, cuentas, clientesInfo, vendedor
         <div style={{ ...S.card, marginBottom: 20 }}>
           <div style={{ fontSize: 13, color: C.oro, fontWeight: 500, marginBottom: 6 }}>Generar comisiones del mes</div>
           <div style={{ fontSize: 12, color: C.texto2, marginBottom: 10, lineHeight: 1.5 }}>
-            Crea una comisión por cada cliente con vendedor que haya pagado ese mes (activo, sin trial, cuota mayor que 0) y no haya agotado sus cuotas. Se puede repetir sin duplicar. La cuota base es el descuento vigente al inicio del mes, si lo hay; si no, el precio del plan.
+            Crea una comisión por cada cliente con vendedor que haya pagado ese mes (activo, sin trial, cuota mayor que 0) y no haya agotado sus cuotas. Se puede repetir sin duplicar. La cuota base es el descuento vigente al inicio del mes, si lo hay; si no, el precio de contrato del restaurante.
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <input style={S.inputSm} type="month" value={mesGenerar} max={mesActual.slice(0, 7)} onChange={e => setMesGenerar(e.target.value)} />
