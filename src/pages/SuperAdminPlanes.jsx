@@ -26,6 +26,8 @@ const S = {
   td: { padding: '12px 14px', fontSize: 13, borderBottom: '0.5px solid #1a1a1a', verticalAlign: 'middle' },
   moduloNombre: { fontWeight: 500, color: '#f0f0f0' },
   moduloDesc: { fontSize: 11, color: '#666', marginTop: 2, maxWidth: 360 },
+  input: { width: '100%', boxSizing: 'border-box', background: '#0a0a0a', border: '0.5px solid #2a2a2a', borderRadius: 8, padding: '6px 10px', fontSize: 13, color: '#f0f0f0', fontFamily: "'Inter', sans-serif" },
+  guardado: { fontSize: 11, color: '#7ae8a0', marginTop: 6, minHeight: 14 },
   select: { background: '#0a0a0a', border: '0.5px solid #2a2a2a', borderRadius: 8, padding: '6px 10px', fontSize: 13, color: '#f0f0f0', fontFamily: "'Inter', sans-serif" },
 }
 
@@ -36,6 +38,9 @@ export default function SuperAdminPlanes() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [guardandoKey, setGuardandoKey] = useState(null)
+  // Lo que se está escribiendo en cada tarjeta: { [key]: { nombre, descripcion, precio } }
+  const [edicion, setEdicion] = useState({})
+  const [estadoPlan, setEstadoPlan] = useState({}) // key → 'guardando' | 'guardado'
 
   useEffect(() => { checkAuth() }, [])
 
@@ -53,6 +58,9 @@ export default function SuperAdminPlanes() {
       supabase.from('modulos').select('key, nombre, descripcion, requiere, plan').order('orden'),
     ])
     setPlanes(pl || [])
+    setEdicion(Object.fromEntries((pl || []).map(p => [p.key, {
+      nombre: p.nombre || '', descripcion: p.descripcion || '', precio: p.precio != null ? String(p.precio) : '',
+    }])))
     setModulos(mo || [])
     setLoading(false)
   }
@@ -66,6 +74,38 @@ export default function SuperAdminPlanes() {
     })
     setGuardandoKey(null)
     if (err) { setError(err.message); await loadTodo(); return }
+  }
+
+  function editar(key, campo, valor) {
+    setEdicion(prev => ({ ...prev, [key]: { ...prev[key], [campo]: valor } }))
+  }
+
+  // Se guarda al salir del campo, solo si ha cambiado. El precio nuevo vale
+  // para los restaurantes que se den de alta desde ahora: los que ya tienen
+  // el plan conservan su precio de contrato.
+  async function guardarPlan(key, campo) {
+    const plan = planes.find(p => p.key === key)
+    const valor = edicion[key]?.[campo] ?? ''
+    let nuevo
+    if (campo === 'precio') {
+      if (valor.trim() === '') nuevo = null
+      else {
+        nuevo = Math.round(parseFloat(valor.replace(',', '.')) * 100) / 100
+        if (isNaN(nuevo) || nuevo < 0) { setError('Indica un precio válido.'); editar(key, 'precio', plan.precio != null ? String(plan.precio) : ''); return }
+      }
+      if (nuevo === (plan.precio != null ? Number(plan.precio) : null)) return
+    } else {
+      nuevo = valor.trim()
+      if (campo === 'nombre' && !nuevo) { setError('El plan necesita un nombre.'); editar(key, 'nombre', plan.nombre); return }
+      if (nuevo === (plan[campo] || '')) return
+      if (campo === 'descripcion' && !nuevo) nuevo = null
+    }
+    setError(null)
+    setEstadoPlan(prev => ({ ...prev, [key]: 'guardando' }))
+    const { error: err } = await supabase.from('planes').update({ [campo]: nuevo }).eq('key', key)
+    if (err) { setError(err.message); setEstadoPlan(prev => ({ ...prev, [key]: null })); await loadTodo(); return }
+    setPlanes(prev => prev.map(p => p.key === key ? { ...p, [campo]: nuevo } : p))
+    setEstadoPlan(prev => ({ ...prev, [key]: 'guardado' }))
   }
 
   async function handleLogout() {
@@ -97,17 +137,33 @@ export default function SuperAdminPlanes() {
           Profesional y Básico también. Cambiar el plan de un módulo aquí no afecta a los restaurantes que
           ya lo tienen activado o desactivado — solo define a partir de qué plan se incluye de ahí en adelante.
         </div>
+        <div style={S.sectionHint}>
+          Nombre, precio y descripción se guardan al salir del campo y son los que ve la web pública. Un precio nuevo
+          vale para los restaurantes que se den de alta a partir de ahora: los que ya tienen el plan conservan su precio
+          de contrato, que se cambia desde su ficha en Restaurantes.
+        </div>
 
         {error && <div style={S.error}>{error}</div>}
 
         <div style={S.planesRow}>
-          {planes.map(p => (
-            <div key={p.key} style={S.planCard}>
-              <div style={S.planNombre}>{p.nombre}</div>
-              {p.precio != null && <div style={S.planPrecio}>{p.precio}€<span style={{ fontSize: 12, color: '#8a8a8a', fontWeight: 400 }}>/mes</span></div>}
-              <div style={S.planDesc}>{p.descripcion}</div>
-            </div>
-          ))}
+          {planes.map(p => {
+            const e = edicion[p.key] || {}
+            return (
+              <div key={p.key} style={S.planCard}>
+                <input style={{ ...S.input, ...S.planNombre, padding: '4px 8px' }} value={e.nombre ?? ''}
+                  onChange={ev => editar(p.key, 'nombre', ev.target.value)} onBlur={() => guardarPlan(p.key, 'nombre')} />
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 6 }}>
+                  <input style={{ ...S.input, ...S.planPrecio, width: 110, marginBottom: 0, padding: '4px 8px' }} type="number" min="0" step="0.01"
+                    value={e.precio ?? ''} placeholder="—"
+                    onChange={ev => editar(p.key, 'precio', ev.target.value)} onBlur={() => guardarPlan(p.key, 'precio')} />
+                  <span style={{ fontSize: 12, color: '#8a8a8a' }}>€/mes</span>
+                </div>
+                <textarea style={{ ...S.input, ...S.planDesc, resize: 'vertical', minHeight: 64 }} value={e.descripcion ?? ''}
+                  onChange={ev => editar(p.key, 'descripcion', ev.target.value)} onBlur={() => guardarPlan(p.key, 'descripcion')} />
+                <div style={S.guardado}>{estadoPlan[p.key] === 'guardando' ? 'Guardando...' : estadoPlan[p.key] === 'guardado' ? 'Guardado ✓' : ''}</div>
+              </div>
+            )
+          })}
         </div>
 
         <div style={{ ...S.sectionTitle, fontSize: 15 }}>Módulos</div>

@@ -1,4 +1,5 @@
-import { Fragment } from 'react'
+import { Fragment, useEffect, useState } from 'react'
+import { supabase } from '../lib/supabase'
 
 const NUMERO_WHATSAPP = '34678237019'
 
@@ -83,26 +84,33 @@ const FAQS = [
   },
 ]
 
+// Nombre y precio salen de la tabla planes (se editan en Super Admin →
+// Planes); los de aquí solo se ven si la consulta falla.
 const PLANES = [
   {
+    key: 'basico',
     nombre: 'Básico',
     precio: 35,
     variante: 'basico',
     bullets: ['Carta digital con QR', 'Pedidos desde la mesa, sin esperar al camarero', 'Panel de administración'],
   },
   {
+    key: 'profesional',
     nombre: 'Profesional',
     precio: 89,
     variante: 'pro',
     bullets: ['Todo lo de Básico', 'Reservas, stock y varios menús', 'Reportes y gestión de equipo'],
   },
   {
+    key: 'premium',
     nombre: 'Premium',
     precio: 169,
     variante: 'premium',
     bullets: ['Todo lo de Profesional', 'Pedidos y reservas por WhatsApp', 'Dominio propio y marca personalizada'],
   },
 ]
+
+const fmtPrecio = (n) => Number(n).toLocaleString('es-ES', { maximumFractionDigits: 2 })
 
 // Borde inferior "rasgado" de las comandas de papel (dientes de sierra).
 const dientes = (n) => {
@@ -338,6 +346,17 @@ const PASOS = [
 
 export default function Landing() {
   const mensajeGeneral = 'Hola, me gustaría saber más sobre Restomind'
+  const [planes, setPlanes] = useState(PLANES)
+
+  useEffect(() => {
+    supabase.from('planes').select('key, nombre, precio').then(({ data, error }) => {
+      if (error || !data?.length) return
+      const porKey = Object.fromEntries(data.map(p => [p.key, p]))
+      setPlanes(PLANES.map(p => porKey[p.key]
+        ? { ...p, nombre: porKey[p.key].nombre || p.nombre, precio: porKey[p.key].precio }
+        : p))
+    })
+  }, [])
 
   return (
     <div style={S.page}>
@@ -521,10 +540,10 @@ export default function Landing() {
           <h2 style={S.h2}>Elige según lo que tu restaurante necesita</h2>
         </div>
         <div style={S.pricingGrid}>
-          {PLANES.map((p) => (
+          {planes.map((p) => (
             <div key={p.nombre} style={S.planCard(p.variante)}>
               <div style={S.planNombre(p.variante)}>{p.nombre}</div>
-              <div style={S.planPrecio(p.variante)}>{p.precio}€<span style={S.planPrecioSub(p.variante)}>/mes</span></div>
+              {p.precio != null && <div style={S.planPrecio(p.variante)}>{fmtPrecio(p.precio)}€<span style={S.planPrecioSub(p.variante)}>/mes</span></div>}
               <ul style={S.planBullets(p.variante)}>
                 {p.bullets.map((b) => <li key={b}>{b}</li>)}
               </ul>
