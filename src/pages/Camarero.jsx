@@ -109,6 +109,9 @@ const S = {
   sheetTitle: { fontFamily: "'Playfair Display', serif", fontSize: 17, color: '#e8c97a', marginBottom: 14 },
   cartLine: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '0.5px solid #2a2a2a' },
   confirmBtn: (busy) => ({ width: '100%', background: busy ? '#5a4a2a' : '#e8c97a', color: busy ? '#8a7560' : '#111', border: 'none', borderRadius: 10, padding: '14px', fontSize: 15, fontWeight: 500, cursor: busy ? 'not-allowed' : 'pointer', fontFamily: "'Inter', sans-serif", marginTop: 16 }),
+  noteInput: { width: '100%', background: '#221c14', border: '0.5px solid #3a2e20', borderRadius: 8, padding: '6px 10px', fontSize: 12, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', marginTop: 4, boxSizing: 'border-box' },
+  noteLabel: { fontSize: 11, color: '#7a6a50', marginTop: 2, cursor: 'pointer' },
+  notesTextarea: { width: '100%', background: '#221c14', border: '0.5px solid #3a2e20', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#f0e8d8', fontFamily: "'Inter', sans-serif", outline: 'none', resize: 'vertical', minHeight: 50, boxSizing: 'border-box', marginTop: 6 },
   backLink: { fontSize: 13, color: '#8a7560', cursor: 'pointer', marginBottom: 10 },
   upsellCard: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, background: '#1a1a1a', border: '0.5px dashed #4a3c25', borderRadius: 10, padding: '10px 12px', marginBottom: 8 },
   upsellMsg: { fontSize: 13, color: '#f0e8d8' },
@@ -149,6 +152,8 @@ export default function Camarero() {
   const [showAlergenosPanel, setShowAlergenosPanel] = useState(false)
   const [cart, setCart] = useState({})
   const [showCart, setShowCart] = useState(false)
+  const [editingNoteFor, setEditingNoteFor] = useState(null)
+  const [orderNote, setOrderNote] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState(null)
   const [sendSuccess, setSendSuccess] = useState(false)
@@ -445,6 +450,7 @@ export default function Camarero() {
         return
       }
       setCart({})
+      setOrderNote('')
       setSendSuccess(false)
       setSendError(null)
       await loadMenu(table.zona)
@@ -458,6 +464,7 @@ export default function Camarero() {
   function volverAMesas() {
     setSelectedTable(null)
     setCart({})
+    setOrderNote('')
     loadTablas()
   }
 
@@ -702,7 +709,7 @@ export default function Camarero() {
         const { [cartKey]: _, ...rest } = prev
         return rest
       }
-      return { ...prev, [cartKey]: { qty: next, precio: item.precio, nombre: item.nombre, menuItemId: item.id, comensal: selectedComensal } }
+      return { ...prev, [cartKey]: { qty: next, precio: item.precio, nombre: item.nombre, menuItemId: item.id, comensal: selectedComensal, nota: prev[cartKey]?.nota || '' } }
     })
   }
 
@@ -717,6 +724,10 @@ export default function Camarero() {
       }
       return { ...prev, [key]: { ...line, qty: next } }
     })
+  }
+
+  function updateNote(key, nota) {
+    setCart(prev => prev[key] ? { ...prev, [key]: { ...prev[key], nota } } : prev)
   }
 
   function toggleModChoice(grupo, opcionId) {
@@ -771,6 +782,7 @@ export default function Camarero() {
           menuItemId: item.id,
           modificadoresDetalle: detalle,
           comensal: selectedComensal,
+          nota: prev[cartKey]?.nota || '',
         },
       }
     })
@@ -848,7 +860,7 @@ export default function Camarero() {
       const itemsPayload = Object.entries(cart).map(([id, v]) => ({
         menu_item_id: v.menuItemId || id,
         cantidad: v.qty,
-        notas: null,
+        notas: v.nota?.trim() || null,
         comensal: v.comensal ?? null,
         modificadores: (v.modificadoresDetalle || []).map(m => ({ grupo_id: m.grupo_id, opcion_id: m.opcion_id })),
       }))
@@ -856,11 +868,13 @@ export default function Camarero() {
       const { error: err } = await supabase.rpc('fn_registrar_pedido', {
         p_table_session_id: selectedTable.session.id,
         p_items: itemsPayload,
+        p_notas: orderNote.trim() || null,
         p_camarero_id: camarero.id,
         p_premios_canjeados: premiosPayload,
       })
       if (err) throw err
       setCart({})
+      setOrderNote('')
       setPremiosEnCarrito([])
       if (selectedTable?.session?.cliente_telefono) await cargarEstadoFidelizacion(selectedTable.session.cliente_telefono)
       setShowCart(false)
@@ -1367,6 +1381,21 @@ export default function Camarero() {
                   <span style={S.qnum}>{v.qty}</span>
                   <button style={{ ...S.btn, width: 26, height: 26 }} onClick={() => changeQtyByKey(id, 1)}>+</button>
                 </div>
+                {editingNoteFor === id ? (
+                  <input
+                    style={S.noteInput}
+                    autoFocus
+                    placeholder="Ej. sin cebolla, poco hecho..."
+                    value={v.nota || ''}
+                    onChange={e => updateNote(id, e.target.value)}
+                    onBlur={() => setEditingNoteFor(null)}
+                    onKeyDown={e => e.key === 'Enter' && setEditingNoteFor(null)}
+                  />
+                ) : (
+                  <div style={S.noteLabel} onClick={() => setEditingNoteFor(id)}>
+                    {v.nota ? `📝 ${v.nota}` : '+ Añadir nota a este plato'}
+                  </div>
+                )}
               </div>
             ))}
             {premiosEnCarrito.length > 0 && (
@@ -1402,6 +1431,16 @@ export default function Camarero() {
                 ))}
               </div>
             )}
+
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 12, color: '#8a7560' }}>Nota general del pedido</div>
+              <textarea
+                style={S.notesTextarea}
+                placeholder="Ej. para compartir, es un cumpleaños..."
+                value={orderNote}
+                onChange={e => setOrderNote(e.target.value)}
+              />
+            </div>
 
             <div style={{ ...S.cartLine, borderBottom: 'none', marginTop: 6 }}>
               <span style={{ fontSize: 15, fontWeight: 500 }}>Total</span>
