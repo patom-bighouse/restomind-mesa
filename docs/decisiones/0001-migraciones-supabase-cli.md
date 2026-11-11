@@ -11,6 +11,8 @@ Hasta ahora cada cambio de esquema era un `.sql` en `sql/` que se pegaba a mano 
 - La línea base es el esquema actual de Producción (`supabase db pull`).
 - `sql/` pasa a `sql/historico/`, de solo lectura.
 
+> Comandos exactos (CLI v3, siempre con `--remote=<ref>`): ver `docs/MIGRACIONES.md`.
+
 ## Consecuencias
 - Cada base de datos sabe qué tiene aplicado (`supabase migration list`).
 - Hace falta la CLI y la contraseña de la BD de cada proyecto en el Mac.
