@@ -50,8 +50,6 @@ Dejar el proyecto enlazado (`supabase link`) siempre a **Test**: `npx supabase l
 
 ## Cómo se creó la línea base (referencia)
 ```bash
-npx supabase link --project-ref mfxrluanpawfjncpqrvu
-npx supabase db pull --remote                          # crea <ts>_remote_schema.sql y la marca aplicada en Producción
-npx supabase link --project-ref sfkwbhzelrestmrmptql
-npx supabase migration repair --status applied <ts> --remote
+npx supabase db pull --remote=mfxrluanpawfjncpqrvu                                  # crea <ts>_remote_schema.sql y la marca aplicada en Producción
+npx supabase migration repair --status applied <ts> --remote=sfkwbhzelrestmrmptql   # la marca aplicada en Test
 ```

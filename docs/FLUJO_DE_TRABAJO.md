@@ -19,7 +19,9 @@ Ver `docs/MIGRACIONES.md`. Resumen:
 ```bash
 npx supabase migration new <nombre>        # crea supabase/migrations/<timestamp>_<nombre>.sql
 # escribir el SQL (idempotente: if not exists / or replace / drop ... if exists)
-npx supabase db push --remote=sfkwbhzelrestmrmptql   # aplica en TEST (pide confirmación: elegir Yes)
+npx supabase db push --remote=sfkwbhzelrestmrmptql --dry-run   # ver qué se aplicará en TEST
+npx supabase db push --remote=sfkwbhzelrestmrmptql             # aplica en TEST (pide confirmación: elegir Yes)
+npx supabase migration list --remote=sfkwbhzelrestmrmptql
 ```
 
 ## 4. Código
