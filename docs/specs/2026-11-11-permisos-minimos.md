@@ -1,6 +1,6 @@
 # Permisos mínimos iguales en Test y Producción (esquema `public`)
 - Fecha: 2026-11-11
-- Estado: borrador (pendiente de respuestas de Patricio)
+- Estado: borrador (preguntas respondidas el 11-11-2026; pendiente de aprobación de Patricio)
 - Anexo con el estado actual medido: `2026-11-11-permisos-minimos-estado-actual.md`
 
 ## Qué y para quién
@@ -61,7 +61,7 @@ S = SELECT, I = INSERT, U = UPDATE, D = DELETE. "—" = nada. service_role tiene
 | `crm_actividades` | — | S I U D | |
 | `crm_busquedas` | — | S | Política `crm_busquedas_select`. Escritura por `fn_crm_registrar_busqueda`. Hoy anon tiene todo en Producción |
 | `crm_comisiones` | — | S I U D | |
-| `crm_config` | — | S U | Políticas `crm_config_select` y `crm_config_update`. En Test hoy no tiene nada: ver preguntas. Hoy anon tiene todo en Producción |
+| `crm_config` | — | S U | Políticas `crm_config_select` y `crm_config_update`. `CrmBuscador.jsx` guarda la configuración de Places con `.update(...).eq('id', true)` (necesita S para el filtro y U). Hoy anon tiene todo en Producción |
 | `crm_cuentas` | — | S I U D | |
 | `crm_historial` | — | S | Lo escribe el trigger `fn_crm_cuentas_despues` |
 | `crm_tareas` | — | S I U D | |
@@ -93,7 +93,7 @@ S = SELECT, I = INSERT, U = UPDATE, D = DELETE. "—" = nada. service_role tiene
 | `restaurant_billing` | — | S I U D | |
 | `restaurant_info` | — | S I U D | Anon lo ve por `fn_info_restaurante_publica`. Hoy anon tiene todo en Producción |
 | `restaurant_modulos` | — | S I U | No hay política de DELETE |
-| `restaurants` | S (columnas `id`, `nombre`, `moneda`, `config`, `activo`) | S I U D | Mesa, Camarero, Reservar. Se quitan a anon `logo_url`, `direccion`, `slug`, `subdominio`, `whatsapp` (sin uso encontrado; ver preguntas) y el INSERT/UPDATE/DELETE de tabla |
+| `restaurants` | S (columnas `id`, `nombre`, `logo_url`, `activo`, `config`, `direccion`, `moneda`, `slug`, `subdominio`, `whatsapp`) | S I U D | Mesa, Camarero, Reservar. Se conservan las 10 columnas que anon lee hoy (decisión 2: no se sabe si algo fuera del repo usa `logo_url`, `direccion`, `slug`, `subdominio`, `whatsapp`). Se quita el INSERT/UPDATE/DELETE de tabla |
 | `sectores_cocina` | — | S I U D | `Cocina.jsx` (authenticated) |
 | `stock_movimientos` | — | S I | Libro de movimientos (como Test) |
 | `superadmins` | — | S | Solo política `self_select_superadmins` |
@@ -160,7 +160,7 @@ Por qué: cumple las reglas fijas 4 y 5 de `CLAUDE.md` (grants explícitos y mí
 | 5 | Dado Test con la migración aplicada, cuando se mira la configuración de `fn_marcar_timestamp_estado_pedido`, entonces tiene `search_path=public`, y al pasar un pedido de `pendiente` a `preparando` se rellena `preparando_at`. | sql: `select proconfig from pg_proc where proname = 'fn_marcar_timestamp_estado_pedido'` → `{search_path=public}`. En `begin … rollback`: update de un pedido de prueba de Test a `preparando` y comprobar `preparando_at is not null`. |
 | 6 | Dados Test y Producción con la migración aplicada, cuando se ejecuta la consulta de huella de permisos en los dos, entonces devuelven exactamente las mismas filas y el mismo `md5`. | sql: `supabase/tests/permisos_huella.sql` (solo `select`, sin escritura). Saca una lista ordenada de (objeto, rol, privilegio) de tablas, columnas, funciones y `pg_default_acl` de `public`, sin objetos de extensiones ni `rls_auto_enable`, y su `md5(string_agg(...))`. Se ejecuta en Test y, tras el paso a Producción, en Producción (lectura permitida por la regla 1). Las dos salidas se pegan en el PR. Antes de aplicar en Producción, la misma consulta debe dar distinto (comprueba que la huella detecta diferencias). |
 | 7 | Dada la preview de `staging` (Supabase Test) con la migración aplicada, cuando se hace el recorrido completo, entonces todo funciona sin errores de permisos en la consola del navegador. | manual, en una ventana de incógnito (sin sesión) salvo donde se indica: 1) Mesa por QR: abrir `/mesa/<token>` de una mesa con sesión abierta, cambiar idioma, añadir un plato con modificador, enviar pedido, abrir "Mis pedidos", "Llamar al camarero", guardar teléfono en "Sumar puntos", consultar y aplicar un vale. 2) Camarero: `/camarero/<id>`, elegir persona, PIN, abrir mesa libre, pedir, ver pedidos de la sesión, cargar teléfono, ver alerta de la llamada del paso 1 y marcarla atendida, completar checklist de limpieza; con un camarero con permisos `clientes`, `reservas` y `cocina`: canjear puntos, crear reserva manual, avanzar un pedido en su cocina. 3) Reserva web: `/reservar/<id>`, reservar para mañana dentro del horario. 4) Con sesión de dueño: `/cocina/<id>` recibe en tiempo real un pedido nuevo desde la mesa; en el panel editar un plato de la carta, crear un camarero, ver clientes, cerrar la mesa del paso 1 con un cobro y comprobar que suben los puntos del teléfono. 5) Superadmin: iniciar y limpiar prueba gratuita, aplicar y limpiar descuento, cambiar plan de un restaurante de Test. 6) Vendedor: entrar en `/vendedor/crm`, crear cuenta, añadir tarea y actividad. 7) Abrir `/mesa/<token>` con la sesión de dueño iniciada en el mismo navegador y pedir. |
-| 8 | Dado n8n con service_role, cuando se aplica la migración, entonces el agente de WhatsApp sigue creando pedidos take away y reservas. | conversación: en el entorno donde esté conectado n8n (ver preguntas), una conversación de take away completa (carta, pedido, confirmación con hora de recogida) y una de reserva (crear, modificar, anular). Comprobar que aparecen en `orders` y `reservations`. En Producción se repite justo después de aplicar la migración. |
+| 8 | Dado n8n con service_role, cuando se aplica la migración, entonces el agente de WhatsApp sigue creando pedidos take away y reservas. | conversación, **solo en Producción** (n8n no está conectado a Test; decisión 1). Antes de aplicar: el orquestador comprueba en los registros de API de Producción (`query_logs`, solo lectura) que las llamadas de n8n llegan con rol `service_role`; si alguna llega como `anon`, no se aplica y se avisa a Patricio. Justo después de aplicar: Patricio hace una conversación de take away completa (carta, pedido, confirmación con hora de recogida) y una de reserva (crear, modificar, anular); se comprueba que aparecen en `orders` y `reservations`. |
 
 ## Fuera de alcance
 - Mover la extensión `pg_net` fuera de `public`.
@@ -169,9 +169,10 @@ Por qué: cumple las reglas fijas 4 y 5 de `CLAUDE.md` (grants explícitos y mí
 - Protección de contraseñas filtradas: es configuración de Auth; la cambia Patricio en el panel de Supabase.
 - El esquema `router` (`router.clientes_cache` tiene todos los privilegios para anon y authenticated; RLS sin políticas lo bloquea).
 - Restringir columnas de `menu_items` para anon (hoy anon puede leer `precio_costo`).
+- Cerrar a anon las columnas `logo_url`, `direccion`, `slug`, `subdominio` y `whatsapp` de `restaurants` (decisión 2; queda en el backlog).
 - Cambiar el código de funciones, salvo el `search_path` de `fn_marcar_timestamp_estado_pedido`.
 - Políticas RLS. No se crean ni se cambian. La política `anon_insert_order_items` queda sin efecto (anon no tiene INSERT en `order_items`); no se borra aquí.
-- Fallos de lógica detectados al revisar (ver Riesgos, punto 6). Van en otra tarea.
+- Fallos de lógica detectados al revisar (ver Riesgos, punto 6). Van en otra tarea, la siguiente del backlog (decisión 4).
 
 ## Impacto técnico
 - Front: ningún archivo. Solo se revisa con `grep`.
@@ -185,9 +186,9 @@ Por qué: cumple las reglas fijas 4 y 5 de `CLAUDE.md` (grants explícitos y mí
 - Módulo de pago: no aplica.
 
 ## Riesgos
-1. **Romper mesa, camarero o cocina con PIN en Producción.** Todo corre como anon. Si falta un SELECT o un EXECUTE, la pantalla falla para todos los restaurantes a la vez y en pleno servicio. Mitigación: el criterio 7 completo en la preview de staging antes de Producción; aplicar en Producción fuera de horas de servicio (no en comidas ni cenas); dejar preparada, sin aplicar, una migración de vuelta atrás que reponga los grants quitados.
-2. **Romper n8n.** No está en el repo y no sabemos qué tablas y funciones usa. Por eso service_role conserva todo. Riesgo restante: que n8n llame con la anon key en vez de la service_role. Si fuera así, perdería `fn_reserva_whatsapp_crear`, `fn_carta_takeaway`, `fn_menu_activo`, `fn_reserva_hay_mesa`, `fn_reserva_fuera_de_horario` y `fn_procesar_sellos` (hoy anon las tiene en Producción). Mitigación: criterio 8 y pregunta 1.
-3. **Orden de aplicación.** Test (`db push --remote=sfkwbhzelrestmrmptql`) → criterios 1 a 7 (y 8 si n8n está en Test) → PR `staging` → `main` → Producción (`db push --remote=mfxrluanpawfjncpqrvu`) → criterio 6 en Producción y criterio 8. Nunca SQL suelto en Producción (regla 1). Mientras la migración esté solo en Test, la preview es la única que la tiene.
+1. **Romper mesa, camarero o cocina con PIN en Producción.** Todo corre como anon. Si falta un SELECT o un EXECUTE, la pantalla falla para todos los restaurantes a la vez. Mitigación: el criterio 7 completo en la preview de staging antes de Producción; dejar preparada, sin aplicar, una migración de vuelta atrás que reponga los grants quitados.
+2. **Romper n8n.** No está en el repo y no sabemos qué tablas y funciones usa. Por eso service_role conserva todo. Riesgo restante: que n8n llame con la anon key en vez de la service_role. Si fuera así, perdería `fn_reserva_whatsapp_crear`, `fn_carta_takeaway`, `fn_menu_activo`, `fn_reserva_hay_mesa`, `fn_reserva_fuera_de_horario` y `fn_procesar_sellos` (hoy anon las tiene en Producción). n8n solo corre en Producción, así que no se puede probar antes en Test. Mitigación: comprobación del rol en los registros de Producción antes de aplicar y conversación justo después (criterio 8).
+3. **Orden de aplicación.** Test (`db push --remote=sfkwbhzelrestmrmptql`) → criterios 1 a 7 → PR `staging` → `main` → comprobación del rol de n8n (criterio 8, primera parte) → Producción (`db push --remote=mfxrluanpawfjncpqrvu`) → criterio 6 en Producción y conversación del criterio 8. Momento: cualquiera; en Producción solo hay restaurantes de prueba (decisión 5). Nunca SQL suelto en Producción (regla 1). Mientras la migración esté solo en Test, la preview es la única que la tiene.
 4. **Pantallas de authenticated que usen algo no inventariado.** No se ha leído cada `Admin*`. Mitigación: el `grep` del inventario y el recorrido del criterio 7. Lo más delicado: quitar DELETE en `clientes`, `vales_regalo`, `order_deliveries`, `order_sector_confirmaciones`, `restaurant_modulos`, y dejar `clientes_movimientos`, `stock_movimientos`, `order_item_modificadores` en S I. Producción tiene hoy todo; Test ya tenía estas reducciones.
 5. **Privilegios por defecto cerrados.** Toda migración futura que cree tabla o función debe incluir sus grants. Si se olvidan, la pantalla falla con "permission denied" (falla cerrado). Conviene recordarlo en `docs/FLUJO_DE_TRABAJO.md`. Los objetos que cree `supabase_admin` (no `postgres`) no los cubre este cambio.
 6. **Fallos de lógica encontrados al revisar (no se arreglan aquí, pero hay que saberlos):**
@@ -198,9 +199,9 @@ Por qué: cumple las reglas fijas 4 y 5 de `CLAUDE.md` (grants explícitos y mí
 8. **Hora de Madrid y dinero.** Sin impacto: no cambia ninguna función de fechas ni de importes. `fn_hoy_madrid` sigue disponible para authenticated por el DEFAULT de `crm_tareas`.
 9. **Pedidos en curso.** Los grants se aplican al momento. Una mesa con el carrito abierto sigue pidiendo por `fn_registrar_pedido`, que no pierde EXECUTE.
 
-## Preguntas abiertas
-1. ¿n8n tiene un workflow conectado a Supabase Test? Si no, el criterio 8 solo se puede hacer en Producción justo después de aplicar. ¿Confirmas que n8n usa la clave service_role y no la anon?
-2. Columnas de `restaurants` para anon: se quitan `logo_url`, `direccion`, `slug`, `subdominio` y `whatsapp` porque no hay uso en el repo. ¿Hay algo fuera del repo (otra web, dominio propio, plantilla) que las lea con la anon key?
-3. `crm_config` y `crm_busquedas` para authenticated: en Test no tienen nada y en Producción todo. La spec deja `crm_config` S U y `crm_busquedas` S según las políticas. ¿En Test funciona hoy la configuración del CRM del superadmin (búsqueda de vendedores habilitada, contador de Places)? Si sí, se puede bajar a nada.
-4. Los fallos del Riesgo 6 (`fn_staff_*` sin PIN, `fn_camarero_listar_sesiones` abierta): ¿abrimos ya una tarea `fix/...` aparte? Exponen teléfonos de clientes en Producción.
-5. ¿Qué franja horaria prefieres para aplicar en Producción?
+## Decisiones (respuestas de Patricio, 11-11-2026)
+1. **n8n:** solo corre en Producción; no hay workflow conectado a Test. El criterio 8 se hace solo en Producción. Qué clave usa n8n lo comprueba el orquestador en los registros de API de Producción (solo lectura) antes de aplicar.
+2. **Columnas de `restaurants` para anon:** no se sabe si algo fuera del repo las usa. Se conservan las 10 columnas de hoy; cerrarlas queda para otra tarea (backlog).
+3. **`crm_config` y `crm_busquedas`:** resuelta con el código, sin preguntar. `CrmBuscador.jsx` actualiza `crm_config` directamente, así que queda S U. `crm_busquedas` se queda en S (solo se escribe por `fn_crm_registrar_busqueda`).
+4. **Fallo del PIN del camarero (Riesgo 6):** primero se termina esta tarea; la de seguridad va justo después (ya está en el backlog con prioridad alta).
+5. **Momento de aplicar en Producción:** cualquiera. Todos los restaurantes de Producción son de prueba; todavía no hay clientes reales.

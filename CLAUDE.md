@@ -64,4 +64,6 @@ Flujo: petición → `spec` → Patricio aprueba la especificación → `impleme
 
 Tareas pequeñas (un texto, un estilo, un fallo de una línea): el orquestador puede saltarse `spec` e implementar él mismo, pero **el `revisor` se usa siempre**.
 
+El orquestador hace él mismo los commits, el push y los PR; no hace falta pasarle a Patricio los comandos git.
+
 Detalle del flujo y checklist de "terminado" en `docs/FLUJO_DE_TRABAJO.md`.
