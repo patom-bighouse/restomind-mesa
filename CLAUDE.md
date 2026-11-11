@@ -46,6 +46,18 @@ npx supabase migration new <nombre>   # crear migración
 - `sql/historico/` — scripts aplicados a mano antes de las migraciones. Solo lectura, como referencia.
 - `docs/` — arquitectura, flujo de trabajo, decisiones y backlog.
 
-## Cómo trabajar una tarea
-Seguir `docs/FLUJO_DE_TRABAJO.md`. Resumen: mini especificación → plan → rama → código + migración → `npm run build` → PR a `staging` → checklist de "terminado".
-Al terminar un cambio, dar siempre a Patricio los comandos git para revisarlo o subirlo.
+## Cómo trabajar una tarea: 4 agentes
+La sesión principal es el **orquestador**. Los otros tres son subagentes definidos en `.claude/agents/` (un subagente no puede lanzar otros, por eso orquesta la sesión principal).
+
+| Agente | Qué hace | Qué no hace |
+|---|---|---|
+| Orquestador (sesión principal) | Habla con Patricio, decide el tamaño de la tarea, lanza los subagentes, crea la rama, hace commit/push y abre el PR | No implementa tareas medianas o grandes él mismo |
+| `spec` | Escribe `docs/specs/AAAA-MM-DD-<nombre>.md` con criterios de aceptación | No toca código ni BD |
+| `implementador` | Código + migración en la rama, `npm run build` | No hace push, no toca Producción, no cambia la especificación |
+| `revisor` | Revisión independiente contra la especificación, las reglas fijas y el checklist | No edita nada; solo informa |
+
+Flujo: petición → `spec` → Patricio aprueba la especificación → `implementador` → `revisor` → (si hay fallos, vuelta al `implementador`) → PR a `staging` → validación de Patricio en la preview.
+
+Tareas pequeñas (un texto, un estilo, un fallo de una línea): el orquestador puede saltarse `spec` e implementar él mismo, pero **el `revisor` se usa siempre**.
+
+Detalle del flujo y checklist de "terminado" en `docs/FLUJO_DE_TRABAJO.md`.

@@ -2,13 +2,11 @@
 
 Cómo se hace cualquier cambio en Restomind, de la idea a producción.
 
-## 1. Mini especificación (antes de tocar código)
-Cinco líneas en el PR o en `docs/BACKLOG.md`:
-- **Qué**: la funcionalidad o el fallo, en una frase.
-- **Para quién**: dueño, camarero, cocina, cliente en mesa, cliente por WhatsApp, superadmin, vendedor.
-- **Criterios de aceptación**: 2–5 comprobaciones concretas ("si el cliente pide X, ve Y").
-- **Toca BD**: sí/no. Si sí, qué tablas/funciones.
-- **Módulo de pago**: cuál, si aplica.
+Quién hace cada paso: ver "4 agentes" en `CLAUDE.md` (orquestador, `spec`, `implementador`, `revisor`).
+
+## 1. Especificación (antes de tocar código) — agente `spec`
+Archivo `docs/specs/AAAA-MM-DD-<nombre>.md` con: qué y para quién, criterios de aceptación comprobables, fuera de alcance, impacto técnico (front, BD, n8n, módulo de pago), riesgos y preguntas abiertas.
+**Patricio la aprueba** antes de seguir. En tareas pequeñas se puede saltar este paso.
 
 ## 2. Rama
 ```bash
@@ -28,7 +26,10 @@ npx supabase db push --linked              # con el proyecto de TEST enlazado
 - Seguir las reglas fijas de `CLAUDE.md`.
 - `npm run build` debe pasar.
 
-## 5. PR a `staging`
+## 4b. Revisión — agente `revisor`
+Siempre, también en tareas pequeñas. Si el veredicto es "CAMBIOS NECESARIOS", vuelve al `implementador` con el informe y se revisa otra vez.
+
+## 5. PR a `staging` — orquestador
 - Título con prefijo: `feat:`, `fix:`, `chore:`, `docs:`.
 - Descripción: la mini especificación + cómo probarlo.
 - Vercel genera la preview contra Supabase Test → probar los criterios de aceptación ahí.
