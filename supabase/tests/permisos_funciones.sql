@@ -117,7 +117,7 @@ begin
   exception when insufficient_privilege then
     insert into _resultado (prueba, ok, detalle)
     values ('anon: fn_iniciar_trial → permission denied', sqlerrm = 'permission denied for function fn_iniciar_trial', sqlerrm);
-  exception when others then
+  when others then
     insert into _resultado (prueba, ok, detalle)
     values ('anon: fn_iniciar_trial → permission denied', false, 'otro error: ' || sqlerrm);
   end;
@@ -130,7 +130,7 @@ begin
   exception when insufficient_privilege then
     insert into _resultado (prueba, ok, detalle)
     values ('anon: fn_procesar_sellos → permission denied', sqlerrm = 'permission denied for function fn_procesar_sellos', sqlerrm);
-  exception when others then
+  when others then
     insert into _resultado (prueba, ok, detalle)
     values ('anon: fn_procesar_sellos → permission denied', false, 'otro error: ' || sqlerrm);
   end;
@@ -144,7 +144,7 @@ begin
   exception when insufficient_privilege then
     insert into _resultado (prueba, ok, detalle)
     values ('anon: fn_reserva_whatsapp_crear → permission denied', sqlerrm = 'permission denied for function fn_reserva_whatsapp_crear', sqlerrm);
-  exception when others then
+  when others then
     insert into _resultado (prueba, ok, detalle)
     values ('anon: fn_reserva_whatsapp_crear → permission denied', false, 'otro error: ' || sqlerrm);
   end;

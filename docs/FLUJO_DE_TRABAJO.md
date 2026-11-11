@@ -24,6 +24,9 @@ npx supabase db push --remote=sfkwbhzelrestmrmptql             # aplica en TEST 
 npx supabase migration list --remote=sfkwbhzelrestmrmptql
 ```
 
+**Permisos cerrados por defecto (desde `20261111215753_permisos_minimos.sql`).** Las tablas, funciones y secuencias nuevas que cree `postgres` en `public` nacen **sin permisos para `anon` ni `authenticated`** (solo `service_role`), y las funciones nuevas ya no son ejecutables por `PUBLIC`. Por eso toda migración que cree una tabla o una función debe incluir sus `grant` explícitos (tabla: `select/insert/update/delete` que use la app; función: `grant execute ... to anon/authenticated` solo si la llama la mesa/web pública o el panel). Si se olvida, la pantalla falla con "permission denied" en la preview de staging: falla cerrado, no abre datos. Los objetos que cree `supabase_admin` no siguen esta regla.
+Comprobar los permisos: `supabase/tests/permisos_huella.sql` (solo lectura) debe dar el mismo `md5` en Test y en Producción después de pasar las migraciones a los dos.
+
 ## 4. Código
 - Seguir las reglas fijas de `CLAUDE.md`.
 - `npm run build` debe pasar.
@@ -47,7 +50,8 @@ Siempre, también en tareas pequeñas. Si el veredicto es "CAMBIOS NECESARIOS", 
 - [ ] `npm run build` y `npm test` sin errores, ejecutados también por el `revisor`
 - [ ] Criterios manuales validados por Patricio en la preview de staging
 - [ ] Migración en `supabase/migrations/`, aplicada en Test (y en Producción al pasar a `main`)
-- [ ] Tablas nuevas: RLS + políticas + grants mínimos + Realtime si hace falta
+- [ ] Tablas nuevas: RLS + políticas + grants mínimos + Realtime si hace falta (los privilegios por defecto están cerrados: sin `grant` explícito, anon y authenticated no ven la tabla)
+- [ ] Funciones nuevas: `grant execute` explícito a quien la llame (por defecto solo `service_role`)
 - [ ] Funciones nuevas `SECURITY DEFINER`: `search_path` fijo, permisos comprobados, `execute` revocado a quien no deba
 - [ ] Asesor de seguridad de Supabase (Test) sin avisos nuevos
 - [ ] Workflows de n8n exportados a `n8n/` si cambiaron (sin credenciales)
