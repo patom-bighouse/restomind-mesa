@@ -1,6 +1,6 @@
 # Permisos mínimos iguales en Test y Producción (esquema `public`)
 - Fecha: 2026-11-11
-- Estado: borrador (preguntas respondidas el 11-11-2026; pendiente de aprobación de Patricio)
+- Estado: aprobada por Patricio el 11-11-2026
 - Anexo con el estado actual medido: `2026-11-11-permisos-minimos-estado-actual.md`
 
 ## Qué y para quién
@@ -204,4 +204,4 @@ Por qué: cumple las reglas fijas 4 y 5 de `CLAUDE.md` (grants explícitos y mí
 2. **Columnas de `restaurants` para anon:** no se sabe si algo fuera del repo las usa. Se conservan las 10 columnas de hoy; cerrarlas queda para otra tarea (backlog).
 3. **`crm_config` y `crm_busquedas`:** resuelta con el código, sin preguntar. `CrmBuscador.jsx` actualiza `crm_config` directamente, así que queda S U. `crm_busquedas` se queda en S (solo se escribe por `fn_crm_registrar_busqueda`).
 4. **Fallo del PIN del camarero (Riesgo 6):** primero se termina esta tarea; la de seguridad va justo después (ya está en el backlog con prioridad alta).
-5. **Momento de aplicar en Producción:** cualquiera. Todos los restaurantes de Producción son de prueba; todavía no hay clientes reales.
+5. **Momento de aplicar en Producción:** cualquiera. Todos los restaurantes de Producción son de prueba; todavía no hay clientes reales. **Provisional:** en cuanto haya un cliente real, los cambios en Producción vuelven a aplicarse fuera de horas de servicio (ver el aviso en `docs/BACKLOG.md`).
