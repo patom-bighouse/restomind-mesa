@@ -52,9 +52,11 @@ La sesión principal es el **orquestador**. Los otros tres son subagentes defini
 | Agente | Qué hace | Qué no hace |
 |---|---|---|
 | Orquestador (sesión principal) | Habla con Patricio, decide el tamaño de la tarea, lanza los subagentes, crea la rama, hace commit/push y abre el PR | No implementa tareas medianas o grandes él mismo |
-| `spec` | Escribe `docs/specs/AAAA-MM-DD-<nombre>.md` con criterios de aceptación | No toca código ni BD |
-| `implementador` | Código + migración en la rama, `npm run build` | No hace push, no toca Producción, no cambia la especificación |
-| `revisor` | Revisión independiente contra la especificación, las reglas fijas y el checklist | No edita nada; solo informa |
+| `spec` | Escribe `docs/specs/AAAA-MM-DD-<nombre>.md` con criterios de aceptación y **cómo se prueba cada uno** | No toca código ni BD |
+| `implementador` | Código + migración + **pruebas** de cada criterio, en la rama; build y pruebas en verde | No hace push, no toca Producción, no cambia la especificación |
+| `revisor` | Revisión independiente: **vuelve a ejecutar las pruebas**, comprueba que cada criterio tenga la suya, y revisa contra reglas fijas y checklist | No edita nada; solo informa |
+
+Pruebas (se montan en la fase 3 del backlog; hasta entonces, solo `npm run build` + manual): `npm test` (Vitest), `supabase/tests/` (SQL, solo contra Test, con `rollback`) y `n8n/tests/` (conversaciones del agente de WhatsApp). Lo que no se puede automatizar lo valida Patricio en la preview, con los pasos que deje la especificación.
 
 Flujo: petición → `spec` → Patricio aprueba la especificación → `implementador` → `revisor` → (si hay fallos, vuelta al `implementador`) → PR a `staging` → validación de Patricio en la preview.
 

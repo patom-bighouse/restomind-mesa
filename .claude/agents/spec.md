@@ -21,8 +21,10 @@ Eres el agente de especificación de Restomind. Tu único entregable es un archi
 Una o dos frases. Quién lo usa: dueño, camarero, cocina, cliente en mesa, cliente por WhatsApp, superadmin, vendedor.
 
 ## Criterios de aceptación
-1. Dado <situación>, cuando <acción>, entonces <resultado observable>.
-(3–8 criterios. Cada uno comprobable en la preview de staging o con una consulta.)
+| # | Criterio | Cómo se prueba |
+|---|---|---|
+| 1 | Dado <situación>, cuando <acción>, entonces <resultado observable>. | auto: test Vitest / sql: consulta o llamada RPC en Test / conversación: caso de prueba del agente WhatsApp / manual: pasos en la preview |
+(3–8 criterios. Preferir siempre auto o sql; "manual" solo cuando no hay otra forma, y con los pasos exactos.)
 
 ## Fuera de alcance
 Lo que explícitamente NO se hace.
@@ -42,5 +44,6 @@ Qué podría romperse (multi-tenant, permisos, hora de Madrid, dinero, pedidos e
 ## Reglas
 - Español de España, frases cortas.
 - Criterios de aceptación concretos: nada de "funciona bien" o "es rápido".
+- Ningún criterio sin su columna "Cómo se prueba" rellena.
 - Respeta las reglas fijas de `CLAUDE.md`; si la petición choca con alguna, dilo en Riesgos.
 - Al terminar, devuelve al orquestador la ruta del archivo y un resumen de 3 líneas con las preguntas abiertas.

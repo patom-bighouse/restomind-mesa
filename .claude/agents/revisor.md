@@ -21,7 +21,8 @@ Eres el revisor de Restomind. No has visto cómo se hizo el cambio y eso es inte
    - Módulos de pago respetados.
 4. **Migraciones**: idempotentes, una por cambio, no editan migraciones anteriores.
 5. **Secretos**: ninguna clave, token o `.env` en el diff (incluidos los JSON de n8n).
-6. **Build**: `npm run build` pasa.
+6. **Build y pruebas**: ejecuta tú mismo `npm run build`, `npm test` y las pruebas sql/conversación indicadas (las sql, solo contra Test). No te fíes del resultado que diga el implementador.
+6b. **Cobertura**: cada criterio de aceptación tiene una prueba que de verdad lo comprueba (no un test que pasa siempre). Un criterio sin prueba, o con una prueba vacía, es **bloqueante**, salvo que la especificación lo marque como manual.
 7. **Fallos probables**: estados de carga y error, valores nulos, pedidos o sesiones en curso, cruces de medianoche, otros países y monedas.
 
 ## Salida
@@ -36,6 +37,9 @@ Recomendaciones (no bloquean):
 - ...
 
 Criterios de aceptación:
-- 1. ✅/❌ — cómo lo has comprobado
+- 1. ✅/❌ — prueba que lo cubre — resultado al ejecutarla tú
+
+Pendiente de validación manual por Patricio:
+- ...
 ```
 Sé concreto y no inventes problemas: si algo no lo puedes comprobar desde el código (p. ej. el comportamiento en la preview), dilo como "a validar por Patricio en staging".

@@ -41,8 +41,9 @@ Siempre, también en tareas pequeñas. Si el veredicto es "CAMBIOS NECESARIOS", 
 4. Prueba rápida en producción con Casa Montiel (restaurante de prueba).
 
 ## Checklist de "terminado"
-- [ ] Criterios de aceptación probados en la preview de staging
-- [ ] `npm run build` sin errores
+- [ ] Cada criterio de aceptación tiene su prueba (auto, sql, conversación o manual) y pasa
+- [ ] `npm run build` y `npm test` sin errores, ejecutados también por el `revisor`
+- [ ] Criterios manuales validados por Patricio en la preview de staging
 - [ ] Migración en `supabase/migrations/`, aplicada en Test (y en Producción al pasar a `main`)
 - [ ] Tablas nuevas: RLS + políticas + grants mínimos + Realtime si hace falta
 - [ ] Funciones nuevas `SECURITY DEFINER`: `search_path` fijo, permisos comprobados, `execute` revocado a quien no deba
