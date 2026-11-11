@@ -1,46 +1,45 @@
 # Migraciones de base de datos
 
-Desde noviembre de 2026 todos los cambios de esquema van en `supabase/migrations/` y se aplican con la CLI de Supabase. Así cada base de datos (Test y Producción) sabe qué migraciones tiene aplicadas, y se acaba el "¿esto lo ejecuté en Producción?".
+Desde noviembre de 2026 todos los cambios de esquema van en `supabase/migrations/` y se aplican con la CLI de Supabase. Cada base de datos (Test y Producción) registra qué migraciones tiene aplicadas.
 
 Los scripts anteriores están en `sql/historico/`: se aplicaron a mano desde el editor de Supabase. Se conservan como referencia; **no** se vuelven a ejecutar.
 
-## Puesta en marcha (una sola vez, en tu Mac)
+## Estado
+- **Línea base:** `20261111193648_remote_schema.sql` — esquema de Producción del 11-11-2026 (`db pull`). Registrada como aplicada en Producción y en Test.
+- Ojo: Test tenía entonces permisos más estrictos que Producción (ver `docs/diagnostico-2026-11-11.md`). La primera migración posterior los iguala.
 
-Necesitas la contraseña de la base de datos de cada proyecto (Supabase → Project Settings → Database). Si no la recuerdas, se puede restablecer ahí mismo.
+## Requisitos en el Mac
+- **Docker Desktop abierto** (la CLI lo usa por dentro para `db pull` y para comparar esquemas). Tras instalarlo, abrir una terminal nueva para que encuentre el comando `docker`.
+- Sesión iniciada: `npx supabase login` (una vez).
+- CLI **v3**: los comandos de base de datos van contra una base **local** salvo que se pase `--remote`. Por eso aquí siempre se escribe `--remote=<ref>` con el proyecto explícito: así nunca hay dudas de si se está tocando Test o Producción.
+- Los cambios en un proyecto alojado piden confirmación y la respuesta por defecto es **No**: hay que elegir *Yes* con las flechas.
 
-```bash
-npx supabase login                                    # abre el navegador
-
-# 1) Línea base desde PRODUCCIÓN (la fuente de verdad)
-npx supabase link --project-ref mfxrluanpawfjncpqrvu
-npx supabase db pull                                  # crea supabase/migrations/<ts>_remote_schema.sql
-                                                      # y la marca como aplicada en Producción
-# 2) Marcar esa misma línea base como aplicada en TEST
-npx supabase link --project-ref sfkwbhzelrestmrmptql
-npx supabase migration repair --status applied <ts>   # <ts> = el número del archivo creado en el paso 1
-
-git add supabase/migrations && git commit -m "chore: línea base del esquema de producción"
-```
-
-> Antes del paso 2, conviene igualar los permisos de Test y Producción: ver "Diferencias Test/Producción" en `docs/diagnostico-2026-11-11.md`.
+| Proyecto | Ref |
+|---|---|
+| Test | `sfkwbhzelrestmrmptql` |
+| Producción | `mfxrluanpawfjncpqrvu` |
 
 ## Día a día
 
 ```bash
-npx supabase link --project-ref sfkwbhzelrestmrmptql   # TEST
 npx supabase migration new nombre_descriptivo
 # editar supabase/migrations/<ts>_nombre_descriptivo.sql
-npx supabase db push                                   # aplica en Test lo pendiente
-npx supabase migration list                            # qué está aplicado y qué no
+
+# 1) Aplicar en TEST
+npx supabase db push --remote=sfkwbhzelrestmrmptql --dry-run   # ver qué se va a aplicar
+npx supabase db push --remote=sfkwbhzelrestmrmptql
+npx supabase migration list --remote=sfkwbhzelrestmrmptql
 ```
 
-Al pasar a producción:
+Al pasar a producción (después de validar en la preview de `staging`):
 
 ```bash
-npx supabase link --project-ref mfxrluanpawfjncpqrvu   # PRODUCCIÓN
-npx supabase db push
-npx supabase link --project-ref sfkwbhzelrestmrmptql   # volver a Test por seguridad
+npx supabase db push --remote=mfxrluanpawfjncpqrvu --dry-run
+npx supabase db push --remote=mfxrluanpawfjncpqrvu
+npx supabase migration list --remote=mfxrluanpawfjncpqrvu
 ```
+
+Dejar el proyecto enlazado (`supabase link`) siempre a **Test**: `npx supabase link --project-ref sfkwbhzelrestmrmptql`.
 
 ## Reglas para escribir una migración
 - Un archivo = un cambio con sentido (no mezclar features).
@@ -48,3 +47,11 @@ npx supabase link --project-ref sfkwbhzelrestmrmptql   # volver a Test por segur
 - Nunca editar una migración ya aplicada: se crea otra nueva que corrige.
 - Grants y Realtime dentro de la propia migración (ver reglas en `CLAUDE.md`).
 - Si hay que tocar datos (no solo esquema), dejarlo claro en un comentario al principio.
+
+## Cómo se creó la línea base (referencia)
+```bash
+npx supabase link --project-ref mfxrluanpawfjncpqrvu
+npx supabase db pull --remote                          # crea <ts>_remote_schema.sql y la marca aplicada en Producción
+npx supabase link --project-ref sfkwbhzelrestmrmptql
+npx supabase migration repair --status applied <ts> --remote
+```

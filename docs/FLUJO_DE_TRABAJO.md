@@ -19,7 +19,7 @@ Ver `docs/MIGRACIONES.md`. Resumen:
 ```bash
 npx supabase migration new <nombre>        # crea supabase/migrations/<timestamp>_<nombre>.sql
 # escribir el SQL (idempotente: if not exists / or replace / drop ... if exists)
-npx supabase db push --linked              # con el proyecto de TEST enlazado
+npx supabase db push --remote=sfkwbhzelrestmrmptql   # aplica en TEST (pide confirmación: elegir Yes)
 ```
 
 ## 4. Código
@@ -35,7 +35,7 @@ Siempre, también en tareas pequeñas. Si el veredicto es "CAMBIOS NECESARIOS", 
 - Vercel genera la preview contra Supabase Test → probar los criterios de aceptación ahí.
 
 ## 6. Paso a producción
-1. Aplicar las migraciones pendientes en Producción (`supabase link` al proyecto de producción → `supabase db push`).
+1. Aplicar las migraciones pendientes en Producción: `npx supabase db push --remote=mfxrluanpawfjncpqrvu` (ver `docs/MIGRACIONES.md`).
 2. Si la tarea toca n8n: importar el workflow actualizado en el n8n de producción.
 3. PR `staging` → `main`. Vercel despliega.
 4. Prueba rápida en producción con Casa Montiel (restaurante de prueba).

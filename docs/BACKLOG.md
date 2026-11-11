@@ -4,7 +4,8 @@ Orden aproximado de prioridad. Cada tarea, al empezar, se convierte en mini espe
 
 ## Harness
 - [x] Fase 1 — Diagnóstico (`docs/diagnostico-2026-11-11.md`)
-- [ ] Fase 2 — Base: documentación, migraciones (línea base pendiente de `supabase db pull`), n8n versionado
+- [x] Fase 2 — Base: documentación, migraciones (línea base `20261111193648` en Test y Producción)
+- [ ] Fase 2b — n8n versionado (pendiente de los JSON exportados)
 - [ ] Fase 3 — Red de seguridad (**antes del piloto**): ESLint, Vitest (`npm test`) en lógica crítica (`money.js`, `fechas.js`, `horarioReservas.js`), carpetas `supabase/tests/` y `n8n/tests/`, GitHub Actions (build + lint + test en cada PR)
 - [ ] Fase 5 — Plantilla reutilizable para otros proyectos
 - [ ] Futuro — Quinto agente `tester` cuando crezca la complejidad (criterios en `docs/decisiones/0002-cuatro-agentes.md`)

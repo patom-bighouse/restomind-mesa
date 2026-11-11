@@ -36,7 +36,7 @@ Idioma del producto y de la documentación: **español de España**.
 npm install
 npm run dev        # Vite en local (necesita .env, ver .env.example)
 npm run build      # build de producción; debe pasar antes de cualquier PR
-npx supabase migration new <nombre>   # crear migración
+npx supabase migration new <nombre>   # crear migración (aplicar: ver docs/MIGRACIONES.md, siempre con --remote=<ref>)
 ```
 
 ## Mapa del código
