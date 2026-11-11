@@ -29,4 +29,4 @@ Cliente por WhatsApp ──► Meta WhatsApp Cloud API ──► n8n (agente tak
 - **Delivery**: patrón adaptador en `src/lib/delivery/` (manual + stubs de Glovo y PedidosYa).
 
 ## Hora
-Todo lo que es "hoy" o "a qué hora" de negocio se calcula en hora de España (`fn_*_madrid`, `src/lib/fechas.js`).
+Hoy todo lo que es "hoy" o "a qué hora" se calcula en hora de España (`fn_*_madrid`, `src/lib/fechas.js`). Es correcto para restaurantes de la península y Baleares, pero no para Canarias ni otros países: pendiente la zona horaria por restaurante (ver `BACKLOG.md`).

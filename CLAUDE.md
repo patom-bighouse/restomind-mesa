@@ -25,7 +25,9 @@ Idioma del producto y de la documentación: **español de España**.
    - Si la UI la escucha en tiempo real: `alter publication supabase_realtime add table ...` dentro de la migración.
 5. Toda función `SECURITY DEFINER`: `set search_path = public`, comprobación de permisos dentro (`fn_es_superadmin()`, `auth.uid()`, PIN de camarero…), y `revoke execute ... from public, anon` salvo que la llame la mesa/web pública.
 6. Dinero: siempre `formatMoney()` / `getCurrencySymbol()` de `src/lib/money.js`. Nunca un "€" escrito a mano.
-7. Fechas y horas de negocio: hora de España con `src/lib/fechas.js` en el front y `fn_ahora_madrid()` / `fn_hoy_madrid()` / `fn_hora_madrid()` en SQL.
+7. Fechas y horas: nunca la zona del navegador ni UTC para "hoy" o "a qué hora".
+   - **Operativa del restaurante** (reservas, horarios, recogidas, menús por franja, cierre diario, vales): hora **del restaurante**. Hoy todo está fijado a España (`src/lib/fechas.js`, `fn_*_madrid()`); está pendiente pasar a la zona horaria de cada restaurante (ver `docs/BACKLOG.md`). Código nuevo: recibir la zona como parámetro en lugar de añadir más usos de "Madrid".
+   - **Negocio de Restomind** (pruebas gratuitas, permanencia, comisiones del CRM, facturación): hora de España.
 8. Funcionalidades de pago: comprobar el módulo con `useRestaurantModulos(restaurantId).tieneModulo(key)` (front) y con la validación en BD cuando aplique.
 9. Tras escribir en BD, actualizar el estado local al momento; no esperar al eco de Realtime.
 
