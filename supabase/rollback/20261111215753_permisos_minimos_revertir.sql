@@ -16,10 +16,19 @@
 -- NO TOCA DATOS. No revoca nada a postgres. Deja el search_path de
 -- fn_marcar_timestamp_estado_pedido() como lo dejó la migración (es inocuo).
 --
--- Cómo aplicarlo (lo decide Patricio; nunca desde una sesión de trabajo sin su
--- permiso, regla 1 de CLAUDE.md):
---   npx supabase db query --remote=<ref> -f supabase/rollback/20261111215753_permisos_minimos_revertir.sql
--- y después crear una migración nueva que deje constancia de la vuelta atrás.
+-- Cómo aplicarlo (lo decide Patricio; siempre como migración, regla 1 de
+-- CLAUDE.md; nunca con `db query` ni SQL suelto en Producción):
+--   1. npx supabase migration new revertir_permisos_minimos
+--      y copiar este archivo en supabase/migrations/<ts nuevo>_revertir_permisos_minimos.sql
+--      QUITANDO las líneas `begin;` y `commit;` (db push ya va en transacción).
+--   2. Aplicarla primero en Test:
+--        npx supabase db push --remote=sfkwbhzelrestmrmptql --dry-run
+--        npx supabase db push --remote=sfkwbhzelrestmrmptql
+--   3. Después en Producción:
+--        npx supabase db push --remote=mfxrluanpawfjncpqrvu --dry-run
+--        npx supabase db push --remote=mfxrluanpawfjncpqrvu
+--   4. Comprobar con supabase/tests/permisos_huella.sql (--read-only) que
+--      Producción vuelve a dar el md5 de arriba.
 -- =============================================================================
 begin;
 
@@ -40,6 +49,7 @@ begin
     from pg_class c
     join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped and a.attacl is not null
     where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p','v','m','f')
+      and not exists (select 1 from pg_depend d where d.classid = 'pg_class'::regclass and d.objid = c.oid and d.deptype = 'e')
     group by c.oid
   loop
     execute format('revoke all (%s) on table %s from public, anon, authenticated, service_role', r.cols, r.obj);
