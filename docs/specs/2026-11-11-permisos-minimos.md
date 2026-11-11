@@ -1,6 +1,7 @@
 # Permisos mínimos iguales en Test y Producción (esquema `public`)
 - Fecha: 2026-11-11
-- Estado: borrador
+- Estado: borrador (pendiente de respuestas de Patricio)
+- Anexo con el estado actual medido: `2026-11-11-permisos-minimos-estado-actual.md`
 
 ## Qué y para quién
 Una migración en `supabase/migrations/` que deja los grants de tabla y el EXECUTE de funciones del esquema `public` idénticos en Test y en Producción, con el mínimo privilegio que necesita la app.
