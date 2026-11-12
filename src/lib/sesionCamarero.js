@@ -14,10 +14,14 @@ export function esSesionCamareroCaducada(error) {
 }
 
 // Llama a una función del camarero añadiendo su token. Si la sesión ya no
-// vale, avisa con onSesionCaducada() (una vez por llamada) y devuelve el
-// error igual, para que quien llama no lo trate como un fallo normal.
+// vale, avisa con onSesionCaducada(tokenEnviado) y devuelve el error igual,
+// para que quien llama no lo trate como un fallo normal. Se pasa el token con
+// el que salió la petición: quien recibe el aviso solo debe cerrar la sesión
+// si ese token sigue siendo el actual (una respuesta tardía con el token de
+// otra persona, o de una sesión anterior, no debe echar a quien acaba de entrar).
 export async function rpcCamarero(fn, params, camarero, onSesionCaducada, parametroToken = 'p_token') {
-  const res = await supabase.rpc(fn, { ...params, [parametroToken]: camarero?.token ?? null })
-  if (esSesionCamareroCaducada(res.error) && onSesionCaducada) onSesionCaducada()
+  const tokenEnviado = camarero?.token ?? null
+  const res = await supabase.rpc(fn, { ...params, [parametroToken]: tokenEnviado })
+  if (esSesionCamareroCaducada(res.error) && onSesionCaducada) onSesionCaducada(tokenEnviado)
   return res
 }

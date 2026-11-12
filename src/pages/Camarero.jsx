@@ -206,9 +206,13 @@ export default function Camarero() {
     return rpcCamarero(fn, params, camareroRef.current, sesionCaducada, parametroToken)
   }
 
-  function sesionCaducada() {
+  // tokenEnviado: el token con el que salió la petición que dio RM401. Solo
+  // se cierra la sesión si sigue siendo el actual; si no, es una respuesta
+  // tardía de una sesión anterior (u otra persona) y se ignora.
+  function sesionCaducada(tokenEnviado) {
     const actual = camareroRef.current
     if (!actual) return // ya se gestionó (varios sondeos pueden fallar a la vez)
+    if (!tokenEnviado || tokenEnviado !== actual.token) return
     const e = estadoRef.current
     pendienteRef.current = {
       camareroId: actual.id,
