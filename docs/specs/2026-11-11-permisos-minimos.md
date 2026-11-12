@@ -1,6 +1,6 @@
 # Permisos mínimos iguales en Test y Producción (esquema `public`)
 - Fecha: 2026-11-11
-- Estado: aprobada por Patricio el 11-11-2026
+- Estado: aprobada por Patricio el 11-11-2026; aplicada en Test (11-11) y en Producción (12-11-2026). Criterios 1-8 OK.
 - Anexo con el estado actual medido: `2026-11-11-permisos-minimos-estado-actual.md`
 
 ## Qué y para quién
