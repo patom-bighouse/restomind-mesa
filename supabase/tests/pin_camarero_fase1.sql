@@ -5,6 +5,8 @@
 -- SOLO CONTRA TEST (sfkwbhzelrestmrmptql), y solo ENTRE la migración de fase 1
 -- y la de fase 2 (con la fase 2 aplicada, las llamadas sin token dan RM401 y
 -- esta prueba falla a propósito). Todo dentro de begin … rollback.
+-- Desde la fase 2 (20261112162501) solo sirve para comprobar la vuelta atrás
+-- supabase/rollback/pin_camarero_fase2_revertir.sql (debe salir todo ok).
 --   npx supabase db query --remote=sfkwbhzelrestmrmptql --yes -f supabase/tests/pin_camarero_fase1.sql
 --
 -- Hace las llamadas EXACTAMENTE como las hace la versión anterior de la app

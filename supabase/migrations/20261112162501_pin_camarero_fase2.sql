@@ -1,29 +1,17 @@
 -- =============================================================================
--- BORRADOR — Sesión de camarero con PIN — FASE 2 (token obligatorio)
--- Spec: docs/specs/2026-11-12-pin-camarero.md ("PR 2")
+-- Sesión de camarero con PIN — FASE 2 (token obligatorio)
+-- Spec: docs/specs/2026-11-12-pin-camarero.md ("PR 2"). Fase 1: 20261112152109.
 --
--- NO es una migración todavía: está fuera de supabase/migrations/ a propósito,
--- para que `db push` no la aplique junto con la fase 1 (no habría transición).
+-- Solo reescribe fn_staff_exigir_sesion para rechazar el token nulo (RM401) y
+-- borra camarero_llamadas_sin_token (las anotaciones de la fase 1 ya no hacen
+-- falta). No toca firmas, grants de otras funciones ni el front.
 --
--- Cuándo (decisión 2 de la spec):
---   * Test: justo después de validar la fase 1 (criterio 7).
---   * Producción: cuando camarero_llamadas_sin_token no tenga llamadas en las
---     últimas 24 h (consulta de solo lectura del orquestador):
---       select restaurant_id, funcion, llamadas, ultima_llamada
---       from camarero_llamadas_sin_token
---       where ultima_llamada > now() - interval '24 hours';
---     Mientras en Producción solo haya restaurantes de prueba, en cuanto la
---     fase 1 esté comprobada allí.
---
--- Cómo (en el PR 2):
---   npx supabase migration new pin_camarero_fase2
---   copiar este archivo en supabase/migrations/<ts>_pin_camarero_fase2.sql
---   (quitando este encabezado de borrador) y aplicarlo con db push, primero
---   en Test y luego en Producción.
---
--- Cambios: solo reescribe fn_staff_exigir_sesion para rechazar el token nulo
--- (RM401) y borra camarero_llamadas_sin_token. No toca firmas ni el front.
--- Vuelta atrás: supabase/rollback/pin_camarero_fase2_revertir.sql
+-- Cuándo en Producción (decisión 2): con solo restaurantes de prueba, en cuanto
+-- la fase 1 esté comprobada (12-11-2026). Con clientes reales: tras 24 h sin
+-- llamadas en camarero_llamadas_sin_token.
+-- Vuelta atrás: supabase/rollback/pin_camarero_fase2_revertir.sql (como
+-- migración nueva, primero en Test y luego en Producción).
+-- No toca datos (salvo borrar la tabla de anotaciones).
 -- =============================================================================
 
 create or replace function public.fn_staff_exigir_sesion(
