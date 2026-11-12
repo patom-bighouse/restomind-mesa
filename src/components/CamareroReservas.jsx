@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../lib/supabase'
+import { rpcCamarero, esSesionCamareroCaducada } from '../lib/sesionCamarero'
 import { hoyMadrid } from '../lib/fechas'
 
 const ZONAS = ['sin preferencia', 'interior', 'terraza', 'privado', 'barra']
@@ -36,7 +36,7 @@ const S = {
 
 // Igual que CamareroClientes: nunca lee `reservations` directo, todo
 // pasa por las funciones fn_staff_* que revisan el permiso 'reservas'.
-export default function CamareroReservas({ camarero, restaurantId, onVolver }) {
+export default function CamareroReservas({ camarero, restaurantId, onVolver, onSesionCaducada }) {
   const [reservas, setReservas] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -54,11 +54,12 @@ export default function CamareroReservas({ camarero, restaurantId, onVolver }) {
 
   async function loadReservas() {
     setLoading(true)
-    const { data, error: err } = await supabase.rpc('fn_staff_listar_reservas', {
+    const { data, error: err } = await rpcCamarero('fn_staff_listar_reservas', {
       p_restaurant_id: restaurantId,
       p_camarero_id: camarero.id,
-    })
+    }, camarero, onSesionCaducada)
     setLoading(false)
+    if (esSesionCamareroCaducada(err)) return
     if (err) { setError(err.message); return }
     setReservas(data || [])
   }
@@ -71,12 +72,13 @@ export default function CamareroReservas({ camarero, restaurantId, onVolver }) {
 
   async function cambiarEstado(reserva, nuevoEstado) {
     setReservas(prev => prev.map(r => r.id === reserva.id ? { ...r, estado: nuevoEstado } : r))
-    const { error: err } = await supabase.rpc('fn_staff_cambiar_estado_reserva', {
+    const { error: err } = await rpcCamarero('fn_staff_cambiar_estado_reserva', {
       p_restaurant_id: restaurantId,
       p_camarero_id: camarero.id,
       p_reserva_id: reserva.id,
       p_nuevo_estado: nuevoEstado,
-    })
+    }, camarero, onSesionCaducada)
+    if (esSesionCamareroCaducada(err)) return
     if (err) { setError(err.message); await loadReservas() }
   }
 
@@ -84,7 +86,7 @@ export default function CamareroReservas({ camarero, restaurantId, onVolver }) {
     if (!nombre.trim() || !telefono.trim() || !fecha || !hora || !personas) return
     setError(null)
     setAdding(true)
-    const { error: err } = await supabase.rpc('fn_staff_crear_reserva_manual', {
+    const { error: err } = await rpcCamarero('fn_staff_crear_reserva_manual', {
       p_restaurant_id: restaurantId,
       p_camarero_id: camarero.id,
       p_nombre: nombre.trim(),
@@ -94,8 +96,9 @@ export default function CamareroReservas({ camarero, restaurantId, onVolver }) {
       p_personas: parseInt(personas, 10),
       p_zona: zona,
       p_notas: null,
-    })
+    }, camarero, onSesionCaducada)
     setAdding(false)
+    if (esSesionCamareroCaducada(err)) return
     if (err) { setError(err.message); return }
     setNombre(''); setTelefono(''); setFecha(''); setHora(''); setPersonas('2'); setZona('sin preferencia')
     await loadReservas()

@@ -1,7 +1,8 @@
 -- =============================================================================
 -- Criterio 3 de docs/specs/2026-11-11-permisos-minimos.md
 -- service_role: los 8 privilegios en todas las tablas de public y EXECUTE en
--- las 81 funciones no trigger.
+-- las 83 funciones no trigger (81 de permisos mínimos + fn_camarero_cerrar_sesion
+-- y fn_staff_exigir_sesion de docs/specs/2026-11-12-pin-camarero.md).
 --
 -- SOLO CONTRA TEST (sfkwbhzelrestmrmptql). Todo dentro de begin … rollback.
 --   npx supabase db query --remote=sfkwbhzelrestmrmptql -f supabase/tests/permisos_service_role.sql
@@ -54,8 +55,8 @@ where not exists (select 1 from aclexplode(coalesce(f.proacl, acldefault('f', f.
                   where a.grantee = 'service_role'::regrole and a.privilege_type = 'EXECUTE');
 
 insert into _resultado (prueba, ok, detalle)
-select 'funciones no trigger sin EXECUTE para service_role = 0 (de 81)',
-       count(*) = 81 and not exists (select 1 from _resultado where detalle like 'service_role sin EXECUTE%'),
+select 'funciones no trigger sin EXECUTE para service_role = 0 (de 83)',
+       count(*) = 83 and not exists (select 1 from _resultado where detalle like 'service_role sin EXECUTE%'),
        count(*) || ' funciones no trigger; ' ||
        (select count(*) from _resultado where detalle like 'service_role sin EXECUTE%') || ' sin EXECUTE'
 from _funciones;

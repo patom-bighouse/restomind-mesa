@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { rpcCamarero, esSesionCamareroCaducada } from '../lib/sesionCamarero'
 
 const S = {
   app: { minHeight: '100vh', background: '#111', color: '#f0e8d8', fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column' },
@@ -26,8 +27,9 @@ const S = {
 // (sql/checklist_limpieza.sql), acotado a las mesas de este restaurante
 // vía fn_camarero_toggle_limpieza (security definer) — acá solo se
 // filtra la vista según el permiso 'limpieza' que le diste a esta
-// persona en AdminConfig.
-export default function CamareroLimpieza({ restaurantId, onVolver }) {
+// persona en AdminConfig. La función exige la sesión del camarero
+// (token del PIN); si caduca, onSesionCaducada vuelve a "¿Quién eres?".
+export default function CamareroLimpieza({ camarero, restaurantId, onVolver, onSesionCaducada }) {
   const [tables, setTables] = useState([])
   const [pasos, setPasos] = useState([])
   const [loading, setLoading] = useState(true)
@@ -81,9 +83,10 @@ export default function CamareroLimpieza({ restaurantId, onVolver }) {
       setTables(prev => prev.map(t => t.id === table.id ? { ...t, ...patch } : t))
       setModalTable(prev => prev && prev.id === table.id ? { ...prev, ...patch } : prev)
     }
-    const { error } = await supabase.rpc('fn_camarero_toggle_limpieza', {
-      p_table_id: table.id, p_restaurant_id: restaurantId, p_paso_id: pasoId,
-    })
+    const { error } = await rpcCamarero('fn_camarero_toggle_limpieza', {
+      p_table_id: table.id, p_restaurant_id: restaurantId, p_paso_id: pasoId, p_camarero_id: camarero.id,
+    }, camarero, onSesionCaducada)
+    if (esSesionCamareroCaducada(error)) return
     if (error) {
       // No se guardó: volver al estado real de la BD y avisar.
       await loadTablasSucias()
