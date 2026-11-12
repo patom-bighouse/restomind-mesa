@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../lib/supabase'
+import { rpcCamarero, esSesionCamareroCaducada } from '../lib/sesionCamarero'
 
 const ESTADO_CFG = {
   pendiente:  { label: 'Pendiente',  bg: '#2a1410', border: '#c0392b', dot: '#e74c3c', next: 'preparando',  nextLabel: 'Preparando →', prev: null },
@@ -38,7 +38,7 @@ function timeAgo(dateStr) {
 // revertir. Se actualiza por sondeo (cada 8s) en vez de Realtime,
 // porque el rol anónimo no puede recibir esos eventos sin ampliar
 // permisos de lectura sobre `orders`.
-export default function CamareroCocina({ camarero, restaurantId, onVolver }) {
+export default function CamareroCocina({ camarero, restaurantId, onVolver, onSesionCaducada }) {
   const [pedidos, setPedidos] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -51,11 +51,12 @@ export default function CamareroCocina({ camarero, restaurantId, onVolver }) {
 
   async function loadPedidos(silencioso) {
     if (!silencioso) setLoading(true)
-    const { data, error: err } = await supabase.rpc('fn_staff_listar_pedidos_cocina', {
+    const { data, error: err } = await rpcCamarero('fn_staff_listar_pedidos_cocina', {
       p_restaurant_id: restaurantId,
       p_camarero_id: camarero.id,
-    })
+    }, camarero, onSesionCaducada)
     setLoading(false)
+    if (esSesionCamareroCaducada(err)) return
     if (err) { setError(err.message); return }
     setPedidos(data || [])
   }
@@ -64,12 +65,13 @@ export default function CamareroCocina({ camarero, restaurantId, onVolver }) {
     setPedidos(prev => nuevoEstado === 'entregado'
       ? prev.filter(p => p.id !== pedido.id)
       : prev.map(p => p.id === pedido.id ? { ...p, estado: nuevoEstado } : p))
-    const { error: err } = await supabase.rpc('fn_staff_cambiar_estado_pedido', {
+    const { error: err } = await rpcCamarero('fn_staff_cambiar_estado_pedido', {
       p_restaurant_id: restaurantId,
       p_camarero_id: camarero.id,
       p_order_id: pedido.id,
       p_nuevo_estado: nuevoEstado,
-    })
+    }, camarero, onSesionCaducada)
+    if (esSesionCamareroCaducada(err)) return
     if (err) { setError(err.message); await loadPedidos(true) }
   }
 

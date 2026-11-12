@@ -1,5 +1,5 @@
 import { useState, useEffect, Fragment } from 'react'
-import { supabase } from '../lib/supabase'
+import { rpcCamarero, esSesionCamareroCaducada } from '../lib/sesionCamarero'
 import { formatMoney } from '../lib/money'
 
 const S = {
@@ -32,7 +32,7 @@ const S = {
 // las funciones fn_staff_* (ver sql/permisos_staff.sql), que verifican
 // en cada llamada que este camarero siga activo y tenga el permiso
 // 'clientes' antes de devolver o cambiar nada.
-export default function CamareroClientes({ camarero, restaurantId, restaurant, onVolver }) {
+export default function CamareroClientes({ camarero, restaurantId, restaurant, onVolver, onSesionCaducada }) {
   const [clientes, setClientes] = useState([])
   const [busqueda, setBusqueda] = useState('')
   const [loading, setLoading] = useState(true)
@@ -49,11 +49,12 @@ export default function CamareroClientes({ camarero, restaurantId, restaurant, o
 
   async function loadClientes() {
     setLoading(true)
-    const { data, error: err } = await supabase.rpc('fn_staff_listar_clientes', {
+    const { data, error: err } = await rpcCamarero('fn_staff_listar_clientes', {
       p_restaurant_id: restaurantId,
       p_camarero_id: camarero.id,
-    })
+    }, camarero, onSesionCaducada)
     setLoading(false)
+    if (esSesionCamareroCaducada(err)) return
     if (err) { setError(err.message); return }
     setClientes(data || [])
   }
@@ -62,11 +63,11 @@ export default function CamareroClientes({ camarero, restaurantId, restaurant, o
     if (historialAbierto === clienteId) { setHistorialAbierto(null); return }
     setHistorialAbierto(clienteId)
     if (!movimientos[clienteId]) {
-      const { data } = await supabase.rpc('fn_staff_historial_cliente', {
+      const { data } = await rpcCamarero('fn_staff_historial_cliente', {
         p_restaurant_id: restaurantId,
         p_camarero_id: camarero.id,
         p_cliente_id: clienteId,
-      })
+      }, camarero, onSesionCaducada)
       setMovimientos(prev => ({ ...prev, [clienteId]: data || [] }))
     }
   }
@@ -91,14 +92,15 @@ export default function CamareroClientes({ camarero, restaurantId, restaurant, o
       return
     }
     setRedeeming(true)
-    const { error: err } = await supabase.rpc('fn_staff_canjear_puntos', {
+    const { error: err } = await rpcCamarero('fn_staff_canjear_puntos', {
       p_restaurant_id: restaurantId,
       p_camarero_id: camarero.id,
       p_cliente_id: redeemCliente.id,
       p_cantidad: cantidad,
       p_motivo: redeemMotivo.trim() || null,
-    })
+    }, camarero, onSesionCaducada)
     setRedeeming(false)
+    if (esSesionCamareroCaducada(err)) return
     if (err) { setError(err.message); return }
     setSuccess(`Canjeados ${cantidad} puntos de ${redeemCliente.nombre || redeemCliente.telefono}.`)
     setTimeout(() => setSuccess(null), 4000)
