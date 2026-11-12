@@ -1,6 +1,6 @@
 # Funciones del camarero protegidas por sesión con PIN
 - Fecha: 2026-11-12
-- Estado: borrador
+- Estado: borrador (preguntas respondidas el 12-11-2026; pendiente de aprobación de Patricio)
 
 ## Qué y para quién
 Hoy cualquiera que conozca el id del restaurante (está en la URL `/camarero/<id>`) puede, sin PIN, leer teléfonos y puntos de clientes, ver y cambiar reservas, mover pedidos de cocina, canjear puntos y ver quién está sentado en cada mesa. Esta tarea hace que todas esas funciones exijan una **sesión de camarero** que solo se obtiene introduciendo el PIN correcto.
@@ -23,7 +23,7 @@ Afecta al personal con PIN (camarero, limpieza, cocina con PIN, reservas y clien
    - Sesión no válida → error con `errcode = 'RM401'` y mensaje "Tu sesión ha caducado. Recarga la página y vuelve a introducir tu PIN."
    - Sesión válida sin el permiso → el error de hoy, "No autorizado".
 4. Todas las `fn_camarero_*` y `fn_staff_*` del grupo A la llaman al principio.
-5. Caducidad: 12 horas desde que se puso el PIN (pendiente de confirmar, pregunta 1). Es una duración, no una hora del día: `caduca_at = now() + interval '12 hours'`. No depende de la zona horaria (regla 7 de `CLAUDE.md` no aplica).
+5. Caducidad: 12 horas desde que se puso el PIN (decisión 1). Es una duración, no una hora del día: `caduca_at = now() + interval '12 hours'`. No depende de la zona horaria (regla 7 de `CLAUDE.md` no aplica).
 6. Revocación: "Cambiar camarero" en la app cierra la sesión (`fn_camarero_cerrar_sesion(p_token)`). `fn_resetear_pin_camarero` revoca todas las sesiones de ese camarero. Desactivar al camarero o el restaurante invalida sus sesiones en la siguiente llamada (se comprueba en vivo).
 7. Despliegue en dos fases para no dejar sin servicio a quien tenga la app abierta (ver "Despliegue y vuelta atrás").
 
@@ -75,7 +75,7 @@ Dos PR y dos migraciones. Nunca las dos en el mismo `db push`: si las dos están
 **PR 2 (fase 2, token obligatorio):**
 - Migración `<ts>_pin_camarero_fase2.sql`: reescribe solo `fn_staff_exigir_sesion` para rechazar el token nulo, y borra `camarero_llamadas_sin_token`.
 - En Test se aplica justo después de validar la fase 1, para pasar los criterios 1–6 y 8.
-- En Producción, solo cuando `camarero_llamadas_sin_token` no tenga llamadas en las últimas 24 h (consulta de solo lectura que hace el orquestador; regla 1). Ver pregunta 2.
+- En Producción, solo cuando `camarero_llamadas_sin_token` no tenga llamadas en las últimas 24 h (consulta de solo lectura que hace el orquestador; regla 1); si alguna pantalla sigue con la versión antigua, se avisa a ese restaurante para que recargue (decisión 2). Mientras en Producción solo haya restaurantes de prueba, la fase 2 se aplica en cuanto la fase 1 esté comprobada en Producción.
 
 **Vuelta atrás (preparada, sin aplicar, en `supabase/rollback/`):**
 - `pin_camarero_fase2_revertir.sql`: vuelve a poner `fn_staff_exigir_sesion` en modo tolerante. Es una sola función; no hace falta tocar el front ni las firmas. Es la salida rápida si, tras la fase 2, algún restaurante no puede trabajar.
@@ -84,7 +84,7 @@ Dos PR y dos migraciones. Nunca las dos en el mismo `db push`: si las dos están
 
 ## Fuera de alcance
 - Guardar la sesión para que recargar la página no pida el PIN. Hoy ya lo pide; no cambia.
-- Endurecer el PIN (más dígitos, bloqueo progresivo, aviso al dueño). Ver Riesgos y pregunta 3.
+- Endurecer el PIN (más dígitos, bloqueo progresivo, aviso al dueño). Tarea aparte en el backlog (decisión 3).
 - `fn_estado_fidelizacion` y `fn_consultar_vale`: cualquiera con el id del restaurante puede consultar los puntos de un teléfono o probar códigos de vale. Las usa la mesa por QR sin sesión; cerrarlo es otra tarea.
 - `fn_canjear_vale_regalo`: no cambia. Tras esta tarea, el id de sesión de mesa solo se obtiene con el token QR de la mesa (`fn_sesion_abierta_por_token`) o con sesión de camarero.
 - `fn_listar_camareros_nombres` sigue devolviendo nombres e id (la pantalla "¿Quién eres?" los necesita).
@@ -116,28 +116,14 @@ Dos PR y dos migraciones. Nunca las dos en el mismo `db push`: si las dos están
 3. **Pantallas que nunca se recargan.** Una tablet de cocina puede tener abierta la versión vieja días enteros. Tras la fase 2 verá "Tu sesión ha caducado. Recarga la página…" (el mensaje está pensado para que lo entienda también la versión vieja, que muestra el texto del error en Clientes, Reservas y Cocina). En la sección de pedidos la versión vieja no muestra errores de sondeo: la lista de mesas dejaría de actualizarse sin aviso. Por eso la condición de las 24 h sin llamadas antiguas.
 4. **Dos versiones de una función.** Si queda la firma antigua junto a la nueva, PostgREST puede no saber cuál usar y la llamada falla. El criterio 6 lo comprueba.
 5. **`fn_registrar_pedido` la usa también la mesa por QR**, y no sabemos si n8n la llama. Se añade un parámetro con valor por defecto, así que una llamada con parámetros por nombre sigue funcionando. Si n8n la llamara con `p_camarero_id`, en fase 2 fallaría. Mitigación: el orquestador revisa en los registros de API de Producción (solo lectura) si hay llamadas a `fn_registrar_pedido` con rol `service_role` antes de la fase 2.
-6. **El PIN sigue siendo el único secreto y es de 4 dígitos.** Con el límite actual (10 fallos cada 5 minutos por camarero) y probando contra todos los camareros a la vez, un atacante paciente puede acertar un PIN en horas o pocos días. Esta tarea cierra el acceso sin PIN, pero no hace el PIN más difícil de adivinar. Ver pregunta 3.
+6. **El PIN sigue siendo el único secreto y es de 4 dígitos.** Con el límite actual (10 fallos cada 5 minutos por camarero) y probando contra todos los camareros a la vez, un atacante paciente puede acertar un PIN en horas o pocos días. Esta tarea cierra el acceso sin PIN, pero no hace el PIN más difícil de adivinar. Queda como tarea aparte en el backlog (decisión 3).
 7. **Multi-tenant.** La sesión se ata a camarero y restaurante; `fn_staff_exigir_sesion` comprueba los dos. El criterio 2 prueba token de otro restaurante.
-8. **Hora.** La caducidad es una duración (`now() + 12 h`), no "hasta tal hora". No usa la zona del navegador ni Madrid. Si se elige la opción 2 de la pregunta 1, sí hará falta la zona del restaurante, recibida como parámetro (regla 7).
+8. **Hora.** La caducidad es una duración (`now() + 12 h`), no "hasta tal hora". No usa la zona del navegador ni Madrid.
 9. **Pedidos en curso.** Un camarero a media comanda cuando caduca su sesión pierde el carrito si la app vuelve a "¿Quién eres?". El front debe conservar el carrito en memoria hasta que vuelva a entrar el mismo camarero, o al menos no borrarlo sin avisar (decisión del implementador; se comprueba en el paso 4 del criterio 8).
 10. **Regla 4 y la política del dueño.** Las tablas nuevas tienen la política del dueño, pero sin grant a authenticated no sirve de nada hasta que haya una pantalla que la use. Es a propósito (igual que `camarero_pin_intentos`).
 11. **Escrituras en fase 1.** Cada llamada sin token escribe en `camarero_llamadas_sin_token` (la app sondea cada 5–10 s por dispositivo). Es una fila por restaurante y función, y dura solo la fase 1.
 
-## Preguntas abiertas
-1. **¿Cuánto dura la sesión de un camarero antes de tener que volver a poner el PIN?**
-   Qué pasa: al cumplirse el plazo, la app vuelve sola a "¿Quién eres?" y pide el PIN. Cuanto más largo, más cómodo; cuanto más corto, menos tiempo sirve un móvil olvidado o robado.
-   1. 12 horas desde que pone el PIN. Cubre un turno partido completo; como mucho se pide una vez a mitad de jornada. **(Recomendada)**
-   2. Hasta una hora fija del día (por ejemplo, las 6:00 de la mañana, hora del restaurante). Nunca salta en mitad del servicio, pero es más trabajo (hay que tener en cuenta la zona horaria de cada restaurante).
-   3. 4 horas. Más seguro, pero en un turno largo pedirá el PIN varias veces, a veces en plena comanda.
-   4. No caduca: solo se cierra con "Cambiar camarero", al recargar la página o si el dueño le cambia el PIN o lo da de baja.
-2. **Cuando haya clientes reales, ¿cuándo se pasa a la fase 2 (token obligatorio)?**
-   Qué pasa: hasta la fase 2, la puerta antigua (sin PIN) sigue abierta para no cortar a quien tenga la app abierta desde antes. Al cerrarla, un móvil o tablet que no se haya recargado deja de funcionar hasta que lo recarguen.
-   1. Esperar a que pasen 24 horas sin ninguna pantalla con la versión antigua (lo vemos en la base de datos) y, si alguna sigue, avisar a ese restaurante para que recargue. **(Recomendada)**
-   2. Cerrar a las 24 horas pase lo que pase, avisando antes a todos los restaurantes de que recarguen la app.
-   3. Cerrar en el mismo momento de publicar. Solo tiene sentido mientras en Producción haya solo restaurantes de prueba (como ahora).
-   Nota: hoy, con solo restaurantes de prueba, se puede hacer la fase 2 en cuanto la fase 1 esté comprobada en Producción.
-3. **¿Endurecemos también el PIN en esta tarea?**
-   Qué pasa: tras esta tarea, sin PIN no se puede hacer nada. Pero el PIN es de 4 cifras y alguien con paciencia, probando de forma automática contra todos los camareros, podría acertar uno en horas o días.
-   1. No; se apunta como tarea aparte en el backlog (por ejemplo: bloqueo más largo tras varios fallos y aviso al dueño). Esta tarea queda más pequeña y segura de desplegar. **(Recomendada)**
-   2. Sí, dentro de esta tarea: bloqueo cada vez más largo tras fallos repetidos (5 min, 30 min, 2 h…). Más trabajo y más pruebas.
-   3. Pasar a PIN de 6 cifras. Obliga a que todos los dueños cambien los PIN de su personal.
+## Decisiones (respuestas de Patricio, 12-11-2026)
+1. **Duración de la sesión:** 12 horas desde que se pone el PIN (`now() + interval '12 hours'`). Es una duración, sin zona horaria.
+2. **Cuándo se aplica la fase 2 con clientes reales:** cuando pasen 24 h sin llamadas en `camarero_llamadas_sin_token`; si alguna pantalla sigue con la versión antigua, se avisa a ese restaurante para que recargue. Hoy (solo restaurantes de prueba en Producción) se aplica en cuanto la fase 1 esté comprobada en Producción.
+3. **Endurecer el PIN:** no en esta tarea. Queda en el backlog como tarea aparte.
