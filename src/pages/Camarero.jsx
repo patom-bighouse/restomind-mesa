@@ -9,6 +9,7 @@ import CamareroReservas from '../components/CamareroReservas'
 import CamareroLimpieza from '../components/CamareroLimpieza'
 import CamareroCocina from '../components/CamareroCocina'
 import { hoyMadrid } from '../lib/fechas'
+import { rpcCamarero, esSesionCamareroCaducada, AVISO_SESION_CADUCADA } from '../lib/sesionCamarero'
 
 const PERMISOS_IMPLEMENTADOS = ['pedidos', 'clientes', 'reservas', 'limpieza', 'cocina']
 const PERMISOS_LABEL = { pedidos: 'Pedidos', clientes: 'Clientes', reservas: 'Reservas', limpieza: 'Limpieza', cocina: 'Cocina' }
@@ -68,6 +69,7 @@ const S = {
   pinKey: { width: 64, height: 64, borderRadius: '50%', background: '#1a1a1a', border: '0.5px solid #3a2e20', color: '#f0e8d8', fontSize: 22, fontFamily: "'Inter', sans-serif", cursor: 'pointer' },
   pinKeyGhost: { width: 64, height: 64 },
   error: { fontSize: 13, color: '#e87a7a' },
+  avisoSesion: { background: '#2a1410', border: '0.5px solid #6a2e20', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#e87a7a', textAlign: 'center', maxWidth: 280, marginBottom: 10 },
 
   mesasGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12, padding: 20 },
   mesaCard: { background: '#1a1a1a', border: '0.5px solid #3a2e20', borderRadius: 12, padding: '16px 14px', cursor: 'pointer', textAlign: 'center' },
@@ -121,7 +123,15 @@ const S = {
 export default function Camarero() {
   const { restaurantId } = useParams()
   const [restaurant, setRestaurant] = useState(null)
-  const [camarero, setCamarero] = useState(null) // { id, nombre, permisos }
+  const [camarero, setCamarero] = useState(null) // { id, nombre, permisos, token, caduca_at }
+  // Copia síncrona de `camarero`: los sondeos (setInterval) y las llamadas
+  // justo después de entrar leen de aquí, no de un cierre con el valor viejo.
+  const camareroRef = useRef(null)
+  // Aviso en "¿Quién eres?" cuando la sesión caduca (RM401).
+  const [avisoSesion, setAvisoSesion] = useState(null)
+  // Lo que había a medio hacer cuando caducó la sesión (mesa abierta y
+  // carrito), para devolvérselo si vuelve a entrar la misma persona.
+  const pendienteRef = useRef(null)
   const [seccionActiva, setSeccionActiva] = useState(null) // 'pedidos' | 'clientes' | null (selector)
   const [listaCamareros, setListaCamareros] = useState([]) // [{id, nombre}] para la pantalla "¿quién eres?"
   const [loginSel, setLoginSel] = useState(null) // {id, nombre} elegido, antes de pedir el PIN
@@ -180,10 +190,53 @@ export default function Camarero() {
   const [aplicandoVale, setAplicandoVale] = useState(false)
   const [valeExito, setValeExito] = useState(null) // { codigo, importe } | null — último vale aplicado con éxito
 
+  const estadoRef = useRef({})
+  estadoRef.current = { seccionActiva, selectedTable, cart, orderNote, premiosEnCarrito }
+
   useEffect(() => {
     loadRestaurant()
     loadListaCamareros()
   }, [restaurantId])
+
+  // ---------- Sesión de camarero (token del PIN) ----------
+  // Todas las funciones del camarero reciben su token. Si la sesión ya no
+  // vale (caducada, cerrada, PIN cambiado, dado de baja), fallan con RM401 y
+  // se vuelve a "¿Quién eres?" con el aviso.
+  function rpcStaff(fn, params, parametroToken) {
+    return rpcCamarero(fn, params, camareroRef.current, sesionCaducada, parametroToken)
+  }
+
+  // tokenEnviado: el token con el que salió la petición que dio RM401. Solo
+  // se cierra la sesión si sigue siendo el actual; si no, es una respuesta
+  // tardía de una sesión anterior (u otra persona) y se ignora.
+  function sesionCaducada(tokenEnviado) {
+    const actual = camareroRef.current
+    if (!actual) return // ya se gestionó (varios sondeos pueden fallar a la vez)
+    if (!tokenEnviado || tokenEnviado !== actual.token) return
+    const e = estadoRef.current
+    pendienteRef.current = {
+      camareroId: actual.id,
+      seccionActiva: e.seccionActiva,
+      selectedTable: e.selectedTable,
+      cart: e.cart,
+      orderNote: e.orderNote,
+      premiosEnCarrito: e.premiosEnCarrito,
+    }
+    camareroRef.current = null
+    setCamarero(null)
+    setLoginSel(null)
+    setSeccionActiva(null)
+    setSelectedTable(null)
+    setShowCart(false)
+    setShowPedidosSesion(false)
+    setShowFidelizacion(false)
+    setShowValePanel(false)
+    setLimpiezaModal(null)
+    setSendError(null)
+    setPinInput('')
+    setPinError(null)
+    setAvisoSesion(AVISO_SESION_CADUCADA)
+  }
 
   async function loadListaCamareros() {
     const { data } = await supabase.rpc('fn_listar_camareros_nombres', { p_restaurant_id: restaurantId })
@@ -231,13 +284,33 @@ export default function Camarero() {
       setPinInput('')
       return
     }
-    const persona = data[0]
+    const persona = data[0] // { id, nombre, permisos, token, caduca_at }
+    camareroRef.current = persona
     setCamarero(persona)
+    setAvisoSesion(null)
     setPinInput('')
     const permisosUtiles = (persona.permisos || []).filter(p => PERMISOS_IMPLEMENTADOS.includes(p))
-    // Con un solo permiso útil, entra directo a esa sección — el
-    // selector solo aparece si hay más de uno para elegir.
-    setSeccionActiva(permisosUtiles.length === 1 ? permisosUtiles[0] : null)
+    // Si caducó la sesión a mitad de algo y vuelve a entrar la misma
+    // persona, recupera la sección, la mesa y el carrito. Si entra otra,
+    // se descarta (no debe ver el carrito de otro).
+    const pendiente = pendienteRef.current
+    pendienteRef.current = null
+    const recuperar = pendiente && pendiente.camareroId === persona.id
+      && (!pendiente.seccionActiva || permisosUtiles.includes(pendiente.seccionActiva))
+    if (recuperar && pendiente.seccionActiva) {
+      setSeccionActiva(pendiente.seccionActiva)
+      if (pendiente.seccionActiva === 'pedidos' && pendiente.selectedTable) {
+        setSelectedTable(pendiente.selectedTable)
+        setCart(pendiente.cart || {})
+        setOrderNote(pendiente.orderNote || '')
+        setPremiosEnCarrito(pendiente.premiosEnCarrito || [])
+      }
+    } else {
+      if (pendiente) { setCart({}); setOrderNote(''); setPremiosEnCarrito([]) }
+      // Con un solo permiso útil, entra directo a esa sección — el
+      // selector solo aparece si hay más de uno para elegir.
+      setSeccionActiva(permisosUtiles.length === 1 ? permisosUtiles[0] : null)
+    }
     if (permisosUtiles.includes('pedidos')) {
       await loadTablas()
       await loadLimpiezaPasos()
@@ -245,6 +318,14 @@ export default function Camarero() {
   }
 
   function cambiarCamarero() {
+    // Cierra la sesión en la BD (su token deja de valer). Si falla, se sale igual.
+    const token = camareroRef.current?.token
+    if (token) {
+      supabase.rpc('fn_camarero_cerrar_sesion', { p_token: token }).then(() => {}, () => {})
+    }
+    camareroRef.current = null
+    pendienteRef.current = null
+    setAvisoSesion(null)
     setCamarero(null)
     setLoginSel(null)
     setSeccionActiva(null)
@@ -267,7 +348,7 @@ export default function Camarero() {
   // Si tenía más de un permiso, vuelve al selector; si era el único,
   // no hay a dónde volver más que salir.
   function volverDeSeccion() {
-    const permisosUtiles = (camarero.permisos || []).filter(p => PERMISOS_IMPLEMENTADOS.includes(p))
+    const permisosUtiles = (camareroRef.current?.permisos || []).filter(p => PERMISOS_IMPLEMENTADOS.includes(p))
     if (permisosUtiles.length > 1) setSeccionActiva(null)
     else cambiarCamarero()
   }
@@ -282,8 +363,12 @@ export default function Camarero() {
       .order('numero')
     setTables(tabs || [])
 
-    const { data: sess } = await supabase
-      .rpc('fn_camarero_listar_sesiones', { p_restaurant_id: restaurantId })
+    const actual = camareroRef.current
+    if (!actual) return
+    const { data: sess, error: errSess } = await rpcStaff('fn_camarero_listar_sesiones', {
+      p_restaurant_id: restaurantId, p_camarero_id: actual.id,
+    })
+    if (errSess) return // RM401 ya vuelve a "¿Quién eres?"; otro error: se reintenta en el próximo sondeo
     const map = {}
     ;(sess || []).forEach(s => { map[s.table_id] = s })
     setSessions(map)
@@ -312,9 +397,11 @@ export default function Camarero() {
       if (!prev || prev.id !== table.id) return prev
       return completo ? null : { ...prev, ...patch }
     })
-    const { error } = await supabase.rpc('fn_camarero_toggle_limpieza', {
+    const { error } = await rpcStaff('fn_camarero_toggle_limpieza', {
       p_table_id: table.id, p_restaurant_id: restaurantId, p_paso_id: pasoId,
+      p_camarero_id: camareroRef.current?.id,
     })
+    if (esSesionCamareroCaducada(error)) return
     if (error) {
       // No se guardó: volver al estado real de la BD y avisar.
       await loadTablas()
@@ -339,9 +426,11 @@ export default function Camarero() {
   }, [camarero])
 
   async function loadAlertas() {
-    const { data } = await supabase.rpc('fn_staff_contar_alertas', {
+    const actual = camareroRef.current
+    if (!actual) return
+    const { data } = await rpcStaff('fn_staff_contar_alertas', {
       p_restaurant_id: restaurantId,
-      p_camarero_id: camarero.id,
+      p_camarero_id: actual.id,
     })
     if (data) setAlertas(data)
   }
@@ -358,10 +447,13 @@ export default function Camarero() {
   }, [camarero, seccionActiva, selectedTable])
 
   async function loadLlamadas() {
-    const { data } = await supabase.rpc('fn_staff_listar_llamadas', {
+    const actual = camareroRef.current
+    if (!actual) return
+    const { data, error: err } = await rpcStaff('fn_staff_listar_llamadas', {
       p_restaurant_id: restaurantId,
-      p_camarero_id: camarero.id,
+      p_camarero_id: actual.id,
     })
+    if (err) return
     const lista = data || []
     if (llamadaIdsPrevias.current && lista.some(l => !llamadaIdsPrevias.current.has(l.id))) playWaiterBell()
     llamadaIdsPrevias.current = new Set(lista.map(l => l.id))
@@ -370,9 +462,9 @@ export default function Camarero() {
 
   async function atenderLlamada(id) {
     setLlamadasPendientes(prev => prev.filter(l => l.id !== id))
-    await supabase.rpc('fn_staff_marcar_llamada_atendida', {
+    await rpcStaff('fn_staff_marcar_llamada_atendida', {
       p_restaurant_id: restaurantId,
-      p_camarero_id: camarero.id,
+      p_camarero_id: camareroRef.current?.id,
       p_llamada_id: id,
     })
     await loadAlertas()
@@ -432,19 +524,17 @@ export default function Camarero() {
     try {
       if (!session) {
         // Mesa sin sesión: el camarero la abre él mismo, asignándosela.
-        const { data, error: err } = await supabase
-          .rpc('fn_camarero_abrir_mesa', {
-            p_table_id: table.id, p_restaurant_id: restaurantId,
-            p_camarero_id: camarero.id, p_comensales: table.capacidad,
-          })
+        const { data, error: err } = await rpcStaff('fn_camarero_abrir_mesa', {
+          p_table_id: table.id, p_restaurant_id: restaurantId,
+          p_camarero_id: camarero.id, p_comensales: table.capacidad,
+        })
         if (err) throw err
         setSelectedTable({ ...table, session: data && data[0] })
       } else if (!session.camarero_id) {
         // Mesa abierta desde el Dashboard, sin dueño: la toma este camarero.
-        const { error: err } = await supabase
-          .rpc('fn_camarero_tomar_mesa', {
-            p_table_session_id: session.id, p_restaurant_id: restaurantId, p_camarero_id: camarero.id,
-          })
+        const { error: err } = await rpcStaff('fn_camarero_tomar_mesa', {
+          p_table_session_id: session.id, p_restaurant_id: restaurantId, p_camarero_id: camarero.id,
+        })
         if (err) throw err
         setSelectedTable({ ...table, session: { ...session, camarero_id: camarero.id } })
       } else if (session.camarero_id === camarero.id) {
@@ -461,7 +551,7 @@ export default function Camarero() {
       setSendError(null)
       await loadMenu(table.zona)
     } catch (e) {
-      setSendError(e.message)
+      if (!esSesionCamareroCaducada(e)) setSendError(e.message)
     } finally {
       setAbriendoMesa(null)
     }
@@ -494,11 +584,11 @@ export default function Camarero() {
   // cuenta desde el QR (Mesa.jsx ya se lo muestra a él con "Mis
   // pedidos"; esto es lo mismo, visto desde el lado del camarero).
   async function loadPedidosSesion() {
-    if (!selectedTable?.session?.id) return
+    if (!selectedTable?.session?.id || !camareroRef.current) return
     setLoadingPedidosSesion(true)
-    const { data, error: e } = await supabase.rpc('fn_camarero_listar_pedidos_sesion', {
+    const { data, error: e } = await rpcStaff('fn_camarero_listar_pedidos_sesion', {
       p_restaurant_id: restaurantId,
-      p_camarero_id: camarero.id,
+      p_camarero_id: camareroRef.current.id,
       p_table_session_id: selectedTable.session.id,
     })
     setLoadingPedidosSesion(false)
@@ -582,12 +672,12 @@ export default function Camarero() {
     setGuardandoCliente(true)
     setClienteError(null)
     const nuevoNombre = nombreInput.trim() || selectedTable.session.cliente_nombre || null
-    const { error: err } = await supabase
-      .rpc('fn_camarero_editar_cliente_sesion', {
-        p_table_session_id: selectedTable.session.id, p_restaurant_id: restaurantId, p_camarero_id: camarero.id,
-        p_telefono: telefono, p_nombre: nuevoNombre,
-      })
+    const { error: err } = await rpcStaff('fn_camarero_editar_cliente_sesion', {
+      p_table_session_id: selectedTable.session.id, p_restaurant_id: restaurantId, p_camarero_id: camarero.id,
+      p_telefono: telefono, p_nombre: nuevoNombre,
+    })
     setGuardandoCliente(false)
+    if (esSesionCamareroCaducada(err)) return
     if (err) { setClienteError(err.message); return }
     setSelectedTable(prev => prev ? { ...prev, session: { ...prev.session, cliente_telefono: telefono, cliente_nombre: nuevoNombre } } : prev)
     setSessions(prev => ({ ...prev, [selectedTable.id]: { ...prev[selectedTable.id], cliente_telefono: telefono, cliente_nombre: nuevoNombre } }))
@@ -871,13 +961,15 @@ export default function Camarero() {
         modificadores: (v.modificadoresDetalle || []).map(m => ({ grupo_id: m.grupo_id, opcion_id: m.opcion_id })),
       }))
       const premiosPayload = premiosEnCarrito.map(p => ({ premio_id: p.premioId, comensal: p.comensal ?? null, origen: p.origen || 'puntos' }))
-      const { error: err } = await supabase.rpc('fn_registrar_pedido', {
+      // El pedido queda a nombre de este camarero (tomado_por): la BD exige
+      // su token en p_camarero_token.
+      const { error: err } = await rpcStaff('fn_registrar_pedido', {
         p_table_session_id: selectedTable.session.id,
         p_items: itemsPayload,
         p_notas: orderNote.trim() || null,
         p_camarero_id: camarero.id,
         p_premios_canjeados: premiosPayload,
-      })
+      }, 'p_camarero_token')
       if (err) throw err
       setCart({})
       setOrderNote('')
@@ -887,7 +979,8 @@ export default function Camarero() {
       setSendSuccess(true)
       setTimeout(() => setSendSuccess(false), 2000)
     } catch (e) {
-      setSendError(e.message)
+      // Sesión caducada: el carrito se guarda y vuelve si entra la misma persona.
+      if (!esSesionCamareroCaducada(e)) setSendError(e.message)
     } finally {
       setSending(false)
     }
@@ -909,6 +1002,7 @@ export default function Camarero() {
           </div>
         </div>
         <div style={S.center}>
+          {avisoSesion && <div style={S.avisoSesion}>{avisoSesion}</div>}
           <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: '#e8c97a', marginBottom: 6 }}>¿Quién eres?</div>
           {listaCamareros.length === 0 ? (
             <div style={{ fontSize: 13, color: '#8a7560', textAlign: 'center' }}>Todavía no hay personal cargado. Pídele al dueño que te dé de alta desde Configuración.</div>
@@ -992,16 +1086,16 @@ export default function Camarero() {
 
   // ---------- Render: secciones fuera de "Pedidos" ----------
   if (seccionActiva === 'clientes') {
-    return <CamareroClientes camarero={camarero} restaurantId={restaurantId} restaurant={restaurant} onVolver={volverDeSeccion} />
+    return <CamareroClientes camarero={camarero} restaurantId={restaurantId} restaurant={restaurant} onVolver={volverDeSeccion} onSesionCaducada={sesionCaducada} />
   }
   if (seccionActiva === 'reservas') {
-    return <CamareroReservas camarero={camarero} restaurantId={restaurantId} onVolver={volverDeSeccion} />
+    return <CamareroReservas camarero={camarero} restaurantId={restaurantId} onVolver={volverDeSeccion} onSesionCaducada={sesionCaducada} />
   }
   if (seccionActiva === 'limpieza') {
-    return <CamareroLimpieza restaurantId={restaurantId} onVolver={volverDeSeccion} />
+    return <CamareroLimpieza camarero={camarero} restaurantId={restaurantId} onVolver={volverDeSeccion} onSesionCaducada={sesionCaducada} />
   }
   if (seccionActiva === 'cocina') {
-    return <CamareroCocina camarero={camarero} restaurantId={restaurantId} onVolver={volverDeSeccion} />
+    return <CamareroCocina camarero={camarero} restaurantId={restaurantId} onVolver={volverDeSeccion} onSesionCaducada={sesionCaducada} />
   }
 
   // ---------- Render: selector de mesas ----------
