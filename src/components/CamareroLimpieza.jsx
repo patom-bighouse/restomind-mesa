@@ -81,9 +81,14 @@ export default function CamareroLimpieza({ restaurantId, onVolver }) {
       setTables(prev => prev.map(t => t.id === table.id ? { ...t, ...patch } : t))
       setModalTable(prev => prev && prev.id === table.id ? { ...prev, ...patch } : prev)
     }
-    await supabase.rpc('fn_camarero_toggle_limpieza', {
+    const { error } = await supabase.rpc('fn_camarero_toggle_limpieza', {
       p_table_id: table.id, p_restaurant_id: restaurantId, p_paso_id: pasoId,
     })
+    if (error) {
+      // No se guardó: volver al estado real de la BD y avisar.
+      await loadTablasSucias()
+      window.alert('No se pudo guardar el paso de limpieza. Inténtalo de nuevo.')
+    }
   }
 
   if (loading) return <div style={S.app}><div style={S.loading}>Cargando...</div></div>
