@@ -1,6 +1,8 @@
 -- =============================================================================
 -- Criterio 2 de docs/specs/2026-11-11-permisos-minimos.md
 -- EXECUTE de cada función de public por grupos (A, B, C, T).
+-- Actualizado con docs/specs/2026-11-12-pin-camarero.md (criterio 6):
+-- fn_camarero_cerrar_sesion en el grupo A y fn_staff_exigir_sesion en el C.
 --
 -- SOLO CONTRA TEST (sfkwbhzelrestmrmptql). Todo dentro de begin … rollback.
 --   npx supabase db query --remote=sfkwbhzelrestmrmptql -f supabase/tests/permisos_funciones.sql
@@ -23,7 +25,8 @@ select f, 'A' from unnest(array[
   'fn_camarero_editar_cliente_sesion', 'fn_staff_contar_alertas', 'fn_staff_listar_llamadas',
   'fn_staff_marcar_llamada_atendida', 'fn_staff_listar_clientes', 'fn_staff_historial_cliente',
   'fn_staff_canjear_puntos', 'fn_staff_listar_reservas', 'fn_staff_cambiar_estado_reserva',
-  'fn_staff_crear_reserva_manual', 'fn_staff_listar_pedidos_cocina', 'fn_staff_cambiar_estado_pedido'
+  'fn_staff_crear_reserva_manual', 'fn_staff_listar_pedidos_cocina', 'fn_staff_cambiar_estado_pedido',
+  'fn_camarero_cerrar_sesion'  -- sesión de camarero con PIN (docs/specs/2026-11-12-pin-camarero.md)
 ]) f
 union all
 select f, 'B' from unnest(array[
@@ -43,7 +46,8 @@ select f, 'C' from unnest(array[
   'fn_reserva_cliente_modificar', 'fn_reserva_cliente_bloquear', 'fn_disparar_webhooks',
   'fn_reserva_whatsapp_crear', 'fn_reserva_hay_mesa', 'fn_reserva_fuera_de_horario', 'fn_carta_takeaway',
   'fn_menu_activo', 'fn_procesar_sellos', 'fn_staff_tiene_permiso', 'fn_restaurante_activo',
-  'order_is_valid_for_items', 'fn_ahora_madrid', 'fn_hora_madrid'
+  'order_is_valid_for_items', 'fn_ahora_madrid', 'fn_hora_madrid',
+  'fn_staff_exigir_sesion'  -- sesión de camarero con PIN (docs/specs/2026-11-12-pin-camarero.md)
 ]) f
 union all
 select f, 'T' from unnest(array[
