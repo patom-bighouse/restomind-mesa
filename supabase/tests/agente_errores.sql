@@ -1,5 +1,6 @@
 -- =============================================================================
--- Avisos de fallos del agente de WhatsApp (migración 20261113114748_agente_errores)
+-- Avisos de fallos del agente de WhatsApp (migraciones 20261113114748_agente_errores
+-- y 20261113121550_agente_errores_tipos_entrada)
 -- Criterio 5 de docs/specs/2026-11-13-agente-whatsapp-revision.md
 -- (El bloque de estadísticas del criterio 12 se añade en la entrega 1b, con
 -- fn_superadmin_estadisticas_agente.)
@@ -288,6 +289,54 @@ select 'tras marcar atendida, el mismo fallo crea un aviso nuevo',
        pg_temp.registrar((select id from _ctx where clave = 'rest_a'), '600000003', 'sin_respuesta')
          <> (select id from _ctx where clave = 'e_a_visible'),
        '';
+
+-- Entrada directa desde Meta (migración 20261113121550_agente_errores_tipos_entrada) ---
+do $$
+declare
+  v_rest_a uuid := (select id from _ctx where clave = 'rest_a');
+  v_f1 uuid;
+  v_f uuid;
+  v_n uuid;
+  v_m uuid;
+  v_ok boolean := true;
+begin
+  -- firma_invalida: todo en una fila por media hora, aunque llegue con
+  -- restaurante o teléfono (no son fiables). La fila e_sin_rest ya está atendida.
+  v_f1 := pg_temp.registrar(null, null, 'firma_invalida', '{"intento": 1, "firma": "sha256=abcdef0123456789"}');
+  for i in 2..8 loop
+    v_f := pg_temp.registrar(case when i % 2 = 0 then v_rest_a end, '6000000' || i, 'firma_invalida', jsonb_build_object('intento', i));
+    v_ok := v_ok and v_f = v_f1;
+  end loop;
+  insert into _resultado (prueba, ok, detalle)
+  select 'firma_invalida: 8 peticiones (con y sin restaurante/teléfono) → 1 fila, veces = 8, sin restaurante ni teléfono',
+         v_ok and veces = 8 and restaurant_id is null and telefono_cliente is null and not visible_restaurante,
+         'veces=' || veces
+  from agente_errores where id = v_f1;
+
+  insert into _resultado (prueba, ok, detalle)
+  select 'firma_invalida: solo se guarda el detalle de las 5 primeras veces, y sin la firma',
+         count(*) = 5 and bool_and(detalle::text not like '%abcdef0123456789%'),
+         count(*) || ' detalles'
+  from agente_errores_detalle where error_id = v_f1;
+
+  v_n := pg_temp.registrar(v_rest_a, '600000009', 'numero_desconocido', '{"phone_number_id": "123"}');
+  insert into _resultado (prueba, ok, detalle)
+  select 'numero_desconocido: aceptado, sin restaurante ni teléfono, solo superadmin',
+         restaurant_id is null and telefono_cliente is null and not visible_restaurante
+         and pg_temp.registrar(null, '600000010', 'numero_desconocido') = v_n,
+         tipo
+  from agente_errores where id = v_n;
+
+  v_m := pg_temp.registrar(v_rest_a, '600000003', 'mensajes_multiples', '{"mensajes": 2}');
+  insert into _resultado (prueba, ok, detalle)
+  select 'mensajes_multiples: aceptado y no visible para el dueño',
+         restaurant_id = v_rest_a and not visible_restaurante
+         and pg_temp.contar((select id from _ctx where clave = 'a'),
+               'select count(*) from public.agente_errores where id = ''' || v_m || '''') = '0',
+         tipo
+  from agente_errores where id = v_m;
+end
+$$;
 
 insert into _resultado (prueba, ok, detalle)
 select 'TOTAL agente_errores', bool_and(coalesce(ok, false)), count(*) filter (where not coalesce(ok, false)) || ' fallos de ' || count(*)

@@ -22,6 +22,16 @@ Los scripts anteriores están en `sql/historico/`: se aplicaron a mano desde el 
 - **`20261113082049_pin_bloqueo_progresivo.sql`** — bloqueo progresivo del PIN (`fn_verificar_camarero_pin`: 5 min, 30 min, 2 h y 24 h por cada 10 fallos seguidos; el contador vuelve a cero tras 24 h sin fallos contadas desde el último fallo o el fin del último bloqueo) y `fn_resetear_pin_camarero` borra el bloqueo. Mismas firmas y grants; la huella no cambia (`a99c8f61…`). Prueba: `supabase/tests/pin_bloqueo.sql` (antes 5 fallos de 10, después 0). Aplicada en **Test** y en **Producción** el 13-11-2026 (huella `a99c8f61…` en ambos).
 - **`20261113082740_pin_bloqueo_concurrencia.sql`** — corrige la anterior: `fn_verificar_camarero_pin` crea la fila de `camarero_pin_intentos` si no existe y la lee con `for update` (los intentos simultáneos de un camarero van de uno en uno; antes K intentos a la vez sumaban 1) y el mensaje de bloqueo pasa a "Espera un rato o pide al encargado que te cambie el PIN". `pin_bloqueo.sql`: 0 fallos de 13. Concurrencia comprobada en Test con dos conexiones (la segunda espera a la primera). Aplicada en **Test** y en **Producción** el 13-11-2026.
   - Vuelta atrás preparada, **no** aplicada: `supabase/rollback/pin_camarero_fase2_revertir.sql` (vuelve al modo tolerante; una función y la tabla de anotaciones) y `supabase/rollback/pin_camarero_fase1_revertir.sql` (repone firmas y cuerpos de antes; **antes** hay que volver a la versión anterior del front en Vercel). Probadas en Test dentro de `begin … rollback`: tras la de fase 1 la huella vuelve a `0eb487db…`. Se aplican como migración, igual que la de permisos mínimos.
+- **Agente de WhatsApp, entrega 1a** (spec `docs/specs/2026-11-13-agente-whatsapp-revision.md`). Cuatro migraciones de BD más una corrección, aplicadas en **Test** el 13-11-2026. **Pendientes en Producción** (paso 4 del despliegue de la spec):
+  - `20261113114748_agente_errores.sql`: tablas `agente_errores` (en Realtime) y `agente_errores_detalle` (no publicada), con RLS (dueño: avisos visibles de su restaurante; superadmin: todo) y grants mínimos (`authenticated` solo SELECT; `service_role` solo SELECT, INSERT y UPDATE, sin DELETE: no se borra nada, decisión 13). Funciones `fn_agente_registrar_error` (solo `service_role`, agrupa repeticiones de 30 min y tapa claves en el detalle) y `fn_agente_error_marcar_atendida` (dueño de ese restaurante o superadmin; `authenticated` + `service_role`).
+  - `20261113114751_pedido_whatsapp_crear.sql`: `orders.clave_whatsapp` con índice único parcial y `fn_pedido_whatsapp_crear` (solo `service_role`): pedido y líneas en una transacción, precio de `fn_carta_takeaway`, topes 20/60/30 y textos, idempotente por clave. Errores `RMP01` (pedido grande), `RMP02` (plato fuera de carta), `RMP03` (datos), `RMP04` (sin take away / inactivo).
+  - `20261113114755_reserva_whatsapp_validaciones.sql`: `fn_reserva_whatsapp_crear` valida antelación (15 min, Madrid), horario, personas (1…máximo) y longitudes. Misma firma y grants.
+  - `20261113114758_whatsapp_limpieza_sesiones.sql`: **borra datos** en cada mensaje: `fn_whatsapp_mensaje_nuevo` elimina las `whatsapp_sessions` sin actividad en 30 días (no toca pedidos ni reservas).
+  - `20261113121550_agente_errores_tipos_entrada.sql`: corrige la primera tras el cambio de la decisión 6: tipos `numero_desconocido` y `mensajes_multiples`; `firma_invalida` y `numero_desconocido` se agrupan en una fila por tipo y media hora, sin restaurante ni teléfono, y solo guardan el detalle de las 5 primeras veces.
+  - Pruebas (todas en Test, con `rollback`): `pedido_whatsapp.sql` 24/24, `reserva_whatsapp_validaciones.sql` 17/17, `agente_errores.sql` 28/28, `whatsapp_limpieza_sesiones.sql` 8/8; `permisos_funciones.sql`, `permisos_tablas.sql` y `permisos_service_role.sql` actualizados (grupo B: `fn_agente_error_marcar_atendida`; grupo C: `fn_pedido_whatsapp_crear` y `fn_agente_registrar_error`; excepción sin DELETE en las dos tablas de avisos; 86 funciones no trigger).
+  - Huella de permisos en Test: antes 192 filas, md5 `a99c8f619564ade5f2f131e6fd85fa99`; después **197 filas, md5 `afde6bb23c96f9edbd87cf55e2cf29ea`**. Las 5 filas nuevas son exactamente las 3 funciones y las 2 tablas nuevas; ninguna otra cambia. Tras aplicarlas en Producción, Producción debe dar el mismo md5.
+  - El agente nuevo de n8n llama a estas funciones: **primero `db push` en Producción y después reimportar el agente**. El agente actual sigue funcionando con la BD nueva (no usa nada nuevo y `fn_whatsapp_mensaje_nuevo` y `fn_reserva_whatsapp_crear` conservan la firma).
+  - Pasos de n8n: ver "Agente de WhatsApp en n8n" más abajo.
 - Desde esta migración los privilegios por defecto están cerrados: toda migración que cree tabla o función debe llevar sus `grant` (ver `docs/FLUJO_DE_TRABAJO.md`).
 
 ## Pruebas SQL (`supabase/tests/`)
@@ -31,6 +41,33 @@ npx supabase db query --remote=sfkwbhzelrestmrmptql --yes -f supabase/tests/perm
 ```
 Para ver solo los fallos, añadir `--output-format json` y filtrar las filas con `"ok": false`.
 Excepción: `permisos_huella.sql` es de solo lectura y también se puede ejecutar en Producción con `--read-only` (consulta 1: resumen `filas | md5`; consulta 2: detalle; la CLI muestra el resultado de la última, así que para el resumen se ejecuta la consulta 1 por separado).
+
+## Agente de WhatsApp en n8n (entrega 1a)
+El workflow versionado es `n8n/workflows/restomind_whatsapp_agente.json`, y el de errores es `n8n/workflows/restomind_whatsapp_errores.json`. El enrutador central no se toca ni se versiona aquí. El orden completo del despliegue está en la spec, en "Despliegue de la entrega 1a". Estos son los pasos de n8n de ese orden (el 5 y el 6), explicados sin tecnicismos:
+
+1. **Guardar los dos secretos en el servidor de n8n** como variables de entorno, igual que ya está `SUPABASE_SERVICE_ROLE_KEY`:
+   - `META_APP_SECRET_RESTOMIND`: la "Clave secreta de la app" de RestomindWapp;
+   - `META_VERIFY_TOKEN_RESTOMIND`: la frase que inventa Patricio para la verificación.
+
+   No se escriben en el chat, en el repositorio ni en el JSON. Puede hacer falta reiniciar n8n, lo que corta unos segundos Facturas e Inmobiliaria: mejor fuera de horas.
+2. **Crear la credencial** "WhatsApp Graph API Token (RestomindWapp)" en n8n (Credenciales → Nueva → "Header Auth"; nombre de cabecera `Authorization`, valor `Bearer ` seguido del token nuevo). La credencial antigua "WhatsApp Graph API Token" no se toca. Apuntar el **id** de la credencial nueva: aparece en la dirección de la página al abrirla y no es secreto.
+3. **Importar el workflow de errores** (`restomind_whatsapp_errores.json`), sin activarlo: n8n lo usa solo. Apuntar su **id**, que también sale en la dirección.
+4. En `restomind_whatsapp_agente.json`, el orquestador cambia los dos marcadores por esos ids:
+   - `PENDIENTE-CREDENCIAL-RESTOMINDWAPP`, en los dos nodos de envío;
+   - `PENDIENTE-ID-WORKFLOW-ERRORES`, en `settings.errorWorkflow`.
+
+   Después comprueba:
+   ```bash
+   python3 n8n/tests/comprobar_workflow.py --para-importar n8n/workflows/restomind_whatsapp_agente.json
+   python3 n8n-agente-takeaway/comprobar_hora_espana.py n8n/workflows/restomind_whatsapp_agente.json
+   node n8n/tests/probar_firma.cjs
+   ```
+   Si no se ponen los ids, al importar n8n puede asignar a los nodos de envío otra credencial del mismo tipo (por ejemplo la de Anthropic).
+5. **Antes de importar**, comprobar en n8n que el nodo **Crypto** existe y acepta la acción *Hmac* con SHA256. Si no, avisar: la alternativa (`require('crypto')`) necesita `NODE_FUNCTION_ALLOW_BUILTIN=crypto` en el servidor.
+6. **Importar el agente**, comprobar en "Configuración del workflow" que el "Error workflow" es el del paso 3, y activarlo (paso 6 del despliegue). Desde ese momento solo acepta mensajes firmados por Meta.
+7. Después vienen los pasos 7-9 del despliegue: Patricio conecta el webhook en Meta, pone el Phone number ID nuevo en Casa Montiel y escribe "hola".
+
+**Comprobar el JSON antes de cada importación:** `python3 n8n/tests/comprobar_workflow.py` (sin argumentos revisa `n8n/workflows/`; con `--probar-fixtures` comprueba que el propio script detecta claves y 12 fallos metidos a propósito).
 
 ## Requisitos en el Mac
 - **Docker Desktop abierto** (la CLI lo usa por dentro para `db pull` y para comparar esquemas). Tras instalarlo, abrir una terminal nueva para que encuentre el comando `docker`.

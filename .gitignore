@@ -4,3 +4,6 @@ dist
 .env.local
 .DS_Store
 n8n-agente-takeaway/
+# Exportaciones locales de n8n (enrutador, copias de seguridad): fuera de git.
+# El agente versionado está en n8n/workflows/.
+n8n-agente-takeaway/backups/
