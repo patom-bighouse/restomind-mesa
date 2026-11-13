@@ -1,6 +1,6 @@
 -- =============================================================================
 -- Avisos de fallos del agente de WhatsApp (migraciones 20261113114748_agente_errores
--- y 20261113121550_agente_errores_tipos_entrada)
+-- , 20261113121550_agente_errores_tipos_entrada y 20261113164806_agente_errores_ocultar_sb_secret)
 -- Criterio 5 de docs/specs/2026-11-13-agente-whatsapp-revision.md
 -- (El bloque de estadísticas del criterio 12 se añade en la entrega 1b, con
 -- fn_superadmin_estadisticas_agente.)
@@ -91,7 +91,7 @@ begin
   insert into _ctx values ('a', v_a), ('b', v_b), ('s', v_s), ('rest_a', v_rest_a), ('rest_b', v_rest_b);
 
   insert into _ctx values
-    ('e_a_visible',   pg_temp.registrar(v_rest_a, '+34 600 000 003', 'sin_respuesta', '{"error": "timeout", "clave": "sk-ant-api03-FALSA"}')),
+    ('e_a_visible',   pg_temp.registrar(v_rest_a, '+34 600 000 003', 'sin_respuesta', '{"error": "timeout", "clave": "sk-ant-api03-FALSA", "supabase": "sb_secret_FALSA_0000"}')),
     ('e_a_interno',   pg_temp.registrar(v_rest_a, '600000003', 'error_interno', '{"error": "x"}')),
     ('e_b_visible',   pg_temp.registrar(v_rest_b, '600000004', 'pedido_no_creado', '{"error": "y"}')),
     ('e_sin_rest',    pg_temp.registrar(null, null, 'firma_invalida', '{"motivo": "firma"}')),
@@ -151,8 +151,9 @@ select 'registro: restaurante que no existe → sin restaurante (solo superadmin
 from agente_errores where id = (select id from _ctx where clave = 'e_rest_falso');
 
 insert into _resultado (prueba, ok, detalle)
-select 'registro: el detalle no guarda claves (sk-ant-… → [oculto])',
-       detalle::text not like '%sk-ant-%' and detalle ->> 'clave' = '[oculto]', detalle::text
+select 'registro: el detalle no guarda claves (sk-ant-… y sb_secret_… → [oculto])',
+       detalle::text not like '%sk-ant-%' and detalle::text not like '%sb_secret_%'
+       and detalle ->> 'clave' = '[oculto]' and detalle ->> 'supabase' = '[oculto]', detalle::text
 from agente_errores_detalle where error_id = (select id from _ctx where clave = 'e_a_visible');
 
 do $$
@@ -303,13 +304,13 @@ begin
   -- firma_invalida: todo en una fila por media hora, aunque llegue con
   -- restaurante o teléfono (no son fiables). La fila e_sin_rest ya está atendida.
   v_f1 := pg_temp.registrar(null, null, 'firma_invalida', '{"intento": 1, "firma": "sha256=abcdef0123456789"}');
-  for i in 2..8 loop
+  for i in 2..100 loop
     v_f := pg_temp.registrar(case when i % 2 = 0 then v_rest_a end, '6000000' || i, 'firma_invalida', jsonb_build_object('intento', i));
     v_ok := v_ok and v_f = v_f1;
   end loop;
   insert into _resultado (prueba, ok, detalle)
-  select 'firma_invalida: 8 peticiones (con y sin restaurante/teléfono) → 1 fila, veces = 8, sin restaurante ni teléfono',
-         v_ok and veces = 8 and restaurant_id is null and telefono_cliente is null and not visible_restaurante,
+  select 'firma_invalida: 100 peticiones (con y sin restaurante/teléfono) → 1 fila, veces = 100, sin restaurante ni teléfono',
+         v_ok and veces = 100 and restaurant_id is null and telefono_cliente is null and not visible_restaurante,
          'veces=' || veces
   from agente_errores where id = v_f1;
 

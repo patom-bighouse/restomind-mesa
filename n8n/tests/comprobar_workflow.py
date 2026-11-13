@@ -42,6 +42,11 @@ Además, en el agente (el que tiene "Extraer mensaje y contexto"):
  10. "Guardar sesión" va después de "Enviar respuesta WhatsApp" y no antes.
  11. Ya no existen "HTTP Crear order" ni "HTTP Insertar items".
  12. El prompt de "Preparar reserva" no contiene el teléfono del cliente.
+ 14. El teléfono del cliente tampoco llega a la IA por el historial ni por el
+     último mensaje del bot: "Preparar reserva", "Preparar takeaway" y
+     "Preparar clasificador" llaman a contextoSinTelefono() y "Preparar
+     contexto" guarda con taparTelefono(); y taparTelefono() se prueba con un
+     resumen real ("📞 Teléfono: …").
  13. La función partirMensaje() de "Partir mensaje", con una carta de 6.000
      caracteres: varios mensajes, en orden, de 4.096 como máximo y cortados
      por final de línea.
@@ -434,6 +439,33 @@ def comprobar(ruta, para_importar=False):
         elif re.search(r'telefonoWhatsapp|\$\{\s*d\.telefono\s*\}|\$\{\s*datos\.telefono\s*\}', m.group(1)):
             errores.append('[Preparar reserva] el prompt contiene el teléfono del cliente')
 
+        # 14. Teléfono fuera del historial que va a la IA (S6)
+        def llamadas(nombre_nodo, funcion):
+            c = sin_comentarios((nodos.get(nombre_nodo) or {}).get('parameters', {}).get('jsCode', ''))
+            return len(re.findall(r'(?<!function )\b' + funcion + r'\(', c))
+        for nn in ('Preparar reserva', 'Preparar takeaway', 'Preparar clasificador'):
+            if llamadas(nn, 'contextoSinTelefono') < 1:
+                errores.append(f'[{nn}] no quita el teléfono del cliente del historial antes del prompt (contextoSinTelefono)')
+        c_ctx = sin_comentarios((nodos.get('Preparar contexto') or {}).get('parameters', {}).get('jsCode', ''))
+        if not re.search(r'ultimo_mensaje_bot:\s*taparTelefono\(', c_ctx):
+            errores.append('[Preparar contexto] guarda el último mensaje del bot con el teléfono del cliente (taparTelefono)')
+        if not re.search(r'historial\s*=\s*\[[^;]*\.map\([^;]*taparTelefono\(', c_ctx, re.S):
+            errores.append('[Preparar contexto] guarda el historial con el teléfono del cliente (taparTelefono)')
+        cod_ctx = (nodos.get('Preparar contexto') or {}).get('parameters', {}).get('jsCode', '')
+        f_tapar = extraer_funcion(cod_ctx, 'function taparTelefono(')
+        if f_tapar:
+            ok, salida = ejecutar_js(f_tapar + r"""
+const tel = '34678237019';
+const casos = ['📞 *Teléfono:* 678237019\n\n¿Confirmas la reserva?', 'llámame al +34 678 23 70 19', 'o al 34678237019'];
+const malos = casos.map(c => taparTelefono(c, tel)).filter(r => /678\s?23/.test(r) || !r.includes('[tu número]'));
+return malos.length ? 'MAL ' + JSON.stringify(malos) : 'OK';""")
+            if not ok or salida != 'OK':
+                errores.append(f'[Preparar contexto] taparTelefono() no tapa el teléfono: {salida}')
+            else:
+                info.append('teléfono del cliente tapado en historial y prompts')
+        else:
+            errores.append('[Preparar contexto] no define taparTelefono()')
+
         # 13. Partir mensajes largos
         partir = (nodos.get('Partir mensaje') or {}).get('parameters', {}).get('jsCode')
         if not partir:
@@ -477,6 +509,12 @@ def mutaciones(agente):
         ('teléfono en el prompt de reservas', m(lambda w, n: n['Preparar reserva']['parameters'].update(
             jsCode=n['Preparar reserva']['parameters']['jsCode'].replace('Fecha actual: ', 'Tel: ${telefonoWhatsapp}. Fecha actual: ', 1))),
          'teléfono del cliente'),
+        ('teléfono en el historial del prompt de reservas', m(lambda w, n: n['Preparar reserva']['parameters'].update(
+            jsCode=n['Preparar reserva']['parameters']['jsCode'].replace('contexto = contextoSinTelefono(contexto, d.telefono);', ''))),
+         'historial'),
+        ('teléfono guardado en el historial', m(lambda w, n: n['Preparar contexto']['parameters'].update(
+            jsCode=n['Preparar contexto']['parameters']['jsCode'].replace('ultimo_mensaje_bot: taparTelefono(mensajeRespuesta, telefono)', 'ultimo_mensaje_bot: mensajeRespuesta'))),
+         'Preparar contexto'),
         ('credencial de envío antigua', m(lambda w, n: n['Enviar respuesta WhatsApp'].update(
             credentials={'httpHeaderAuth': {'id': 'DpQ4wmSyfHTEQVG4', 'name': 'WhatsApp Graph API Token'}})), 'RestomindWapp'),
     ]

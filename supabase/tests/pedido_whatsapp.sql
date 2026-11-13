@@ -1,5 +1,6 @@
 -- =============================================================================
--- fn_pedido_whatsapp_crear (migración 20261113114751_pedido_whatsapp_crear)
+-- fn_pedido_whatsapp_crear (migraciones 20261113114751_pedido_whatsapp_crear y
+-- 20261113164800_pedido_whatsapp_validaciones)
 -- Criterio 3 de docs/specs/2026-11-13-agente-whatsapp-revision.md
 --
 -- SOLO CONTRA TEST (sfkwbhzelrestmrmptql). Todo dentro de begin … rollback.
@@ -15,7 +16,7 @@
 --      total = suma de las líneas.
 --   2. La misma clave dos veces: mismo id, ya_existia, un solo pedido.
 --   3. Rechazos sin crear nada: plato inexistente, no disponible, de otro
---      restaurante; cantidad 0 y 21; 61 unidades; textos largos; sin módulo;
+--      restaurante; cantidad 0, 1.5, "2" y 21; 61 unidades; hora de recogida pasada; textos largos; sin módulo;
 --      restaurante inactivo.
 --   4. anon y authenticated no pueden ejecutarla.
 --
@@ -28,11 +29,12 @@ create temp table _resultado (orden serial, prueba text, ok boolean, detalle tex
 -- Llama a la función como service_role y devuelve el código de error ('' si fue bien).
 create function pg_temp.pedir(p_rest uuid, p_clave text, p_items jsonb,
                               p_nombre text default 'Ana', p_notas text default null,
-                              p_tel text default '600000001') returns text
+                              p_tel text default '600000001',
+                              p_hora timestamptz default now() + interval '1 hour') returns text
 language plpgsql as $$
 begin
   set local role service_role;
-  perform public.fn_pedido_whatsapp_crear(p_rest, p_clave, p_tel, p_nombre, now() + interval '1 hour', p_notas, p_items);
+  perform public.fn_pedido_whatsapp_crear(p_rest, p_clave, p_tel, p_nombre, p_hora, p_notas, p_items);
   reset role;
   return '';
 exception when others then
@@ -134,6 +136,22 @@ begin
 
   v_err := pg_temp.pedir(v_rest, 'r4', jsonb_build_array(jsonb_build_object('menu_item_id', v_a, 'cantidad', 0)));
   insert into _resultado values (default, 'rechaza cantidad 0 (RMP03)', v_err like 'RMP03%', v_err);
+
+  -- Migración 20261113164800_pedido_whatsapp_validaciones.
+  v_err := pg_temp.pedir(v_rest, 'r4b', jsonb_build_array(jsonb_build_object('menu_item_id', v_a, 'cantidad', 1.5)));
+  insert into _resultado values (default, 'rechaza cantidad 1.5 (no la redondea; RMP03)', v_err like 'RMP03%entero%', v_err);
+
+  v_err := pg_temp.pedir(v_rest, 'r4c', jsonb_build_array(jsonb_build_object('menu_item_id', v_a, 'cantidad', '2')));
+  insert into _resultado values (default, 'rechaza cantidad en texto "2" (RMP03)', v_err like 'RMP03%entero%', v_err);
+
+  v_err := pg_temp.pedir(v_rest, 'r4d', jsonb_build_array(jsonb_build_object('menu_item_id', v_a, 'cantidad', 1)),
+                         'Ana', null, '600000001', now() - interval '5 minutes');
+  insert into _resultado values (default, 'rechaza hora de recogida pasada (RMP03)', v_err like 'RMP03%ya ha pasado%', v_err);
+
+  v_err := pg_temp.pedir(v_rest, 'clave-1', jsonb_build_array(jsonb_build_object('menu_item_id', v_a, 'cantidad', 1)),
+                         'Ana', null, '600000001', now() - interval '5 minutes');
+  insert into _resultado values (default, 'clave ya creada con la hora ya pasada: devuelve el pedido (no da error)', v_err = '',
+                                 coalesce(nullif(v_err, ''), 'sin error'));
 
   v_err := pg_temp.pedir(v_rest, 'r5', jsonb_build_array(jsonb_build_object('menu_item_id', v_a, 'cantidad', 21)));
   insert into _resultado values (default, 'rechaza 21 unidades de un plato (RMP01, pedido grande)', v_err like 'RMP01%', v_err);
