@@ -3,6 +3,11 @@
 -- service_role: los 8 privilegios en todas las tablas de public y EXECUTE en
 -- las 83 funciones no trigger (81 de permisos mínimos + fn_camarero_cerrar_sesion
 -- y fn_staff_exigir_sesion de docs/specs/2026-11-12-pin-camarero.md).
+-- Actualizado con docs/specs/2026-11-13-agente-whatsapp-revision.md: 86 funciones
+-- (+ fn_pedido_whatsapp_crear, fn_agente_registrar_error y
+-- fn_agente_error_marcar_atendida) y excepción en agente_errores y
+-- agente_errores_detalle: service_role solo SELECT, INSERT y UPDATE (no se
+-- borra ninguna fila, decisión 13).
 --
 -- SOLO CONTRA TEST (sfkwbhzelrestmrmptql). Todo dentro de begin … rollback.
 --   npx supabase db query --remote=sfkwbhzelrestmrmptql -f supabase/tests/permisos_service_role.sql
@@ -23,7 +28,9 @@ where c.relnamespace = 'public'::regnamespace
 
 create temp table _sin_todo on commit drop as
 select t.tabla,
-       array(select p from unnest(array['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN']) p
+       array(select p from unnest(case when t.tabla in ('agente_errores', 'agente_errores_detalle')
+                                       then array['SELECT','INSERT','UPDATE']
+                                       else array['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'] end) p
              except
              select a.privilege_type from aclexplode(coalesce(t.relacl, acldefault('r', t.relowner))) a
              where a.grantee = 'service_role'::regrole) as faltan
@@ -34,7 +41,15 @@ select 'diferencia', false, 'a service_role le falta en ' || tabla || ': ' || ar
 from _sin_todo where cardinality(faltan) > 0;
 
 insert into _resultado (prueba, ok, detalle)
-select 'tablas sin los 8 privilegios para service_role = 0',
+select 'agente_errores y su detalle: service_role sin DELETE ni TRUNCATE',
+       count(*) = 0, count(*) || ' privilegios de más'
+from _tablas t, aclexplode(coalesce(t.relacl, acldefault('r', t.relowner))) a
+where t.tabla in ('agente_errores', 'agente_errores_detalle')
+  and a.grantee = 'service_role'::regrole
+  and a.privilege_type not in ('SELECT', 'INSERT', 'UPDATE');
+
+insert into _resultado (prueba, ok, detalle)
+select 'tablas sin los 8 privilegios para service_role = 0 (salvo las 2 de avisos: 3)',
        count(*) filter (where cardinality(faltan) > 0) = 0,
        count(*) filter (where cardinality(faltan) > 0) || ' de ' || count(*) || ' tablas'
 from _sin_todo;
@@ -55,8 +70,8 @@ where not exists (select 1 from aclexplode(coalesce(f.proacl, acldefault('f', f.
                   where a.grantee = 'service_role'::regrole and a.privilege_type = 'EXECUTE');
 
 insert into _resultado (prueba, ok, detalle)
-select 'funciones no trigger sin EXECUTE para service_role = 0 (de 83)',
-       count(*) = 83 and not exists (select 1 from _resultado where detalle like 'service_role sin EXECUTE%'),
+select 'funciones no trigger sin EXECUTE para service_role = 0 (de 86)',
+       count(*) = 86 and not exists (select 1 from _resultado where detalle like 'service_role sin EXECUTE%'),
        count(*) || ' funciones no trigger; ' ||
        (select count(*) from _resultado where detalle like 'service_role sin EXECUTE%') || ' sin EXECUTE'
 from _funciones;
