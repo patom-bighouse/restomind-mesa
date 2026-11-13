@@ -132,7 +132,7 @@ Se parte en dos entregas, en este orden por seguridad. La 1a cierra los agujeros
      - Devuelve `hub.challenge` solo si `hub.mode = subscribe` y `hub.verify_token` coincide con la variable de entorno `META_VERIFY_TOKEN_RESTOMIND`.
      - Si no, 403 sin cuerpo.
    - Se quita el número de respaldo fijo `1461480243709434`.
-   - **Módulo `whatsapp`** (decisión 12): se comprueba justo después de identificar el restaurante. Sin el módulo, se envía el mensaje fijo y termina: no busca sesión, no llama a la IA ni escribe nada en BD.
+   - **Módulo `whatsapp`** (decisión 12): se comprueba justo después de identificar el restaurante. Sin el módulo, se envía el mensaje fijo y termina: no busca sesión ni llama a la IA. Solo queda lo que hace `fn_whatsapp_mensaje_nuevo` antes de la comprobación (apuntar el `wamid` contra duplicados y borrar las sesiones de más de 30 días); no toca `whatsapp_sessions` de ese cliente, `orders` ni `reservations`.
    - **Envío desde el número nuevo:**
      - El JSON solo dice que los dos nodos de envío usan la credencial `WhatsApp Graph API Token` (`DpQ4wmSyfHTEQVG4`, tipo cabecera). No dice de qué app es el token.
      - Según la configuración de Meta, es un token permanente de `n8n-whatsapp-bot`, que tiene asignadas las apps PatricioAI y RestomindWapp pero **solo la WABA del número actual**. Con ese token no se podrá enviar desde el número nuevo hasta que se asigne su cuenta de WhatsApp a ese usuario del sistema.
