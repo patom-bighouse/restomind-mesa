@@ -2,7 +2,7 @@
 
 Especificación: `docs/specs/2026-11-13-agente-whatsapp-revision.md` (entrega 1a).
 
-n8n solo corre en **Producción**. Estos casos se prueban por WhatsApp con Casa Montiel y el número de prueba nuevo de RestomindWapp, desde el móvil de Patricio (decisión 8), **después** del despliegue de la spec. Las consultas SQL de comprobación son **solo de lectura**. Los pedidos y reservas de prueba se anulan después desde el panel.
+n8n solo corre en **Producción**. Estos casos se prueban por WhatsApp con Casa Montiel y el número de prueba +1 555 612 6953 (Phone number ID `1461480243709434`, ya solo suscrito a RestomindWapp), desde el móvil de Patricio (decisión 8), **después** del despliegue de la spec. Las consultas SQL de comprobación son **solo de lectura**. Los pedidos y reservas de prueba se anulan después desde el panel.
 
 Antes de importar el JSON:
 ```bash
@@ -21,9 +21,10 @@ Formato: **mensaje del cliente** · contexto · **respuesta o acción esperada**
 | `firma-inventada` | el mismo `curl` con `-H 'X-Hub-Signature-256: sha256=000…0'` (64 ceros), dos veces | — | 403 las dos veces | La misma fila `firma_invalida`, con `veces` ≥ 3. |
 | `firma-cuerpo-cambiado` | cuerpo y cabecera copiados de una ejecución real, con un carácter cambiado en el cuerpo | — | 403 | Como arriba. |
 | `reenvio-mismo-mensaje` | cuerpo y cabecera de una ejecución real, sin cambiar | mensaje ya procesado | HTTP **200**; "Extraer mensaje y contexto" lo marca `duplicado` y acaba en "Ignorar (sin respuesta)". El cliente **no** recibe una segunda respuesta. | Ejecuciones de n8n; un único pedido o respuesta para ese mensaje. |
+| `doble-suscripcion` | un "hola" mientras la WABA sigue suscrita a PatricioAI y a RestomindWapp (entre los pasos G y H de `docs/MIGRACIONES.md`) | — | Una sola respuesta. La copia que llega por el enrutador (sin firma) da 403 y suma en `firma_invalida`. Tras el paso H, ya no suma. | Ejecuciones del agente y del enrutador; `veces` de `firma_invalida`. |
 | `estado-entregado` | (los envía Meta solo: "entregado"/"leído" de cada respuesta) | — | 200 y fin en "Ignorar (sin respuesta)", sin filas nuevas en `agente_errores` | Ejecuciones de n8n de esos avisos. |
 | `get-token-incorrecto` | `curl 'https://…/webhook/restomind-whatsapp?hub.mode=subscribe&hub.verify_token=mal&hub.challenge=123'` | — | 403, sin `123` en la respuesta | `curl -i`. |
-| `get-token-correcto` | lo hace Meta al guardar el webhook (paso 6 de "Requisitos previos en Meta") | — | Meta acepta la URL | Panel de Meta. |
+| `get-token-correcto` | lo hace Meta al guardar el webhook (paso G de `docs/MIGRACIONES.md`) | — | Meta acepta la URL | Panel de Meta. |
 
 ## Módulo whatsapp (criterio 9)
 
@@ -48,7 +49,7 @@ Formato: **mensaje del cliente** · contexto · **respuesta o acción esperada**
 | Caso | Mensaje | Contexto | Esperado | Comprobación |
 |---|---|---|---|---|
 | `pedido-doble-si` | pedido completo → resumen → enviar "sí" y otro "sí" seguidos, sin esperar la respuesta | — | Un solo "✅ Pedido confirmado…". Al segundo "sí": nada, o "Tu pedido ya está registrado, no lo he duplicado…" (sin ✅) | SQL: un solo pedido reciente de ese teléfono, con ≥ 1 línea en `order_items` y `clave_whatsapp` rellena. |
-| `problema-tecnico` | "hola" | Copia del agente **sin activar** con una credencial de Anthropic inválida, ejecutada a mano con un mensaje fijado (`from` = móvil de Patricio, `phone_number_id` = el nuevo), empezando en "Extraer mensaje y contexto" | "Perdona, ahora mismo tengo un problema técnico. ¿Me lo repites en un momento?" | SQL: fila `sin_respuesta` con el teléfono y Casa Montiel, y su detalle con el error de "Message a model". Borrar la copia. |
+| `problema-tecnico` | "hola" | Copia del agente **sin activar** con una credencial de Anthropic inválida, ejecutada a mano con un mensaje fijado (`from` = móvil de Patricio, `phone_number_id` = `1461480243709434`), empezando en "Extraer mensaje y contexto" | "Perdona, ahora mismo tengo un problema técnico. ¿Me lo repites en un momento?" | SQL: fila `sin_respuesta` con el teléfono y Casa Montiel, y su detalle con el error de "Message a model". Borrar la copia. |
 | `precio-cambiado` | resumen de un pedido; el dueño cambia el precio de un plato; el cliente dice "sí" | — | No se crea el pedido; llega un resumen nuevo con el precio actualizado y se pide confirmar otra vez | SQL: 0 pedidos hasta el nuevo "sí". |
 
 ## Reservas (criterio 4 en n8n, E8)
