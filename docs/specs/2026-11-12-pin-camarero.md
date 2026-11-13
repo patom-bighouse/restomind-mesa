@@ -1,6 +1,6 @@
 # Funciones del camarero protegidas por sesión con PIN
 - Fecha: 2026-11-12
-- Estado: aprobada por Patricio el 12-11-2026
+- Estado: aprobada por Patricio el 12-11-2026; fases 1 y 2 aplicadas en Test y Producción el 12-11-2026. Criterios 1-8 OK.
 
 ## Qué y para quién
 Hoy cualquiera que conozca el id del restaurante (está en la URL `/camarero/<id>`) puede, sin PIN, leer teléfonos y puntos de clientes, ver y cambiar reservas, mover pedidos de cocina, canjear puntos y ver quién está sentado en cada mesa. Esta tarea hace que todas esas funciones exijan una **sesión de camarero** que solo se obtiene introduciendo el PIN correcto.
