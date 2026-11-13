@@ -77,7 +77,7 @@ Las ocho de la 1a, con `db push` (ver arriba). El agente actual sigue funcionand
 3. **Acceso a `$env`.** El agente lee estas variables (y las de Supabase) con `$env`, en nodos de código y en expresiones. En las versiones recientes de n8n, `N8N_BLOCK_ENV_ACCESS_IN_NODE` vale `true` por defecto y bloquea ese acceso. Hoy el agente ya usa `$env.SUPABASE_SERVICE_ROLE_KEY` y funciona, así que en esta instancia el acceso está permitido: por la versión, o porque la variable ya está en `false`. Al editar el `docker-compose`:
    - si aparece `N8N_BLOCK_ENV_ACCESS_IN_NODE`, debe seguir en `false`;
    - si no aparece y se va a actualizar la imagen de n8n en el mismo cambio, añadir `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`. Si no, la firma fallaría siempre (403 a todo) y tampoco funcionarían las llamadas a Supabase.
-   - Mejor no actualizar la versión de n8n en este paso.
+   - Mejor no actualizar la versión de n8n en este paso. **Ojo:** la imagen está como `docker.n8n.io/n8nio/n8n`, sin versión (13-11-2026), así que al volver a desplegar Hostinger puede descargar la última. Antes de guardar, mirar en n8n (Ajustes → Acerca de n8n, o abajo a la izquierda) qué versión hay y escribirla en la imagen (`docker.n8n.io/n8nio/n8n:<versión>`) para que no cambie. Añadir de todos modos `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` si no aparece.
 4. Guardar y volver a desplegar el proyecto. **Aviso: el reinicio corta unos segundos todos los productos de n8n** (Restomind, Facturas e Inmobiliaria). Mejor fuera de horas.
 5. Comprobar que n8n vuelve a estar arriba y que el agente actual sigue contestando un "hola".
 
