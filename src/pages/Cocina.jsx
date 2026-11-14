@@ -5,7 +5,7 @@ import { formatMoney } from '../lib/money'
 import { playNewOrderChime, playWaiterBell, unlockAudio } from '../lib/sound'
 import { useRestaurantModulos } from '../lib/modulos'
 import { ESTADOS_DELIVERY } from '../lib/delivery/DeliveryProvider'
-import { horaMadrid } from '../lib/fechas'
+import { horaEnZona, fechaLargaEnZona, zonaHorariaDe, ZONA_POR_DEFECTO } from '../lib/fechas'
 
 const ESTADOS = ['pendiente', 'preparando', 'listo', 'entregado']
 
@@ -87,7 +87,7 @@ const MINUTOS_PREPARACION_TAKEAWAY = 20
 
 // "Recoge a las 21:30 · en 25 min", con color según lo que falta: dorado,
 // ámbar a 15 min o menos, rojo si ya pasó la hora.
-function estadoRecogida(horaRecogida, ahora) {
+function estadoRecogida(horaRecogida, ahora, zonaHoraria) {
   const diff = Math.round((new Date(horaRecogida).getTime() - ahora) / 60000)
   const duracion = m => (m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}` : `${m} min`)
   let texto
@@ -95,11 +95,12 @@ function estadoRecogida(horaRecogida, ahora) {
   else if (diff === 0) texto = 'ahora'
   else texto = `hace ${duracion(-diff)}`
   const color = diff < 0 ? '#e74c3c' : diff <= 15 ? '#f39c12' : '#e8c97a'
-  return { hora: horaMadrid(horaRecogida), texto, color }
+  return { hora: horaEnZona(horaRecogida, zonaHoraria), texto, color }
 }
 
-function formatHora(dateStr) {
-  return new Date(dateStr).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+// Horas en la zona horaria del restaurante, no en la de la pantalla de cocina.
+function formatHora(dateStr, zonaHoraria) {
+  return horaEnZona(dateStr, zonaHoraria)
 }
 
 export default function Cocina() {
@@ -128,14 +129,16 @@ export default function Cocina() {
   const [minutosPreparacionTakeaway, setMinutosPreparacionTakeaway] = useState(MINUTOS_PREPARACION_TAKEAWAY)
   // Reloj de la pantalla: refresca cada 30 s los "en 25 min" de recogida.
   const [ahora, setAhora] = useState(Date.now())
+  const [zonaHoraria, setZonaHoraria] = useState(ZONA_POR_DEFECTO)
 
   async function loadRestaurant() {
     const { data } = await supabase
       .from('restaurants')
-      .select('moneda, config')
+      .select('moneda, config, zona_horaria')
       .eq('id', restaurantId)
       .single()
     if (data?.moneda) setMoneda(data.moneda)
+    setZonaHoraria(zonaHorariaDe(data))
     const minutosPrep = Number(data?.config?.takeaway_minutos_preparacion)
     if (minutosPrep > 0) setMinutosPreparacionTakeaway(minutosPrep)
     setSectoresCocinaActivo(data?.config?.sectores_cocina_activo || false)
@@ -612,7 +615,7 @@ export default function Cocina() {
           <div style={S.logo}>Cocina</div>
           <div style={S.liveTag(isLive)}>{isLive ? '● En vivo' : '○ Conectando...'}</div>
         </div>
-        <div style={S.headerRight}>{new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+        <div style={S.headerRight}>{fechaLargaEnZona(new Date(), zonaHoraria)}</div>
       </div>
 
       <div style={{ padding: '8px 16px 0', display: 'flex', justifyContent: 'flex-end' }}>
@@ -722,7 +725,7 @@ export default function Cocina() {
                   )}
                   {order.tipo === 'mesa' && tableSessions[order.table_id] && (
                     <div style={{ fontSize: 11, color: '#5a9c7a' }}>
-                      🟢 Sesión desde {formatHora(tableSessions[order.table_id].abierta_at)}
+                      🟢 Sesión desde {formatHora(tableSessions[order.table_id].abierta_at, zonaHoraria)}
                     </div>
                   )}
                   {/* Quién recoge el pedido (lo deja el agente de WhatsApp) */}
@@ -737,7 +740,7 @@ export default function Cocina() {
                     </div>
                   )}
                   {order.tipo === 'takeaway' && order.hora_recogida && (() => {
-                    const r = estadoRecogida(order.hora_recogida, ahora)
+                    const r = estadoRecogida(order.hora_recogida, ahora, zonaHoraria)
                     return (
                       <div style={{ fontSize: 14, fontWeight: 600, color: r.color, marginTop: 4 }}>
                         🕐 Recoge a las {r.hora} · {r.texto}
@@ -751,7 +754,7 @@ export default function Cocina() {
                   )}
                 </div>
                 <div style={S.timeTag}>
-                  <div style={{ marginBottom: 2 }}>{formatHora(order.created_at)}</div>
+                  <div style={{ marginBottom: 2 }}>{formatHora(order.created_at, zonaHoraria)}</div>
                   <div style={S.estadoTag(order.estado)}>
                     <span style={S.dot(order.estado)}></span>
                     {timeAgo(order.created_at)} ago

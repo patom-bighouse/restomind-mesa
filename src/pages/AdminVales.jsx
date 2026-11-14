@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/money'
 import { useRestaurantModulos } from '../lib/modulos'
-import { hoyMadrid, sumarAniosISO } from '../lib/fechas'
+import { hoyEnZona, sumarAniosISO, fechaISOaTexto, zonaHorariaDe } from '../lib/fechas'
 
 function generarCodigo() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // sin caracteres fáciles de confundir (0/O, 1/I)
@@ -12,8 +12,9 @@ function generarCodigo() {
   return codigo
 }
 
-function fechaEnUnAnio() {
-  return sumarAniosISO(hoyMadrid(), 1)
+// Vencimiento por defecto: dentro de un año, contado desde el "hoy" del restaurante.
+function fechaEnUnAnio(zonaHoraria) {
+  return sumarAniosISO(hoyEnZona(zonaHoraria), 1)
 }
 
 const S = {
@@ -65,8 +66,9 @@ export default function AdminVales() {
   async function checkAuth() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { navigate('/admin/login'); return }
-    const { data: rest } = await supabase.from('restaurants').select('nombre, moneda').eq('id', restaurantId).single()
+    const { data: rest } = await supabase.from('restaurants').select('nombre, moneda, zona_horaria').eq('id', restaurantId).single()
     setRestaurant(rest)
+    setVencimiento(fechaEnUnAnio(zonaHorariaDe(rest)))
     await loadVales()
     setLoading(false)
   }
@@ -103,7 +105,7 @@ export default function AdminVales() {
       setError(err.code === '23505' ? 'Ya existe un vale con ese código. Elige otro.' : err.message)
       return
     }
-    setImporte(''); setCodigo(generarCodigo()); setDestinatarioNombre(''); setDestinatarioTelefono(''); setVencimiento(fechaEnUnAnio())
+    setImporte(''); setCodigo(generarCodigo()); setDestinatarioNombre(''); setDestinatarioTelefono(''); setVencimiento(fechaEnUnAnio(zonaHorariaDe(restaurant)))
     await loadVales()
   }
 
@@ -115,7 +117,7 @@ export default function AdminVales() {
 
   function estadoVale(vale) {
     if (!vale.activo) return { label: 'Desactivado', color: '#666' }
-    if (vale.fecha_vencimiento < hoyMadrid()) return { label: 'Caducado', color: '#e87a7a' }
+    if (vale.fecha_vencimiento < hoyEnZona(zonaHorariaDe(restaurant))) return { label: 'Caducado', color: '#e87a7a' }
     if (vale.saldo_actual <= 0) return { label: 'Agotado', color: '#e8a03a' }
     return { label: 'Activo', color: '#2ecc71' }
   }
@@ -233,7 +235,7 @@ export default function AdminVales() {
                       {v.destinatario_nombre || '—'}
                       {v.destinatario_telefono && <div style={{ fontSize: 11, color: '#7a6a50' }}>{v.destinatario_telefono}</div>}
                     </td>
-                    <td style={S.td}>{new Date(v.fecha_vencimiento + 'T00:00:00').toLocaleDateString('es-ES')}</td>
+                    <td style={S.td}>{fechaISOaTexto(v.fecha_vencimiento)}</td>
                     <td style={S.td}><span style={S.chip(estado.color)}>{estado.label}</span></td>
                     <td style={{ ...S.td, textAlign: 'right' }}>
                       <button style={S.toggleBtn(v.activo)} onClick={() => toggleVale(v)}>

@@ -4,7 +4,8 @@ import { createClient } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { isValidIban, formatIbanDisplay } from '../lib/iban'
 import { PENALIZACION_PCT, CONDICIONES_VERSION } from '../lib/condiciones'
-import { hoyMadrid, sumarDiasISO } from '../lib/fechas'
+import { hoyMadrid, sumarDiasISO, hoyEnZona, ZONA_POR_DEFECTO } from '../lib/fechas'
+import { opcionesZona, zonaPropuesta, pareceCanarias, avisoDireccion, nombreZona, horaActualEnZona, zonaValida, contarReservasFuturas } from '../lib/zonasHorarias'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -98,9 +99,13 @@ export default function SuperAdminRestaurantes() {
   const [form, setForm] = useState({
     nombre: '', email: '', password: '', whatsapp: '', whatsappPhoneId: '',
     pais: 'ES', moneda: 'EUR', direccion: '',
+    zonaHoraria: ZONA_POR_DEFECTO, zonaHorariaGuardada: null, zonaTocada: false,
     iban: '', titularCuenta: '',
   })
   const [ibanTouched, setIbanTouched] = useState(false)
+  // Aviso antes de cambiar la zona horaria de un restaurante que ya existe
+  // (decisión 5): null | { cargando, recogidas, reservas, error }.
+  const [avisoZona, setAvisoZona] = useState(null)
   const [modulosCatalogo, setModulosCatalogo] = useState([])
   const [modulosActivos, setModulosActivos] = useState(new Set())
   const [editTab, setEditTab] = useState('datos') // 'datos' | 'facturacion' | 'modulos'
@@ -141,6 +146,7 @@ export default function SuperAdminRestaurantes() {
       direccion: [cuenta.direccion, cuenta.ciudad].filter(Boolean).join(', '),
       ...(PAISES.some(p => p.code === cuenta.pais) ? { pais: cuenta.pais, moneda: PAISES.find(p => p.code === cuenta.pais).moneda } : {}),
     }))
+    setForm(prev => ({ ...prev, zonaHoraria: zonaPropuesta(prev.pais, prev.direccion), zonaTocada: false }))
     // Módulos del plan que le interesa (los planes son acumulativos).
     const plan = planes.find(p => p.key === cuenta.plan_interes)
     if (plan) {
@@ -273,7 +279,7 @@ export default function SuperAdminRestaurantes() {
   async function loadRestaurants() {
     const { data, error: err } = await supabase
       .from('restaurants')
-      .select('id, nombre, slug, whatsapp, whatsapp_phone_number_id, activo, created_at, user_id, pais, moneda, direccion, email_dueno, plan, precio_contrato, trial_termina_en, precio_override, precio_override_hasta, permanencia_hasta, baja_en, baja_motivo, baja_penalizacion')
+      .select('id, nombre, slug, whatsapp, whatsapp_phone_number_id, activo, created_at, user_id, pais, moneda, direccion, zona_horaria, email_dueno, plan, precio_contrato, trial_termina_en, precio_override, precio_override_hasta, permanencia_hasta, baja_en, baja_motivo, baja_penalizacion')
       .order('created_at', { ascending: false })
     if (err) { setError(err.message); setLoading(false); return }
     setRestaurants(data || [])
@@ -289,6 +295,7 @@ export default function SuperAdminRestaurantes() {
     setForm({
       nombre: '', email: '', password: '', whatsapp: '', whatsappPhoneId: '',
       pais: 'ES', moneda: 'EUR', direccion: '',
+      zonaHoraria: zonaPropuesta('ES', ''), zonaHorariaGuardada: null, zonaTocada: false,
       iban: '', titularCuenta: '',
     })
     setModulosActivos(new Set(['nucleo']))
@@ -337,6 +344,9 @@ export default function SuperAdminRestaurantes() {
       pais: rest.pais || 'ES',
       moneda: rest.moneda || 'EUR',
       direccion: rest.direccion || '',
+      zonaHoraria: rest.zona_horaria || ZONA_POR_DEFECTO,
+      zonaHorariaGuardada: rest.zona_horaria || ZONA_POR_DEFECTO,
+      zonaTocada: true,
       iban: billing?.iban || '',
       titularCuenta: billing?.titular_cuenta || '',
     })
@@ -344,9 +354,50 @@ export default function SuperAdminRestaurantes() {
     setModalMode('edit')
   }
 
+  // Al cambiar el país se rellena la zona propuesta de ese país (decisión 2).
   function handlePaisChange(code) {
     const pais = PAISES.find(p => p.code === code)
-    setForm(prev => ({ ...prev, pais: code, moneda: pais?.moneda || prev.moneda }))
+    setForm(prev => ({ ...prev, pais: code, moneda: pais?.moneda || prev.moneda, zonaHoraria: zonaPropuesta(code, prev.direccion), zonaTocada: false }))
+  }
+
+  // Al crear, mientras el superadmin no elija otra, la zona sigue a la
+  // dirección (Canarias por isla o código postal, decisión 3). Al editar,
+  // cambiar la dirección no cambia la zona: sale el aviso (decisión 8).
+  function handleDireccionChange(direccion) {
+    setForm(prev => ({
+      ...prev,
+      direccion,
+      ...(modalMode === 'create' && !prev.zonaTocada ? { zonaHoraria: zonaPropuesta(prev.pais, direccion) } : {}),
+    }))
+  }
+
+  // Recogidas pendientes y reservas futuras del restaurante (decisión 5).
+  // Las reservas futuras se cuentan con la hora de la zona guardada.
+  async function contarEnMarcha(restaurantId, zonaGuardada) {
+    const [ped, res] = await Promise.all([
+      supabase.from('orders').select('id', { count: 'exact', head: true })
+        .eq('restaurant_id', restaurantId).eq('tipo', 'takeaway').in('estado', ['pendiente', 'preparando', 'listo']),
+      supabase.from('reservations').select('fecha, hora, estado')
+        .eq('restaurant_id', restaurantId).in('estado', ['confirmada', 'pendiente']).gte('fecha', hoyEnZona(zonaGuardada)),
+    ])
+    if (ped.error || res.error) throw ped.error || res.error
+    return { recogidas: ped.count || 0, reservas: contarReservasFuturas(res.data || [], zonaGuardada) }
+  }
+
+  // Guardar cambios: si la zona horaria cambia, antes el aviso con lo que
+  // está en marcha; si no, se guarda directamente.
+  async function guardarCambios() {
+    if (form.zonaHorariaGuardada && form.zonaHoraria !== form.zonaHorariaGuardada) {
+      setAvisoZona({ cargando: true })
+      try {
+        const cifras = await contarEnMarcha(editingId, form.zonaHorariaGuardada)
+        setAvisoZona({ cargando: false, ...cifras })
+      } catch {
+        setAvisoZona({ cargando: false, error: true })
+      }
+      return
+    }
+    updateRestaurant()
   }
 
   function toggleModulo(key) {
@@ -400,6 +451,10 @@ export default function SuperAdminRestaurantes() {
       setError('El IBAN no parece válido. Revísalo (o déjalo vacío y lo añades más adelante).')
       return
     }
+    if (!zonaValida(form.zonaHoraria)) {
+      setError('Elige la zona horaria del restaurante.')
+      return
+    }
     setCreating(true)
     setError(null)
 
@@ -443,6 +498,7 @@ export default function SuperAdminRestaurantes() {
           direccion: form.direccion.trim() || null,
           pais: form.pais,
           moneda: form.moneda,
+          zona_horaria: form.zonaHoraria,
           email_dueno: form.email.trim(),
           user_id: newUserId,
           activo: true,
@@ -552,6 +608,11 @@ export default function SuperAdminRestaurantes() {
       setError('El IBAN no parece válido. Revísalo (o déjalo vacío).')
       return
     }
+    if (!zonaValida(form.zonaHoraria)) {
+      setError('Elige la zona horaria del restaurante.')
+      return
+    }
+    setAvisoZona(null)
     setCreating(true)
     setError(null)
     try {
@@ -565,9 +626,13 @@ export default function SuperAdminRestaurantes() {
           pais: form.pais,
           moneda: form.moneda,
           email_dueno: form.email.trim() || null,
+          // Solo si cambia (la BD la valida y solo la deja cambiar al superadmin).
+          ...(form.zonaHoraria !== form.zonaHorariaGuardada ? { zona_horaria: form.zonaHoraria } : {}),
         })
         .eq('id', editingId)
       if (restErr) throw errorPhoneId(restErr)
+      // Estado local al momento (regla 9), sin esperar a la recarga.
+      setRestaurants(prev => prev.map(r => (r.id === editingId ? { ...r, zona_horaria: form.zonaHoraria } : r)))
 
       // upsert: si ya había datos bancarios los actualiza, si no, los crea.
       // Si se vació el campo, en vez de dejar un IBAN viejo guardado, se borra.
@@ -840,7 +905,34 @@ export default function SuperAdminRestaurantes() {
                 <div style={S.hint}>La moneda se ajusta sola según el país, pero puedes cambiarla si el restaurante factura en otra.</div>
 
                 <label style={S.label}>Dirección (opcional)</label>
-                <input style={S.input} value={form.direccion} onChange={e => setForm(prev => ({ ...prev, direccion: e.target.value }))} placeholder="Calle, número, ciudad" />
+                <input style={S.input} value={form.direccion} onChange={e => handleDireccionChange(e.target.value)} placeholder="Calle, número, ciudad" />
+
+                <label style={S.label}>Zona horaria</label>
+                <select
+                  style={S.input}
+                  value={form.zonaHoraria}
+                  onChange={e => setForm(prev => ({ ...prev, zonaHoraria: e.target.value, zonaTocada: true }))}
+                >
+                  {opcionesZona(form.pais, form.zonaHoraria).map(o => (
+                    <option key={o.zona} value={o.zona}>{o.nombre} — ahora {horaActualEnZona(o.zona)}</option>
+                  ))}
+                </select>
+                {modalMode === 'create' && form.pais === 'ES' && pareceCanarias(form.direccion) && form.zonaHoraria === 'Atlantic/Canary' && (
+                  <div style={{ ...S.hint, color: '#e8c97a' }}>Propuesta por la dirección: Canarias</div>
+                )}
+                {modalMode === 'edit' && avisoDireccion(form.pais, form.direccion, form.zonaHoraria) && (
+                  <div style={{ ...S.hint, color: '#e8c97a' }}>
+                    Propuesta por la dirección: {nombreZona(zonaPropuesta(form.pais, form.direccion))}. {avisoDireccion(form.pais, form.direccion, form.zonaHoraria)}.{' '}
+                    <button
+                      type="button"
+                      style={{ background: 'transparent', border: 'none', color: '#e8c97a', textDecoration: 'underline', cursor: 'pointer', padding: 0, fontSize: 11, fontFamily: "'Inter', sans-serif" }}
+                      onClick={() => setForm(prev => ({ ...prev, zonaHoraria: zonaPropuesta(prev.pais, prev.direccion), zonaTocada: true }))}
+                    >
+                      Usar {nombreZona(zonaPropuesta(form.pais, form.direccion))}
+                    </button>
+                  </div>
+                )}
+                <div style={S.hint}>Las reservas, recogidas, menús por horario, vales y el cierre de caja usan esta hora. Solo la cambia Restomind; el dueño la ve en Configuración.</div>
               </>
             )}
 
@@ -986,11 +1078,34 @@ export default function SuperAdminRestaurantes() {
               <button style={S.cancelBtn} onClick={() => setModalMode(null)}>Cancelar</button>
               <button
                 style={S.saveBtn(creating)}
-                onClick={modalMode === 'create' ? createRestaurant : updateRestaurant}
+                onClick={modalMode === 'create' ? createRestaurant : guardarCambios}
                 disabled={creating}
               >
                 {creating ? 'Guardando...' : modalMode === 'create' ? 'Crear restaurante' : 'Guardar cambios'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {avisoZona && (
+        <div style={{ ...S.modal, zIndex: 60 }}>
+          <div style={S.modalBox}>
+            <div style={S.modalTitle}>Cambiar la zona horaria</div>
+            {avisoZona.cargando ? (
+              <div style={{ fontSize: 13, color: '#8a8a8a' }}>Comprobando pedidos y reservas en marcha…</div>
+            ) : (
+              <div style={{ fontSize: 13, color: '#c8c8c8', lineHeight: 1.6 }}>
+                Vas a cambiar la zona de <strong>{form.nombre}</strong> de {nombreZona(form.zonaHorariaGuardada)} a {nombreZona(form.zonaHoraria)}.{' '}
+                {avisoZona.error
+                  ? 'No he podido comprobar los pedidos y reservas en marcha.'
+                  : `Tiene ${avisoZona.recogidas} ${avisoZona.recogidas === 1 ? 'recogida pendiente' : 'recogidas pendientes'} y ${avisoZona.reservas} ${avisoZona.reservas === 1 ? 'reserva futura' : 'reservas futuras'}.`}{' '}
+                Las reservas mantienen su hora. Las recogidas pendientes pueden verse con una hora de diferencia. ¿Cambiar la zona?
+              </div>
+            )}
+            <div style={S.modalBtns}>
+              <button style={S.cancelBtn} onClick={() => setAvisoZona(null)}>Cancelar</button>
+              <button style={S.saveBtn(avisoZona.cargando || creating)} disabled={avisoZona.cargando || creating} onClick={updateRestaurant}>Cambiar</button>
             </div>
           </div>
         </div>

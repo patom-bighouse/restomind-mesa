@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useRestaurantModulos } from '../lib/modulos'
+import { fechaHoraEnZona, zonaHorariaDe } from '../lib/fechas'
 
 const UNIDADES = ['kg', 'g', 'l', 'ml', 'unidad']
 
@@ -84,7 +85,7 @@ export default function AdminStock() {
   async function checkAuth() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { navigate('/admin/login'); return }
-    const { data: rest } = await supabase.from('restaurants').select('nombre, moneda').eq('id', restaurantId).single()
+    const { data: rest } = await supabase.from('restaurants').select('nombre, moneda, zona_horaria').eq('id', restaurantId).single()
     setRestaurant(rest)
     await loadIngredientes()
     setLoading(false)
@@ -458,7 +459,7 @@ export default function AdminStock() {
               <tbody>
                 {movimientos.map(m => (
                   <tr key={m.id} style={S.row(false)}>
-                    <td style={S.td}>{new Date(m.created_at).toLocaleString('es-ES')}</td>
+                    <td style={S.td}>{fechaHoraEnZona(m.created_at, zonaHorariaDe(restaurant))}</td>
                     <td style={S.td}>{nombreIngrediente(m.ingrediente_id)}</td>
                     <td style={S.td}><span style={S.chip}>{m.tipo}</span></td>
                     <td style={{ ...S.td, color: m.cantidad < 0 ? '#e87a7a' : '#7ae8a0' }}>{m.cantidad > 0 ? '+' : ''}{m.cantidad}</td>

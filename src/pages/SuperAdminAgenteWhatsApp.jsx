@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { ZONA_POR_DEFECTO, fechaHoraEnZona, inicioDiaEnZona, partesEnZona, sumarDiasISO } from '../lib/fechas'
+import { ZONA_POR_DEFECTO, fechaHoraConLocal, inicioDiaEnZona, partesEnZona, sumarDiasISO } from '../lib/fechas'
 import { COLUMNAS_AVISO, TIPOS_AVISO, telefonoAviso, textoAviso } from '../lib/avisosAgente'
 
 // Panel de superadmin del agente de WhatsApp (entrega 1b, criterio 12 de
 // docs/specs/2026-11-13-agente-whatsapp-revision.md): todos los avisos de
 // todos los restaurantes y de cualquier fecha (también sin restaurante),
 // filtros, detalle técnico y estadísticas de fn_superadmin_estadisticas_agente.
-// Los días son de España (regla 7, negocio de Restomind), con la zona como
-// parámetro.
+// Los días y las estadísticas son de España (regla 7, negocio de Restomind),
+// con la zona como parámetro. Cada hora sale en España y, si el restaurante
+// está en otra zona, con su hora local al lado (decisión 7 de
+// docs/specs/2026-11-14-zona-horaria-restaurante.md).
 const ZONA = ZONA_POR_DEFECTO
 const POR_PAGINA = 200
 const SIN_RESTAURANTE = '__sin__'
@@ -79,7 +81,7 @@ export default function SuperAdminAgenteWhatsApp() {
     const { data: sa } = await supabase.from('superadmins').select('id').eq('user_id', session.user.id).single()
     if (!sa) { navigate('/superadmin/login'); return }
     setUsuarioId(session.user.id)
-    const { data: rs } = await supabase.from('restaurants').select('id, nombre, user_id, email_dueno').order('nombre')
+    const { data: rs } = await supabase.from('restaurants').select('id, nombre, user_id, email_dueno, zona_horaria').order('nombre')
     setRestaurantes(Object.fromEntries((rs || []).map(r => [r.id, r])))
     setListo(true)
     await cargar({ desde: '', hasta: '', rest: '', tipo: '', atendida: '' }, 0)
@@ -159,6 +161,16 @@ export default function SuperAdminAgenteWhatsApp() {
   async function handleLogout() {
     await supabase.auth.signOut()
     navigate('/superadmin/login')
+  }
+
+  // Zona horaria del restaurante del aviso (null si no tiene restaurante:
+  // entonces solo la hora de España).
+  function zonaDe(a) {
+    return (a?.restaurant_id && restaurantes[a.restaurant_id]?.zona_horaria) || null
+  }
+  // "22:00 (21:00 en el restaurante)" o solo la de España.
+  function horaAviso(instante, a) {
+    return fechaHoraConLocal(instante, zonaDe(a))
   }
 
   function nombreRest(id) {
@@ -306,14 +318,14 @@ export default function SuperAdminAgenteWhatsApp() {
                 const det = detalles[a.id]
                 return [
                   <tr key={a.id} style={S.fila(abierto === a.id)} onClick={() => verDetalle(a)}>
-                    <td style={{ ...S.td, whiteSpace: 'nowrap' }}>{fechaHoraEnZona(a.created_at, ZONA)}</td>
+                    <td style={{ ...S.td, whiteSpace: 'nowrap' }}>{horaAviso(a.created_at, a)}</td>
                     <td style={S.td}>{nombreRest(a.restaurant_id)}</td>
                     <td style={S.td}>{TIPOS_AVISO[a.tipo]?.etiqueta || a.tipo}{a.visible_restaurante ? '' : <span style={{ color: '#666' }}> · no lo ve el restaurante</span>}</td>
                     <td style={S.td}>{tel ? <a href={tel.href} style={{ color: '#e8c97a' }} onClick={e => e.stopPropagation()}>{tel.texto}</a> : '—'}</td>
                     <td style={S.num}>{a.veces}</td>
                     <td style={S.td}>
                       <span style={S.estado(a.atendida)}>{a.atendida ? 'Atendido' : 'Pendiente'}</span>
-                      {a.atendida && <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>{quienMarco(a)} · {fechaHoraEnZona(a.atendida_at, ZONA)}</div>}
+                      {a.atendida && <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>{quienMarco(a)} · {horaAviso(a.atendida_at, a)}</div>}
                     </td>
                     <td style={S.td}>
                       {!a.atendida && (
@@ -327,11 +339,11 @@ export default function SuperAdminAgenteWhatsApp() {
                     <tr key={a.id + '-det'}>
                       <td colSpan={7} style={{ padding: '0 10px' }}>
                         <div style={S.detalle}>
-                          <div style={{ fontSize: 13, marginBottom: 6 }}>{a.visible_restaurante ? textoAviso(a, ZONA) : TIPOS_AVISO[a.tipo]?.texto}</div>
+                          <div style={{ fontSize: 13, marginBottom: 6 }}>{a.visible_restaurante ? textoAviso(a, zonaDe(a) || ZONA) : TIPOS_AVISO[a.tipo]?.texto}</div>
                           <div style={{ fontSize: 12, color: '#8a8a8a' }}>
                             Paso (nodo de n8n): <strong style={{ color: '#f0f0f0' }}>{a.paso || '—'}</strong>
-                            {' · '}Primera vez: {fechaHoraEnZona(a.created_at, ZONA)}
-                            {' · '}Última vez: {fechaHoraEnZona(a.ultima_vez_at, ZONA)}
+                            {' · '}Primera vez: {horaAviso(a.created_at, a)}
+                            {' · '}Última vez: {horaAviso(a.ultima_vez_at, a)}
                             {' · '}Id: <code>{a.id}</code>
                           </div>
                           {det === 'cargando' && <div style={S.empty}>Cargando detalle…</div>}
@@ -340,7 +352,7 @@ export default function SuperAdminAgenteWhatsApp() {
                           {Array.isArray(det) && det.map(d => (
                             <div key={d.id} style={{ marginTop: 8 }}>
                               <div style={{ fontSize: 12, color: '#8a8a8a' }}>
-                                {fechaHoraEnZona(d.created_at, ZONA)}
+                                {horaAviso(d.created_at, a)}
                                 {d.detalle?.ejecucion ? <> · Ejecución de n8n: <code style={{ color: '#e8c97a' }}>{String(d.detalle.ejecucion)}</code></> : null}
                               </div>
                               {d.detalle?.error && <div style={{ fontSize: 13, color: '#e87a7a', marginTop: 4 }}>{String(d.detalle.error)}</div>}

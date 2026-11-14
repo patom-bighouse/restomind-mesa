@@ -2,15 +2,14 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useRestaurantModulos } from '../lib/modulos'
-import { ZONA_POR_DEFECTO, fechaHoraEnZona } from '../lib/fechas'
+import { fechaHoraEnZona, zonaHorariaDe } from '../lib/fechas'
 import { COLUMNAS_AVISO, DIAS_ATENDIDAS, TIPOS_AVISO, desdeAtendidas, esVisibleParaRestaurante, telefonoAviso, textoAviso } from '../lib/avisosAgente'
 
 // Sección "Avisos de WhatsApp" del panel del restaurante (entrega 1b,
 // docs/specs/2026-11-13-agente-whatsapp-revision.md): pendientes arriba y,
 // debajo, las atendidas de los últimos 30 días (decisión 13). Solo con el
-// módulo whatsapp (decisión 10). La hora es la del restaurante: hoy España,
-// pasada como parámetro (regla 7).
-const ZONA = ZONA_POR_DEFECTO
+// módulo whatsapp (decisión 10). La hora es la del restaurante (su zona
+// horaria, restaurants.zona_horaria; regla 7).
 
 const S = {
   app: { minHeight: '100vh', background: '#111', color: '#f0e8d8', fontFamily: "'Inter', sans-serif" },
@@ -54,7 +53,7 @@ export default function AdminAvisosWhatsApp() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { navigate('/admin/login'); return }
     setUsuarioId(session.user.id)
-    const { data: rest } = await supabase.from('restaurants').select('nombre, user_id').eq('id', restaurantId).single()
+    const { data: rest } = await supabase.from('restaurants').select('nombre, user_id, zona_horaria').eq('id', restaurantId).single()
     setRestaurant(rest)
     setLoading(false)
   }
@@ -179,14 +178,14 @@ export default function AdminAvisosWhatsApp() {
       <div key={a.id} style={S.card(!a.atendida)}>
         <div style={S.cardBody}>
           <div style={S.texto}>
-            {textoAviso(a, ZONA)}
+            {textoAviso(a, zonaHorariaDe(restaurant))}
             {a.veces > 1 && <span style={S.veces}>(×{a.veces})</span>}
           </div>
           <div style={S.meta}>
             <span style={S.badge}>{TIPOS_AVISO[a.tipo]?.etiqueta || a.tipo}</span>
-            <span>{fechaHoraEnZona(a.created_at, ZONA)}{a.veces > 1 ? ` · última vez ${fechaHoraEnZona(a.ultima_vez_at, ZONA)}` : ''}</span>
+            <span>{fechaHoraEnZona(a.created_at, zonaHorariaDe(restaurant))}{a.veces > 1 ? ` · última vez ${fechaHoraEnZona(a.ultima_vez_at, zonaHorariaDe(restaurant))}` : ''}</span>
             {tel ? <a href={tel.href} style={S.tel}>📞 {tel.texto}</a> : <span>Sin teléfono</span>}
-            {a.atendida && <span>Atendida por {quienMarco(a)} el {fechaHoraEnZona(a.atendida_at, ZONA)}</span>}
+            {a.atendida && <span>Atendida por {quienMarco(a)} el {fechaHoraEnZona(a.atendida_at, zonaHorariaDe(restaurant))}</span>}
           </div>
         </div>
         {!a.atendida && (

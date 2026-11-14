@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/money'
 import { useRestaurantModulos } from '../lib/modulos'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { fechaISOMadrid, horaMadrid } from '../lib/fechas'
+import { rangoDiasEnZona, partesEnZona, horaEnZona, fechaEnZona, fechaHoraEnZona, fechaHoraCortaEnZona, fechaISOaTexto, diaSemanaISO, zonaHorariaDe } from '../lib/fechas'
 
 const S = {
   app: { minHeight: '100vh', background: '#111', color: '#f0e8d8', fontFamily: "'Inter', sans-serif" },
@@ -73,34 +73,13 @@ const RANGES = {
   custom: 'Personalizado',
 }
 
-function getRangeDates(range, customFrom, customTo) {
-  const now = new Date()
-  let from, to
-  if (range === 'hoy') {
-    from = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    to = new Date(from.getTime() + 24 * 60 * 60 * 1000)
-  } else if (range === 'semana') {
-    const day = now.getDay() || 7 // lunes = 1 ... domingo = 7
-    from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (day - 1))
-    to = new Date(from.getTime() + 7 * 24 * 60 * 60 * 1000)
-  } else if (range === 'mes') {
-    from = new Date(now.getFullYear(), now.getMonth(), 1)
-    to = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-  } else {
-    from = customFrom ? new Date(customFrom) : new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    to = customTo ? new Date(new Date(customTo).getTime() + 24 * 60 * 60 * 1000) : new Date(from.getTime() + 24 * 60 * 60 * 1000)
-    // Límite de seguridad: un rango personalizado disparatadamente amplio
-    // (un typo de fecha, o un valor viejo guardado) no debe intentar
-    // cargar años de pedidos de Supabase ni construir miles de barras en
-    // los gráficos por día — se recorta a un máximo de 366 días.
-    const MAX_DIAS_RANGO_PERSONALIZADO = 366
-    const maxTo = new Date(from.getTime() + MAX_DIAS_RANGO_PERSONALIZADO * 24 * 60 * 60 * 1000)
-    if (to > maxTo) to = maxTo
-    // "to" inválido o anterior a "from" (fechas invertidas, o algún
-    // valor corrupto): mejor un día que un rango roto.
-    if (!(to > from)) to = new Date(from.getTime() + 24 * 60 * 60 * 1000)
-  }
-  return { from, to }
+// Rango del panel en días del restaurante (su zona horaria, no la del
+// ordenador): "Hoy" va de 00:00 a 00:00 del restaurante, "Esta semana" de
+// lunes a domingo y "Este mes" del día 1 al último. Un personalizado
+// disparatadamente amplio se recorta a 366 días (rangoDiasEnZona).
+// Devuelve { from, to } (instantes para la BD) y dias ('YYYY-MM-DD').
+function getRangeDates(range, customFrom, customTo, zonaHoraria) {
+  return rangoDiasEnZona(range, customFrom, customTo, zonaHoraria)
 }
 
 // Tooltip compartido por los tres gráficos de pedidos: además del valor
@@ -195,7 +174,7 @@ export default function AdminDashboard() {
   async function checkAuth() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { navigate('/admin/login'); return }
-    const { data: rest } = await supabase.from('restaurants').select('id, nombre, moneda, config').eq('id', restaurantId).single()
+    const { data: rest } = await supabase.from('restaurants').select('id, nombre, moneda, config, zona_horaria').eq('id', restaurantId).single()
     if (!rest) { navigate('/admin/login'); return }
     setRestaurant(rest)
     await loadTables(rest.id)
@@ -240,7 +219,7 @@ export default function AdminDashboard() {
   }, [restaurant, range, customFrom, customTo])
 
   async function loadSessions() {
-    const { from, to } = getRangeDates(range, customFrom, customTo)
+    const { from, to } = getRangeDates(range, customFrom, customTo, zonaHorariaDe(restaurant))
     const { data, error: err } = await supabase
       .from('table_sessions')
       .select('id, table_id, estado, abierta_at, cerrada_at, total, estado_pago, metodo_pago, motivo_exencion, comensales')
@@ -274,7 +253,7 @@ export default function AdminDashboard() {
   }, [restaurant])
 
   async function loadOrders() {
-    const { from, to } = getRangeDates(range, customFrom, customTo)
+    const { from, to } = getRangeDates(range, customFrom, customTo, zonaHorariaDe(restaurant))
     const { data, error: err } = await supabase
       .from('orders')
       .select('id, table_id, table_session_id, estado, total, tipo, created_at, notas, preparando_at, listo_at, entregado_at, tomado_por, cliente_nombre, cliente_telefono, hora_recogida')
@@ -416,8 +395,10 @@ export default function AdminDashboard() {
   const horaCounts = {}
   const horaIngresos = {}
   for (let h = 0; h < 24; h++) { horaCounts[h] = 0; horaIngresos[h] = 0 }
+  // Hora del restaurante (su zona horaria), no la del ordenador.
+  const zonaHoraria = zonaHorariaDe(restaurant)
   validOrders.forEach(o => {
-    const h = new Date(o.created_at).getHours()
+    const h = Math.floor(partesEnZona(o.created_at, zonaHoraria).minutos / 60)
     horaCounts[h]++
     horaIngresos[h] += parseFloat(o.total || 0)
   })
@@ -425,29 +406,20 @@ export default function AdminDashboard() {
 
   // Pedidos por día — un día por cada día del rango seleccionado (no solo
   // los que tienen pedidos, para que se vean también los días en 0).
-  // Se agrupa en hora local, igual que "Horas pico" arriba (getHours()),
-  // para evitar que un pedido de madrugada caiga en el día equivocado
-  // por el desfase horario si se agrupara en UTC.
-  const localDayKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  const { from: diaFrom, to: diaTo } = getRangeDates(range, customFrom, customTo)
+  // Se agrupa por el día del restaurante (su zona horaria), igual que
+  // "Horas pico" arriba: un pedido de madrugada no cae en el día
+  // equivocado ni depende de la hora del ordenador.
+  const { dias: diasRango } = getRangeDates(range, customFrom, customTo, zonaHoraria)
   const diaCounts = {}
   const diaIngresos = {}
   const diaOrder = []
-  const diaCursor = new Date(diaFrom.getFullYear(), diaFrom.getMonth(), diaFrom.getDate())
-  // Tope extra de seguridad (además del límite de 366 días ya aplicado en
-  // getRangeDates): así este bucle nunca puede colgar la pestaña, pase lo
-  // que pase con el rango de fechas que le llegue.
-  let diaGuard = 0
-  while (diaCursor < diaTo && diaGuard < 400) {
-    const key = localDayKey(diaCursor)
+  diasRango.forEach(key => {
     diaCounts[key] = 0
     diaIngresos[key] = 0
-    diaOrder.push({ key, label: diaCursor.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' }) })
-    diaCursor.setDate(diaCursor.getDate() + 1)
-    diaGuard++
-  }
+    diaOrder.push({ key, label: fechaISOaTexto(key).slice(0, 5) })
+  })
   validOrders.forEach(o => {
-    const key = localDayKey(new Date(o.created_at))
+    const key = partesEnZona(o.created_at, zonaHoraria).fecha
     if (diaCounts[key] !== undefined) { diaCounts[key]++; diaIngresos[key] += parseFloat(o.total || 0) }
   })
   const diaData = diaOrder.map(({ key, label }) => ({ dia: label, pedidos: diaCounts[key], facturacion: diaIngresos[key] }))
@@ -475,12 +447,11 @@ export default function AdminDashboard() {
   const semanaIngresos = DIAS_SEMANA.map(() => 0)
   const semanaOcurrencias = DIAS_SEMANA.map(() => 0)
   diaOrder.forEach(({ key }) => {
-    const [y, m, dd] = key.split('-').map(Number)
-    const idx = (new Date(y, m - 1, dd).getDay() || 7) - 1
+    const idx = (diaSemanaISO(key) || 7) - 1
     semanaOcurrencias[idx]++
   })
   validOrders.forEach(o => {
-    const idx = (new Date(o.created_at).getDay() || 7) - 1
+    const idx = (partesEnZona(o.created_at, zonaHoraria).dia || 7) - 1
     semanaPedidos[idx]++
     semanaIngresos[idx] += parseFloat(o.total || 0)
   })
@@ -561,7 +532,7 @@ export default function AdminDashboard() {
   function pedidoLabel(o) {
     if (o.tipo === 'mesa') return mesaLabel(o.table_id)
     const cliente = [o.cliente_nombre, o.cliente_telefono && `(${o.cliente_telefono})`].filter(Boolean).join(' ')
-    return ['Takeaway', cliente, o.hora_recogida && `recoge ${horaMadrid(o.hora_recogida)}`].filter(Boolean).join(' · ')
+    return ['Takeaway', cliente, o.hora_recogida && `recoge ${horaEnZona(o.hora_recogida, zonaHorariaDe(restaurant))}`].filter(Boolean).join(' · ')
   }
 
   // ---------- Filtros de los listados ----------
@@ -632,8 +603,8 @@ export default function AdminDashboard() {
         const session = o.table_session_id ? sessionsById[o.table_session_id] : null
         const items = (orderItemsMap[o.id] || []).map(i => `${i.cantidad}x ${i.nombre_snapshot}`).join('; ')
         return [
-          fecha.toLocaleDateString('es-ES'),
-          fecha.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
+          fechaEnZona(fecha, zonaHoraria),
+          horaEnZona(fecha, zonaHoraria),
           pedidoLabel(o),
           items,
           o.total,
@@ -649,9 +620,9 @@ export default function AdminDashboard() {
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    const { from } = getRangeDates(range, customFrom, customTo)
+    const { desde } = getRangeDates(range, customFrom, customTo, zonaHoraria)
     a.href = url
-    a.download = `pedidos_${restaurant?.nombre?.replace(/\s+/g, '_') || 'restomind'}_${fechaISOMadrid(from)}.csv`
+    a.download = `pedidos_${restaurant?.nombre?.replace(/\s+/g, '_') || 'restomind'}_${desde}.csv`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -899,7 +870,7 @@ export default function AdminDashboard() {
                     <div key={r.id} style={{ borderBottom: '0.5px solid #222', paddingBottom: 8 }}>
                       <div style={{ fontSize: 12, color: '#e8c97a', marginBottom: 2 }}>{'★'.repeat(r.puntuacion)}{'☆'.repeat(5 - r.puntuacion)}</div>
                       <div style={{ fontSize: 13, color: '#f0e8d8' }}>{r.comentario}</div>
-                      <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>{new Date(r.created_at).toLocaleDateString('es-ES')}</div>
+                      <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>{fechaEnZona(r.created_at, zonaHoraria)}</div>
                     </div>
                   ))}
                 </div>
@@ -956,8 +927,8 @@ export default function AdminDashboard() {
                     {sesionesFiltradas.map(s => (
                       <tr key={s.id}>
                         <td style={S.td}>{mesaLabel(s.table_id)}</td>
-                        <td style={S.td}>{new Date(s.abierta_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
-                        <td style={S.td}>{s.cerrada_at ? new Date(s.cerrada_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                        <td style={S.td}>{fechaHoraCortaEnZona(s.abierta_at, zonaHoraria)}</td>
+                        <td style={S.td}>{s.cerrada_at ? fechaHoraCortaEnZona(s.cerrada_at, zonaHoraria) : '—'}</td>
                         <td style={S.td}>
                           {s.comensales != null ? (
                             <span style={s.comensales > (tables[s.table_id]?.capacidad ?? Infinity) ? { color: '#e74c3c', fontWeight: 600 } : {}}>
@@ -1133,7 +1104,7 @@ export default function AdminDashboard() {
                   <tbody>
                     {ordersFiltrados.map(o => (
                       <tr key={o.id}>
-                        <td style={S.td}>{new Date(o.created_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+                        <td style={S.td}>{fechaHoraCortaEnZona(o.created_at, zonaHoraria)}</td>
                         <td style={S.td}>
                           {o.tipo === 'mesa' ? mesaLabel(o.table_id) : 'Takeaway'}
                           {o.tipo === 'takeaway' && (o.cliente_nombre || o.cliente_telefono) && (
@@ -1143,7 +1114,7 @@ export default function AdminDashboard() {
                           )}
                           {o.tipo === 'takeaway' && o.hora_recogida && (
                             <div style={{ fontSize: 12, color: '#c4a85a', marginTop: 2 }}>
-                              🕐 Recoge a las {horaMadrid(o.hora_recogida)}
+                              🕐 Recoge a las {horaEnZona(o.hora_recogida, zonaHoraria)}
                             </div>
                           )}
                         </td>
@@ -1167,7 +1138,7 @@ export default function AdminDashboard() {
         <h1 style={{ fontSize: 20, marginBottom: 2 }}>{restaurant?.nombre}</h1>
         <div style={{ fontSize: 13, color: '#444', marginBottom: 4 }}>Cierre de caja — Restomind</div>
         <div style={{ fontSize: 12, color: '#666', marginBottom: 16 }}>
-          Rango: {RANGES[range]}{range === 'custom' ? ` (${customFrom} → ${customTo})` : ''} · Impreso el {new Date().toLocaleString('es-ES')}
+          Rango: {RANGES[range]}{range === 'custom' ? ` (${customFrom} → ${customTo})` : ''} · Impreso el {fechaHoraEnZona(new Date(), zonaHoraria)}
         </div>
 
         <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 20 }}>
@@ -1202,7 +1173,7 @@ export default function AdminDashboard() {
           <tbody>
             {orders.map(o => (
               <tr key={o.id}>
-                <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{new Date(o.created_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+                <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{fechaHoraCortaEnZona(o.created_at, zonaHoraria)}</td>
                 <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{pedidoLabel(o)}</td>
                 <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{(orderItemsMap[o.id] || []).map(i => `${i.cantidad}x ${i.nombre_snapshot}`).join(', ') || '—'}</td>
                 <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>{formatMoney(o.total, restaurant?.moneda)}</td>

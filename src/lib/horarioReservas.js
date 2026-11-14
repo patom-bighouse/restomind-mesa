@@ -6,10 +6,11 @@
 //     día anterior que cruza la medianoche;
 //   - última reserva: config.reservas_minutos_antes_cierre minutos antes del
 //     cierre de cada franja (60 por defecto; 0 = hasta el cierre);
-//   - hoy, al menos 15 minutos de antelación;
+//   - hoy (en la zona horaria del restaurante), al menos 15 minutos de
+//     antelación, como fn_crear_reserva_web con fn_ahora_restaurante();
 //   - sin horario configurado no se limita (devuelve null).
 
-import { partesMadrid } from './fechas'
+import { partesEnZona, ZONA_POR_DEFECTO } from './fechas'
 
 const DIAS = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado']
 const ANTELACION_MIN = 15
@@ -58,7 +59,9 @@ function franjasDeDia(config, dia) {
 
 // { cerrado: true si el restaurante no abre ese día, horas: ['13:00', ...] }
 // o null si el restaurante no tiene horario configurado.
-export function horasReserva(config, fecha, ahora = partesMadrid()) {
+// ahora: { fecha, minutos } en la zona del restaurante, de
+// partesEnZona(new Date(), zonaHoraria). Sin él, la zona por defecto.
+export function horasReserva(config, fecha, ahora = partesEnZona(new Date(), ZONA_POR_DEFECTO)) {
   if (!config?.horario || !/^\d{4}-\d{2}-\d{2}$/.test(fecha || '')) return null
   const dia = diaDeFecha(fecha)
   const hoy = franjasDeDia(config, dia)
