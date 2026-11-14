@@ -93,3 +93,26 @@ Comprobación previa (SQL, solo lectura, Producción): `select direccion, config
 
 El caso `inyeccion-descuento` (más arriba) también es del criterio 13: se repite tras el despliegue de la 1b.
 
+
+## Zona horaria (docs/specs/2026-11-14-zona-horaria-restaurante.md, criterio 7b)
+
+Se prueban **en la fase 3**, cuando las tres fases estén en Producción: migración `20261114151610_zona_horaria_restaurante` aplicada, agente reimportado y front publicado. Con el número de prueba y el móvil de Patricio, sin ninguna conversación en curso (si la hay, escribir antes "quiero empezar de nuevo" o esperar 15 minutos).
+
+Preparación:
+- Patricio pone "Resto Fuerteventura" en **Canarias** desde el superadmin (Restaurantes → editar → Zona horaria). Si el número de prueba no está asignado a "Resto Fuerteventura", hay que asignárselo durante la prueba y devolverlo a Casa Montiel al terminar.
+- Que tenga el módulo de take away, el de WhatsApp y algún plato en la carta. Sin horario configurado (o con un horario abierto a la hora de la prueba).
+- **Apuntar la hora de Canarias en el momento de la prueba** (una hora menos que la península). En los casos de abajo, H = esa hora.
+
+Comprobación previa (SQL, solo lectura, Producción): `select nombre, zona_horaria from restaurants where nombre ilike '%fuerteventura%';` → `Atlantic/Canary`.
+
+| Caso | Mensaje | Esperado | Comprobación |
+|---|---|---|---|
+| `zona-hoy` | "¿qué día es hoy?" | La fecha de Canarias. Solo se distingue de la de la península entre las 23:00 y las 24:00 de Canarias: si se puede, probarlo a esa hora. | En la ejecución, "Combinar con sesión" trae `datos_restaurante.zona = 'Atlantic/Canary'` y `hoy.fecha` = fecha de Canarias. |
+| `zona-recogida` | pedido para recoger "a las <H + 30 min>" | Se acepta; en Cocina y en el panel sale "Recoge a las <H + 30 min>" y la nota del pedido dice "Recogida a las <H + 30 min>". | "Preparar pedido datos" manda `p_hora_recogida = "<fecha> <H+30> Atlantic/Canary"`. |
+| `zona-reserva-15min` | "quiero reservar hoy a las <H + 10 min> para 2" | Rechazada por los 15 minutos de antelación ("ahora son las H"). | "Preparar reserva": el prompt dice "Hora actual en el restaurante: H". |
+| `zona-reserva-ok` | "quiero reservar hoy a las <H + 1 h> para 2" | Se crea la reserva para esa hora (la hora de pared de Canarias). | `reservations` con `fecha` de hoy y `hora` = H + 1 h. |
+| `zona-madrid-igual` | con un restaurante en Madrid (Casa Montiel), los casos de arriba de este archivo | Mismo resultado que antes del cambio. | — |
+
+Al terminar: si se cambió el número de prueba, devolverlo a Casa Montiel. "Resto Fuerteventura" puede quedarse en Canarias.
+
+Automático (antes de importar): `python3 n8n/tests/comprobar_hora_restaurante.py` (o `python3 n8n-agente-takeaway/comprobar_hora_espana.py`, que lo llama) prueba `ahoraEnZona()` de los 7 nodos en Madrid, Canarias y México, con y sin `Intl`, en los próximos cambios de hora; también forma parte de `comprobar_workflow.py`.

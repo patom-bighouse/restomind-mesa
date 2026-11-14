@@ -8,7 +8,7 @@ Comprueba un workflow de n8n del agente de WhatsApp antes de importarlo.
 
 Sin argumentos comprueba todos los JSON de n8n/workflows/. Sale con código 1
 si hay algún error (los avisos no hacen fallar). Amplía
-n8n-agente-takeaway/comprobar_hora_espana.py (spec
+n8n-agente-takeaway/comprobar_hora_espana.py, hoy n8n/tests/comprobar_hora_restaurante.py (spec
 docs/specs/2026-11-13-agente-whatsapp-revision.md, entrega 1a, punto 7).
 
 En todos los workflows:
@@ -35,8 +35,13 @@ Además, en el agente (el que tiene "Extraer mensaje y contexto"):
       un nodo que compare hub.verify_token con $env.META_VERIFY_TOKEN_RESTOMIND.
   E3. Los nodos de envío por WhatsApp usan la credencial
       "WhatsApp Graph API Token (RestomindWapp)".
-  8. Hora de España: desfases fijos prohibidos y ahoraMadrid() probada en
-     los próximos cambios de hora (lo de comprobar_hora_espana.py).
+  8. Hora del restaurante (docs/specs/2026-11-14-zona-horaria-restaurante.md,
+     criterio 7a; lo hace comprobar_hora_restaurante.py): desfases fijos
+     prohibidos, sin ahoraMadrid() ni 'Europe/Madrid' escrito fuera de
+     ZONA_POR_DEFECTO; ahoraEnZona() probada en Madrid, Canarias y México en
+     los próximos cambios de hora, con y sin Intl; todas las llamadas pasan
+     zonaRestaurante(); "Preparar pedido datos" manda la zona del restaurante
+     y "Verificar restaurante y módulo whatsapp" lee zona_horaria.
   9. La salida "Sin módulo whatsapp" de "¿Atiende por WhatsApp?" no puede
      llegar en el grafo a ningún nodo HTTP a api.anthropic.com (decisión 12).
  10. "Guardar sesión" va después de "Enviar respuesta WhatsApp" y no antes.
@@ -74,7 +79,6 @@ Además, en el agente (el que tiene "Extraer mensaje y contexto"):
  19. Todo nodo de código se puede compilar (sin errores de sintaxis).
 """
 import json, re, shutil, subprocess, sys
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[2]
@@ -97,13 +101,6 @@ CLAVES = [
     (r'(?i)hub\.verify_token[^"\n]{0,40}===?\s*["\'][^"\']{4,}["\']', 'verify_token comparado con un texto fijo'),
 ]
 
-PROHIBIDO_HORA = [
-    (r'[+-]\s*120\b', 'suma/resta 120 minutos fijos'),
-    (r'[+-]\s*60\s*\)\s*%', 'suma 60 minutos fijos'),
-    (r'(3600000|60\s*\*\s*60\s*\*\s*1000)\s*\*\s*[12]\b|7200000', 'suma horas fijas en milisegundos'),
-    (r'getUTCHours|getUTCMinutes|getUTCDay', 'usa la hora UTC como si fuera la de España'),
-    (r'UTC\s*\+\s*[12]', 'menciona un desfase UTC fijo'),
-]
 
 NODO_SWITCH_MODULO = '¿Atiende por WhatsApp?'
 SALIDA_SIN_MODULO = 'Sin módulo whatsapp'
@@ -135,23 +132,9 @@ def ejecutar_js(script):
     return r.returncode == 0, (r.stdout if r.returncode == 0 else r.stderr).strip()
 
 
-# --- Hora de España (de comprobar_hora_espana.py) --------------------------------
-def ultimo_domingo(anio, mes):
-    d = datetime(anio, mes + 1, 1, tzinfo=timezone.utc) - timedelta(days=1) if mes < 12 else datetime(anio, 12, 31, tzinfo=timezone.utc)
-    return d - timedelta(days=(d.weekday() + 1) % 7)
-
-
-def casos_hora():
-    anio = datetime.now(timezone.utc).year
-    out = []
-    for a in (anio, anio + 1):
-        for mes, antes, despues in ((3, 1, 2), (10, 2, 1)):
-            cambio = ultimo_domingo(a, mes).replace(hour=1, minute=0)
-            for instante, desfase in ((cambio - timedelta(minutes=1), antes), (cambio, despues)):
-                out.append((instante, instante + timedelta(hours=desfase)))
-    out.append((datetime(anio, 1, 15, 23, 30, tzinfo=timezone.utc), datetime(anio, 1, 16, 0, 30, tzinfo=timezone.utc)))
-    out.append((datetime(anio, 7, 15, 22, 30, tzinfo=timezone.utc), datetime(anio, 7, 16, 0, 30, tzinfo=timezone.utc)))
-    return out
+# --- Hora del restaurante (comprobar_hora_restaurante.py) ------------------------
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from comprobar_hora_restaurante import comprobar_hora, casos_hora  # noqa: E402
 
 
 def extraer_funcion(codigo, firma):
@@ -160,39 +143,6 @@ def extraer_funcion(codigo, firma):
         return None
     j = codigo.index('\n}\n', i) + 2
     return codigo[i:j]
-
-
-def comprobar_hora(w, errores):
-    funciones = {}
-    for n in w['nodes']:
-        codigo = n['parameters'].get('jsCode')
-        if not codigo:
-            continue
-        f = extraer_funcion(codigo, 'function ahoraMadrid(')
-        resto = codigo.replace(f, '') if f else codigo
-        for patron, motivo in PROHIBIDO_HORA:
-            if re.search(patron, sin_comentarios(resto)):
-                errores.append(f'[{n["name"]}] {motivo} ({patron})')
-        if f:
-            funciones[n['name']] = f
-    if not funciones:
-        errores.append('Ningún nodo define ahoraMadrid().')
-    for nombre, funcion in funciones.items():
-        for variante in ('Intl', 'regla UE'):
-            js = funcion
-            if variante == 'regla UE':
-                js = js.replace('new Intl.DateTimeFormat(', "(() => { throw new Error('sin Intl'); })(")
-            pruebas = ', '.join(f"['{i.strftime('%Y-%m-%dT%H:%M:%SZ')}', '{e.strftime('%Y-%m-%d')}', {e.hour * 60 + e.minute}, {(e.weekday() + 1) % 7}]" for i, e in casos_hora())
-            ok, salida = ejecutar_js(js + f"""
-return [{pruebas}].map(([i, fecha, min, dia]) => {{
-  const r = ahoraMadrid(new Date(i));
-  return (r.fecha === fecha && r.min === min && r.dia === dia) ? '' : `${{i}}: esperado ${{fecha}} ${{min}} d${{dia}}, obtenido ${{r.fecha}} ${{r.min}} d${{r.dia}}`;
-}}).filter(Boolean).join('\\n');""")
-            if not ok:
-                errores.append(f'[{nombre}] ({variante}) no se pudo ejecutar ahoraMadrid(): {salida}')
-            elif salida:
-                errores.append(f'[{nombre}] ({variante}) hora incorrecta:\n{salida}')
-    return len(funciones)
 
 
 # --- Grafo ----------------------------------------------------------------------------
@@ -587,7 +537,7 @@ def comprobar(ruta, para_importar=False):
     # Agente
     if 'Extraer mensaje y contexto' in nodos:
         comprobar_entrada(w, nodos, errores, info)
-        info.append(f'{comprobar_hora(w, errores)} nodos con ahoraMadrid() probados en {len(casos_hora())} instantes')
+        info.append(f'{comprobar_hora(w, errores)} nodos con ahoraEnZona() probados en {len(casos_hora())} instantes (Madrid, Canarias y México)')
 
         # 9. Sin módulo whatsapp → nunca la IA
         sw = nodos.get(NODO_SWITCH_MODULO)
@@ -788,6 +738,25 @@ def mutaciones(agente):
             jsCode=n['Preparar contexto']['parameters']['jsCode'].replace('mensajeRespuesta = conAvisoAlergias(mensajeRespuesta);', '', 1))), 'conAvisoAlergias'),
         ('error de sintaxis', m(lambda w, n: n['Respuesta: General']['parameters'].update(
             jsCode=n['Respuesta: General']['parameters']['jsCode'] + '\nconst = ;')), 'sintaxis'),
+        # Zona horaria por restaurante (docs/specs/2026-11-14-zona-horaria-restaurante.md)
+        ('recogida con Europe/Madrid escrito', m(lambda w, n: n['Preparar pedido datos']['parameters'].update(
+            jsCode=n['Preparar pedido datos']['parameters']['jsCode'].replace('${p.hora_recogida} ${zonaRestaurante()}', '${p.hora_recogida} Europe/Madrid', 1))),
+         'Europe/Madrid'),
+        ('ahoraEnZona sin la zona del restaurante', m(lambda w, n: n['Validar hora recogida']['parameters'].update(
+            jsCode=n['Validar hora recogida']['parameters']['jsCode'].replace('const ahora = ahoraEnZona(zonaRestaurante());', 'const ahora = ahoraEnZona();', 1))),
+         'sin la zona del restaurante'),
+        ('hora de Madrid fija en un nodo', m(lambda w, n: n['Preparar takeaway']['parameters'].update(
+            jsCode=n['Preparar takeaway']['parameters']['jsCode'].replace('timeZone: zona,', "timeZone: 'Europe/Madrid',", 1))),
+         'hora incorrecta'),
+        ('respaldo sin Intl que no lanza con México', m(lambda w, n: n['Crear reserva Supabase']['parameters'].update(
+            jsCode=n['Crear reserva Supabase']['parameters']['jsCode'].replace("{ 'Europe/Madrid': 1, 'Atlantic/Canary': 0 }[zona]", "({ 'Europe/Madrid': 1, 'Atlantic/Canary': 0 }[zona] ?? 1)", 1))),
+         'tenía que lanzar'),
+        ('sin leer zona_horaria del restaurante', m(lambda w, n: n['Verificar restaurante y módulo whatsapp']['parameters'].update(
+            jsCode=n['Verificar restaurante y módulo whatsapp']['parameters']['jsCode'].replace('moneda,zona_horaria,', 'moneda,', 1))),
+         'zona_horaria'),
+        ('zonaRestaurante con .first()', m(lambda w, n: n['Preparar reserva']['parameters'].update(
+            jsCode=n['Preparar reserva']['parameters']['jsCode'].replace("$('Verificar restaurante y módulo whatsapp').first(0).json.zona_horaria", "$('Verificar restaurante y módulo whatsapp').first().json.zona_horaria", 1))),
+         'first(0)'),
     ]
 
 
