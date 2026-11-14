@@ -56,6 +56,22 @@ Además, en el agente (el que tiene "Extraer mensaje y contexto"):
  13. La función partirMensaje() de "Partir mensaje", con una carta de 6.000
      caracteres: varios mensajes, en orden, de 4.096 como máximo y cortados
      por final de línea.
+ 17. Dinero (entrega 1b, criterio 14): el formatMoney() de cada nodo que lo
+     define se ejecuta con EUR, USD y MXN y tiene que dar lo mismo que
+     formatMoney() de src/lib/money.js ("12,50 €" y "$12.50").
+ 18. Contexto (entrega 1b, criterio 13, decisiones 1 y 2):
+     - "Combinar con sesión" lee fn_agente_datos_restaurante y lo pasa como
+       datos_restaurante; el clasificador y los dos agentes ponen en su prompt
+       textoFichaRestaurante(datosRestaurante());
+     - el clasificador devuelve sin_dato y consulta_carta (salida estructurada);
+     - "Formatear carta" se ejecuta con una carta de prueba: "¿la tortilla lleva
+       gluten?" responde con sus alérgenos y el aviso, sin volcar la carta;
+       "¿qué cuesta el secreto?" da su precio con la moneda del restaurante y
+       sin la carta; la carta completa lleva alérgenos y aviso;
+     - "Respuesta: General" con sin_dato contesta "No dispongo de ese dato";
+     - "Preparar contexto" añade el aviso de alérgenos a cualquier respuesta
+       que hable de ellos, una sola vez.
+ 19. Todo nodo de código se puede compilar (sin errores de sintaxis).
 """
 import json, re, shutil, subprocess, sys
 from datetime import datetime, timedelta, timezone
@@ -333,6 +349,179 @@ return fallos.length ? fallos.join('; ') : `OK ${carta.length} caracteres en ${p
     return salida
 
 
+# --- Ejecutar un nodo de código con datos de prueba (entrega 1b) -----------------
+def ruta_node():
+    return shutil.which('node') or ('/usr/local/bin/node' if Path('/usr/local/bin/node').exists() else None)
+
+
+def ejecutar_nodo(codigo, entrada, refs):
+    """Ejecuta el código de un nodo Code de n8n con $input/$json = entrada y
+    $('Nodo') = refs[Nodo]. Sin red ni $env. Devuelve (ok, resultado|error)."""
+    node = ruta_node()
+    if not node:
+        return False, 'no hay node para ejecutar la prueba'
+    script = (
+        f'const __entrada = {json.dumps(entrada, ensure_ascii=False)};\n'
+        f'const __refs = {json.dumps(refs, ensure_ascii=False)};\n'
+        'const $input = { first: () => ({ json: __entrada }), all: () => [{ json: __entrada }] };\n'
+        'const $json = __entrada;\n'
+        'const $ = (n) => { if (!(n in __refs)) throw new Error("nodo no ejecutado: " + n);'
+        ' const it = { json: __refs[n] }; return { first: () => it, item: it, all: () => [it] }; };\n'
+        'const $env = {}; const $execution = { id: "prueba" };\n'
+        '(async function(){\n' + codigo + '\n}).call({ helpers: { httpRequest: async () => { throw new Error("sin red en la prueba"); } } })'
+        '.then(r => process.stdout.write(JSON.stringify(r)), e => { process.stderr.write(String((e && e.stack) || e)); process.exit(1); });'
+    )
+    r = subprocess.run([node, '-e', script], capture_output=True, text=True, timeout=60)
+    if r.returncode != 0:
+        return False, r.stderr.strip()[:500]
+    try:
+        return True, json.loads(r.stdout)
+    except Exception as e:
+        return False, f'salida no válida: {r.stdout[:200]}'
+
+
+def comprobar_sintaxis(w, errores):
+    node = ruta_node()
+    if not node:
+        return 0
+    codigos = [(n['name'], n['parameters']['jsCode']) for n in w.get('nodes', []) if n.get('parameters', {}).get('jsCode')]
+    script = ('const AF = Object.getPrototypeOf(async function(){}).constructor; const __c = ' + json.dumps(codigos, ensure_ascii=False) +
+              '; const mal = []; for (const [n, c] of __c) { try { new AF("$input", "$json", "$", "$env", "$execution", c); } catch (e) { mal.push(n + ": " + e.message); } }'
+              ' process.stdout.write(JSON.stringify(mal));')
+    r = subprocess.run([node, '-e', script], capture_output=True, text=True, timeout=60)
+    mal = json.loads(r.stdout or '[]') if r.returncode == 0 else [r.stderr.strip()[:300]]
+    for m in mal:
+        errores.append(f'[{m.split(":")[0]}] error de sintaxis en el código: {m}')
+    return len(codigos)
+
+
+def comprobar_dinero(w, errores):
+    """17. formatMoney() de los nodos = formatMoney() de src/lib/money.js."""
+    money = (RAIZ / 'src' / 'lib' / 'money.js').read_text().replace('export function', 'function')
+    probados = 0
+    for n in w.get('nodes', []):
+        cod = n.get('parameters', {}).get('jsCode', '')
+        f = extraer_funcion(cod, 'function formatMoney(')
+        ini = cod.find('const LOCALE_POR_MONEDA')
+        if not f:
+            continue
+        if ini < 0:
+            errores.append(f'[{n["name"]}] formatMoney() sin la tabla LOCALE_POR_MONEDA de src/lib/money.js')
+            continue
+        tabla = cod[ini:cod.index('\n', ini)]
+        script = ('const REF = (function(){\n' + money + '\nreturn formatMoney; })();\n'
+                  'const NODO = (function(){\n' + tabla + '\n' + f + '\nreturn formatMoney; })();\n'
+                  r"""const malos = [];
+for (const m of ['EUR', 'USD', 'MXN']) for (const v of [12.5, 0, 1234.56, '21.00', -3]) {
+  if (NODO(v, m) !== REF(v, m)) malos.push(`${v} ${m}: nodo "${NODO(v, m)}" / money.js "${REF(v, m)}"`);
+}
+const n = s => s.replace(/\s/g, ' ');
+if (n(NODO(12.5, 'EUR')) !== '12,50 €') malos.push('EUR no da "12,50 €": ' + NODO(12.5, 'EUR'));
+if (NODO(12.5, 'USD') !== '$12.50') malos.push('USD no da "$12.50": ' + NODO(12.5, 'USD'));
+return malos.length ? 'MAL ' + malos.join('; ') : 'OK';""")
+        ok, salida = ejecutar_js(script)
+        if not ok or salida != 'OK':
+            errores.append(f'[{n["name"]}] formatMoney() no coincide con src/lib/money.js: {salida}')
+        probados += 1
+    return probados
+
+
+AVISO_ALERGIAS = 'Si tienes una alergia grave, confírmalo con el personal al recoger o al llegar.'
+
+
+def comprobar_contexto(w, nodos, errores, info):
+    """18. Contexto del restaurante y alérgenos (entrega 1b)."""
+    def codigo(nombre):
+        return (nodos.get(nombre) or {}).get('parameters', {}).get('jsCode', '')
+
+    c_comb = sin_comentarios(codigo('Combinar con sesión'))
+    if 'fn_agente_datos_restaurante' not in c_comb or 'datos_restaurante:' not in c_comb:
+        errores.append('[Combinar con sesión] no lee fn_agente_datos_restaurante ni pasa datos_restaurante (horario, dirección y teléfono)')
+    for nn in ('Preparar clasificador', 'Preparar takeaway', 'Preparar reserva'):
+        if 'textoFichaRestaurante(datosRestaurante())' not in sin_comentarios(codigo(nn)):
+            errores.append(f'[{nn}] el prompt no lleva los datos del restaurante (textoFichaRestaurante(datosRestaurante()))')
+    c_cla = sin_comentarios(codigo('Preparar clasificador'))
+    if not re.search(r"required:\s*\[[^\]]*'sin_dato'[^\]]*'consulta_carta'", c_cla):
+        errores.append('[Preparar clasificador] el esquema no exige sin_dato y consulta_carta')
+    if 'nombresAlergenos(' not in sin_comentarios(codigo('Preparar takeaway')):
+        errores.append('[Preparar takeaway] la carta de referencia no lleva los alérgenos')
+
+    # Formatear carta con una carta de prueba
+    carta = [
+        {'id': '1', 'nombre': 'Tortilla de patatas', 'descripcion': 'Con cebolla', 'precio': 9.5, 'emoji': '🥚',
+         'categories': {'nombre': 'Entrantes', 'orden': 1}, 'alergenos': ['huevos', 'gluten']},
+        {'id': '2', 'nombre': 'Secreto ibérico', 'descripcion': None, 'precio': 14.5, 'emoji': '🥩',
+         'categories': {'nombre': 'Carnes', 'orden': 2}, 'alergenos': []},
+        {'id': '3', 'nombre': 'Croquetas caseras', 'descripcion': 'De jamón', 'precio': 8, 'emoji': None,
+         'categories': {'nombre': 'Entrantes', 'orden': 1}, 'alergenos': ['lacteos', 'gluten']},
+    ]
+    base = {'restaurant_nombre': 'Casa de Prueba', 'telefono': '34600000001', 'phone_number_id': '1'}
+    def carta_con(consulta, moneda='EUR'):
+        ok, r = ejecutar_nodo(codigo('Formatear carta'), {'body': carta},
+                              {'Parsear clasificación': {**base, 'consulta_carta': consulta},
+                               'Verificar restaurante y módulo whatsapp': {'moneda': moneda}})
+        if not ok:
+            return None, r
+        return (r[0]['json'].get('mensajeRespuesta') if isinstance(r, list) and r else None), None
+    casos = [
+        ('alérgenos de la tortilla', {'tipo': 'alergenos', 'platos': ['la tortilla']}, 'EUR',
+         lambda m: 'gluten' in m and 'huevo' in m and AVISO_ALERGIAS in m and 'Secreto' not in m and 'Carta de' not in m),
+        ('precio del secreto (EUR)', {'tipo': 'precio', 'platos': ['el secreto']}, 'EUR',
+         lambda m: re.search(r'Secreto ibérico — 14,50\s€', m) and 'Tortilla' not in m and 'Carta de' not in m),
+        ('precio del secreto (USD)', {'tipo': 'precio', 'platos': ['secreto']}, 'USD',
+         lambda m: 'Secreto ibérico — $14.50' in m),
+        ('plato que no está', {'tipo': 'precio', 'platos': ['paella']}, 'EUR',
+         lambda m: 'No encuentro' in m and 'Carta de' not in m),
+        ('carta completa con alérgenos y aviso', {'tipo': 'carta_completa', 'platos': []}, 'EUR',
+         lambda m: 'Carta de Casa de Prueba' in m and 'Secreto ibérico' in m and 'Alérgenos: huevo, gluten' in m and AVISO_ALERGIAS in m),
+        ('sin consulta (conversación en curso) → carta completa', None, 'EUR',
+         lambda m: 'Carta de Casa de Prueba' in m),
+    ]
+    mal = []
+    for nombre, consulta, moneda, ok_si in casos:
+        m, err = carta_con(consulta, moneda)
+        if err:
+            mal.append(f'{nombre}: no se pudo ejecutar ({err})')
+        elif not m or not ok_si(m):
+            mal.append(f'{nombre}: {m!r}'[:300])
+    for x in mal:
+        errores.append(f'[Formatear carta] {x}')
+    if not mal:
+        info.append(f'carta: {len(casos)} preguntas probadas (alérgenos con aviso, precio sin volcar la carta, EUR/USD)')
+
+    # Respuesta: General con sin_dato
+    ok, r = ejecutar_nodo(codigo('Respuesta: General'), {**base, 'sin_dato': True, 'respuesta_general': 'Sí, hay parking gratis.'},
+                          {'Combinar con sesión': {'datos_restaurante': {'telefono': '954 000 111'}}})
+    m = r[0]['json'].get('mensajeRespuesta') if ok and isinstance(r, list) and r else str(r)
+    if not ok or not str(m).startswith('No dispongo de ese dato') or 'parking' in str(m) or '954 000 111' not in str(m):
+        errores.append(f'[Respuesta: General] con sin_dato no contesta "No dispongo de ese dato" con el teléfono: {m!r}'[:300])
+
+    # Preparar contexto: aviso de alérgenos
+    c_ctx = codigo('Preparar contexto')
+    funciones = [extraer_funcion(c_ctx, 'function hablaDeAlergenos('), extraer_funcion(c_ctx, 'function conAvisoAlergias(')]
+    ini = c_ctx.find('const AVISO_ALERGIAS')
+    if ini < 0 or not all(funciones):
+        errores.append('[Preparar contexto] no define AVISO_ALERGIAS, hablaDeAlergenos() y conAvisoAlergias()')
+    else:
+        if not re.search(r'mensajeRespuesta\s*=\s*conAvisoAlergias\(mensajeRespuesta\)', sin_comentarios(c_ctx)):
+            errores.append('[Preparar contexto] no aplica conAvisoAlergias() a la respuesta')
+        script = c_ctx[ini:c_ctx.index('\n', ini)] + '\n' + '\n'.join(funciones) + r"""
+const A = AVISO_ALERGIAS;
+const malos = [];
+if (!conAvisoAlergias('Sí, la tortilla lleva gluten.').endsWith(A)) malos.push('gluten sin aviso');
+if (!conAvisoAlergias('La ensalada no lleva huevo').endsWith(A)) malos.push('huevo sin aviso');
+if (conAvisoAlergias('¡Hola! ¿Qué te apetece?') !== '¡Hola! ¿Qué te apetece?') malos.push('aviso en un saludo');
+if (conAvisoAlergias('¿Alguna preferencia (alergia, celebración)?').includes(A)) malos.push('aviso en la pregunta de preferencias');
+const doble = conAvisoAlergias('Lleva gluten.\n\n' + A);
+if (doble.split(A).length !== 2) malos.push('aviso repetido');
+return malos.length ? 'MAL ' + malos.join('; ') : 'OK';"""
+        ok, salida = ejecutar_js(script)
+        if not ok or salida != 'OK':
+            errores.append(f'[Preparar contexto] aviso de alérgenos: {salida}')
+        if 'Si tienes una alergia grave' not in codigo('Formatear carta') or 'Si tienes una alergia grave' not in codigo('Preparar takeaway'):
+            errores.append('falta el aviso fijo de alérgenos en "Formatear carta" o en "Preparar takeaway"')
+
+
 # --- Comprobación de un workflow --------------------------------------------------------
 def comprobar(ruta, para_importar=False):
     texto = Path(ruta).read_text()
@@ -511,6 +700,12 @@ return malos.length ? 'MAL ' + JSON.stringify(malos) : 'OK';""")
             if re.search(r"\$\(\s*['\"][^'\"]+['\"]\s*\)\.first\(\s*\)", texto_n):
                 errores.append(f'[{n["name"]}] usa $(\'…\').first() sin rama: usar .first(0)')
 
+        # 17-19. Entrega 1b: dinero, contexto y sintaxis
+        np = comprobar_dinero(w, errores)
+        if np and not any('formatMoney' in e for e in errores):
+            info.append(f'formatMoney() de {np} nodos = src/lib/money.js con EUR, USD y MXN')
+        comprobar_contexto(w, nodos, errores, info)
+
         # 13. Partir mensajes largos
         partir = (nodos.get('Partir mensaje') or {}).get('parameters', {}).get('jsCode')
         if not partir:
@@ -519,6 +714,11 @@ return malos.length ? 'MAL ' + JSON.stringify(malos) : 'OK';""")
             r = comprobar_partir(partir, errores)
             if r and r.startswith('OK'):
                 info.append('partirMensaje: ' + r[3:])
+
+    # 19. Sintaxis de todos los nodos de código
+    nc = comprobar_sintaxis(w, errores)
+    if nc and not any('error de sintaxis' in e for e in errores):
+        info.append(f'{nc} nodos de código compilan')
 
     return errores, avisos, info
 
@@ -571,6 +771,23 @@ def mutaciones(agente):
          'sin rama'),
         ('credencial de envío antigua', m(lambda w, n: n['Enviar respuesta WhatsApp'].update(
             credentials={'httpHeaderAuth': {'id': 'DpQ4wmSyfHTEQVG4', 'name': 'WhatsApp Graph API Token'}})), 'RestomindWapp'),
+        # Entrega 1b
+        ('formatMoney distinto de money.js', m(lambda w, n: n['Formatear carta']['parameters'].update(
+            jsCode=n['Formatear carta']['parameters']['jsCode'].replace("USD: 'en-US'", "USD: 'es-ES'", 1))), 'money.js'),
+        ('sin el aviso de alérgenos en la carta', m(lambda w, n: n['Formatear carta']['parameters'].update(
+            jsCode=n['Formatear carta']['parameters']['jsCode'].replace('if (conAlergenos) msg +=', 'if (false) msg +=', 1))), 'alérgenos de la tortilla'),
+        ('pregunta de precio que vuelca la carta', m(lambda w, n: n['Formatear carta']['parameters'].update(
+            jsCode=n['Formatear carta']['parameters']['jsCode'].replace('const concreta = responderConsulta(', 'const concreta = null && responderConsulta(', 1))), 'precio del secreto'),
+        ('clasificador sin datos del restaurante', m(lambda w, n: n['Preparar clasificador']['parameters'].update(
+            jsCode=n['Preparar clasificador']['parameters']['jsCode'].replace('textoFichaRestaurante(datosRestaurante())', "''", 1))), 'datos del restaurante'),
+        ('sin leer fn_agente_datos_restaurante', m(lambda w, n: n['Combinar con sesión']['parameters'].update(
+            jsCode=n['Combinar con sesión']['parameters']['jsCode'].replace('fn_agente_datos_restaurante', 'fn_otra', 1))), 'fn_agente_datos_restaurante'),
+        ('sin_dato que deja pasar lo inventado', m(lambda w, n: n['Respuesta: General']['parameters'].update(
+            jsCode=n['Respuesta: General']['parameters']['jsCode'].replace('if (d.sin_dato) {', 'if (false) {', 1))), 'No dispongo'),
+        ('respuesta sin aviso de alérgenos', m(lambda w, n: n['Preparar contexto']['parameters'].update(
+            jsCode=n['Preparar contexto']['parameters']['jsCode'].replace('mensajeRespuesta = conAvisoAlergias(mensajeRespuesta);', '', 1))), 'conAvisoAlergias'),
+        ('error de sintaxis', m(lambda w, n: n['Respuesta: General']['parameters'].update(
+            jsCode=n['Respuesta: General']['parameters']['jsCode'] + '\nconst = ;')), 'sintaxis'),
     ]
 
 
