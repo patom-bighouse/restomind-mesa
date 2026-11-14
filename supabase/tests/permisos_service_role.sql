@@ -6,7 +6,8 @@
 -- Actualizado con docs/specs/2026-11-13-agente-whatsapp-revision.md: 86 funciones
 -- (+ fn_pedido_whatsapp_crear, fn_agente_registrar_error y
 -- fn_agente_error_marcar_atendida; 87 con la versión con clave de
--- fn_reserva_whatsapp_crear) y excepción en agente_errores y
+-- fn_reserva_whatsapp_crear; 89 en la entrega 1b con fn_agente_datos_restaurante
+-- y fn_superadmin_estadisticas_agente) y excepción en agente_errores y
 -- agente_errores_detalle: service_role solo SELECT, INSERT y UPDATE (no se
 -- borra ninguna fila, decisión 13).
 --
@@ -71,8 +72,8 @@ where not exists (select 1 from aclexplode(coalesce(f.proacl, acldefault('f', f.
                   where a.grantee = 'service_role'::regrole and a.privilege_type = 'EXECUTE');
 
 insert into _resultado (prueba, ok, detalle)
-select 'funciones no trigger sin EXECUTE para service_role = 0 (de 87)',
-       count(*) = 87 and not exists (select 1 from _resultado where detalle like 'service_role sin EXECUTE%'),
+select 'funciones no trigger sin EXECUTE para service_role = 0 (de 89)',
+       count(*) = 89 and not exists (select 1 from _resultado where detalle like 'service_role sin EXECUTE%'),
        count(*) || ' funciones no trigger; ' ||
        (select count(*) from _resultado where detalle like 'service_role sin EXECUTE%') || ' sin EXECUTE'
 from _funciones;

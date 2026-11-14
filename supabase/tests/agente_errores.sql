@@ -2,8 +2,9 @@
 -- Avisos de fallos del agente de WhatsApp (migraciones 20261113114748_agente_errores
 -- , 20261113121550_agente_errores_tipos_entrada y 20261113164806_agente_errores_ocultar_sb_secret)
 -- Criterio 5 de docs/specs/2026-11-13-agente-whatsapp-revision.md
--- (El bloque de estadísticas del criterio 12 se añade en la entrega 1b, con
--- fn_superadmin_estadisticas_agente.)
+-- Entrega 1b: bloque de estadísticas del criterio 12
+-- (fn_superadmin_estadisticas_agente, migración 20261114095057), con los días
+-- en hora de España e incluyendo un aviso a las 00:30 de Madrid.
 --
 -- SOLO CONTRA TEST (sfkwbhzelrestmrmptql). Todo dentro de begin … rollback.
 --   npx supabase db query --remote=sfkwbhzelrestmrmptql --yes -f supabase/tests/agente_errores.sql
@@ -338,6 +339,139 @@ begin
   from agente_errores where id = v_m;
 end
 $$;
+
+-- Estadísticas del superadmin (entrega 1b, criterio 12) -----------------------------
+-- Avisos con fechas de 2020 (no hay datos reales de entonces) para que las
+-- cifras no dependan de lo que haya en Test:
+--   e1: sin_respuesta de A, 3 veces, el 10-01-2020 a las 23:30 UTC = 11-01-2020 00:30 en Madrid;
+--   e2: firma_invalida sin restaurante, 10-01-2020 12:00 UTC (13:00 Madrid);
+--   e3: pedido_no_creado de B, atendido, 11-01-2020 22:59 UTC (23:59 Madrid);
+--   e4: sin_respuesta de B, 12-01-2020 00:00 UTC (01:00 Madrid del 12: fuera del periodo).
+do $$
+declare
+  v_rest_a uuid := (select id from _ctx where clave = 'rest_a');
+  v_rest_b uuid := (select id from _ctx where clave = 'rest_b');
+begin
+  insert into agente_errores (restaurant_id, telefono_cliente, tipo, visible_restaurante, veces, created_at, ultima_vez_at)
+  values (v_rest_a, '600000020', 'sin_respuesta', true, 3, '2020-01-10 23:30:00+00', '2020-01-10 23:40:00+00'),
+         (null, null, 'firma_invalida', false, 1, '2020-01-10 12:00:00+00', '2020-01-10 12:00:00+00'),
+         (v_rest_b, '600000021', 'pedido_no_creado', true, 1, '2020-01-11 22:59:00+00', '2020-01-11 22:59:00+00'),
+         (v_rest_b, '600000022', 'sin_respuesta', true, 1, '2020-01-12 00:00:00+00', '2020-01-12 00:00:00+00');
+  update agente_errores set atendida = true, atendida_at = '2020-01-12 09:00:00+00'
+  where restaurant_id = v_rest_b and telefono_cliente = '600000021';
+end
+$$;
+
+-- Llama a las estadísticas como authenticated con la sesión dada.
+create function pg_temp.estadisticas(p_uid uuid, p_desde date, p_hasta date)
+returns table (agrupacion text, clave text, nombre text, avisos bigint, veces bigint, pendientes bigint)
+language plpgsql as $$
+begin
+  perform pg_temp.como(p_uid);
+  set local role authenticated;
+  return query select * from public.fn_superadmin_estadisticas_agente(p_desde, p_hasta);
+  reset role;
+  perform pg_temp.como(null);
+end $$;
+
+create temp table _est on commit drop as
+select * from pg_temp.estadisticas((select id from _ctx where clave = 's'), '2020-01-10', '2020-01-11');
+
+insert into _resultado (prueba, ok, detalle)
+select 'estadísticas: permisos (authenticated sí, anon no)',
+       not has_function_privilege('anon', 'public.fn_superadmin_estadisticas_agente(date,date,text)', 'execute')
+       and has_function_privilege('authenticated', 'public.fn_superadmin_estadisticas_agente(date,date,text)', 'execute'),
+       'has_function_privilege';
+
+insert into _resultado (prueba, ok, detalle)
+select 'estadísticas: total del periodo (3 avisos, 5 veces, 2 pendientes; el del 12 en Madrid queda fuera)',
+       avisos = 3 and veces = 5 and pendientes = 2, avisos || ' avisos, ' || veces || ' veces, ' || pendientes || ' pendientes'
+from _est where agrupacion = 'total';
+
+insert into _resultado (prueba, ok, detalle)
+select 'estadísticas: por día en hora de España (00:30 de Madrid cuenta el 11, no el 10)',
+       coalesce((select avisos = 1 and veces = 1 from _est where agrupacion = 'dia' and clave = '2020-01-10'), false)
+       and coalesce((select avisos = 2 and veces = 4 and pendientes = 1 from _est where agrupacion = 'dia' and clave = '2020-01-11'), false)
+       and not exists (select 1 from _est where agrupacion = 'dia' and clave = '2020-01-12'),
+       (select string_agg(clave || ': ' || avisos || '/' || veces, ', ' order by clave) from _est where agrupacion = 'dia');
+
+insert into _resultado (prueba, ok, detalle)
+select 'estadísticas: por tipo',
+       coalesce((select avisos = 1 and veces = 3 from _est where agrupacion = 'tipo' and clave = 'sin_respuesta'), false)
+       and coalesce((select avisos = 1 from _est where agrupacion = 'tipo' and clave = 'firma_invalida'), false)
+       and coalesce((select avisos = 1 and pendientes = 0 from _est where agrupacion = 'tipo' and clave = 'pedido_no_creado'), false),
+       (select string_agg(clave || ': ' || avisos || '/' || veces, ', ' order by clave) from _est where agrupacion = 'tipo');
+
+insert into _resultado (prueba, ok, detalle)
+select 'estadísticas: por restaurante, también "Sin restaurante"',
+       coalesce((select avisos = 1 and nombre = 'Sin restaurante' from _est where agrupacion = 'restaurante' and clave = ''), false)
+       and coalesce((select avisos = 1 and nombre = 'ZZ Err A' from _est where agrupacion = 'restaurante' and clave = (select id from _ctx where clave = 'rest_a')::text), false)
+       and coalesce((select avisos = 1 and nombre = 'ZZ Err B' from _est where agrupacion = 'restaurante' and clave = (select id from _ctx where clave = 'rest_b')::text), false),
+       (select string_agg(nombre || ': ' || avisos, ', ' order by nombre) from _est where agrupacion = 'restaurante');
+
+insert into _resultado (prueba, ok, detalle)
+select 'estadísticas: semana (lunes 06-01-2020) suma lo mismo que los días',
+       coalesce((select avisos = 3 and veces = 5 from _est where agrupacion = 'semana' and clave = '2020-01-06'), false),
+       (select string_agg(clave || ': ' || avisos, ', ') from _est where agrupacion = 'semana');
+
+insert into _resultado (prueba, ok, detalle)
+select 'estadísticas: coinciden con contar las filas a mano por día de Madrid',
+       not exists (
+         select (created_at at time zone 'Europe/Madrid')::date::text as dia, count(*), sum(veces)
+         from agente_errores
+         where (created_at at time zone 'Europe/Madrid')::date between '2020-01-10' and '2020-01-11'
+         group by 1
+         except
+         select clave, avisos, veces from _est where agrupacion = 'dia')
+       and (select count(*) from _est where agrupacion = 'dia')
+           = (select count(distinct (created_at at time zone 'Europe/Madrid')::date) from agente_errores
+              where (created_at at time zone 'Europe/Madrid')::date between '2020-01-10' and '2020-01-11'),
+       '';
+
+insert into _resultado (prueba, ok, detalle)
+select 'estadísticas: sin límites de fecha ve todo el registro (también lo atendido hace tiempo)',
+       pg_temp.contar((select id from _ctx where clave = 's'),
+         'select avisos from public.fn_superadmin_estadisticas_agente(null, null) where agrupacion = ''total''')
+         = (select count(*)::text from agente_errores),
+       pg_temp.contar((select id from _ctx where clave = 's'),
+         'select avisos from public.fn_superadmin_estadisticas_agente(null, null) where agrupacion = ''total''')
+       || ' de ' || (select count(*) from agente_errores);
+
+insert into _resultado (prueba, ok, detalle)
+select 'estadísticas: un dueño no puede (42501) y anon tampoco',
+       pg_temp.intentar((select id from _ctx where clave = 'a'),
+         'select * from public.fn_superadmin_estadisticas_agente(''2020-01-10'', ''2020-01-11'')') like '42501%'
+       and pg_temp.contar(null, 'select count(*) from public.fn_superadmin_estadisticas_agente(null, null)', true) like '42501%',
+       pg_temp.intentar((select id from _ctx where clave = 'a'),
+         'select * from public.fn_superadmin_estadisticas_agente(''2020-01-10'', ''2020-01-11'')');
+
+insert into _resultado (prueba, ok, detalle)
+select 'estadísticas: periodo al revés → error claro',
+       pg_temp.intentar((select id from _ctx where clave = 's'),
+         'select * from public.fn_superadmin_estadisticas_agente(''2020-01-11'', ''2020-01-10'')') like '22023%',
+       pg_temp.intentar((select id from _ctx where clave = 's'),
+         'select * from public.fn_superadmin_estadisticas_agente(''2020-01-11'', ''2020-01-10'')');
+
+-- Lectura de avisos de la pantalla del dueño (entrega 1b, criterio 11): una
+-- atendida hace 31 días la sigue leyendo (el plazo de 30 días es solo un
+-- filtro de la pantalla, decisión 13), y el superadmin también.
+do $$
+begin
+  insert into agente_errores (restaurant_id, telefono_cliente, tipo, visible_restaurante, atendida, atendida_at, atendida_por)
+  values ((select id from _ctx where clave = 'rest_a'), '600000031', 'reserva_no_creada', true, true,
+          now() - interval '31 days', (select id from _ctx where clave = 'a'));
+end
+$$;
+
+insert into _resultado (prueba, ok, detalle)
+select 'pantalla del dueño: consulta de atendidas de 30 días deja fuera la de hace 31 (y la fila sigue existiendo)',
+       pg_temp.contar((select id from _ctx where clave = 'a'),
+         'select count(*) from public.agente_errores where telefono_cliente = ''600000031'' and atendida and atendida_at >= now() - interval ''30 days''') = '0'
+       and pg_temp.contar((select id from _ctx where clave = 'a'),
+         'select count(*) from public.agente_errores where telefono_cliente = ''600000031''') = '1'
+       and pg_temp.contar((select id from _ctx where clave = 's'),
+         'select count(*) from public.agente_errores where telefono_cliente = ''600000031''') = '1',
+       '';
 
 insert into _resultado (prueba, ok, detalle)
 select 'TOTAL agente_errores', bool_and(coalesce(ok, false)), count(*) filter (where not coalesce(ok, false)) || ' fallos de ' || count(*)
