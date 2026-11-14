@@ -1,7 +1,7 @@
 // Criterio 8a de docs/specs/2026-11-14-zona-horaria-restaurante.md (zonasHorarias.js).
 import { describe, it, expect } from 'vitest'
 import {
-  ZONAS_POR_PAIS, zonasDePais, zonaValida, nombreZona, opcionesZona, zonaPropuesta, pareceCanarias,
+  ZONAS_POR_PAIS, zonasDePais, parecePeninsula, zonaValida, nombreZona, opcionesZona, zonaPropuesta, pareceCanarias,
   avisoDireccion, contarReservasFuturas, horaActualEnZona,
 } from './zonasHorarias'
 
@@ -34,6 +34,12 @@ describe('lista por país (decisión 2)', () => {
     expect(op[2].fueraDeLista).toBe(true)
     expect(op[2].nombre).toContain('fuera de la lista')
     expect(opcionesZona('ES', 'Atlantic/Canary')).toHaveLength(2)
+  })
+
+  it('la zona guardada fuera de la lista sigue aunque se elija otra', () => {
+    const op = opcionesZona('ES', 'Atlantic/Canary', 'America/Bogota')
+    expect(op.map(o => o.zona)).toEqual(['Europe/Madrid', 'Atlantic/Canary', 'America/Bogota'])
+    expect(opcionesZona('ES', 'Europe/Madrid', 'Atlantic/Canary')).toHaveLength(2)
   })
 
   it('hora actual de cada zona para el desplegable', () => {
@@ -77,6 +83,17 @@ describe('avisoDireccion (decisión 8)', () => {
     expect(avisoDireccion('ES', 'C/ Mayor 3, 35600 Puerto del Rosario', 'Europe/Madrid'))
       .toBe('Esta dirección parece de Canarias y la zona es Península y Baleares')
   })
+  it('dirección claramente peninsular con la zona de Canarias', () => {
+    expect(avisoDireccion('ES', 'C/ Mayor 3, 28013 Madrid', 'Atlantic/Canary'))
+      .toBe('Esta dirección parece de Península y Baleares y la zona es Canarias')
+    expect(avisoDireccion('ES', 'Gran Vía 1, Bilbao', 'Atlantic/Canary'))
+      .toBe('Esta dirección parece de Península y Baleares y la zona es Canarias')
+    expect(parecePeninsula('Calle La Palma 4, 28004 Madrid')).toBe(true)
+    expect(parecePeninsula('Puerto del Rosario, 35600')).toBe(false)
+    expect(parecePeninsula('Calle Sin Ciudad 4')).toBe(false)
+    expect(avisoDireccion('ES', 'Calle Sin Ciudad 4', 'Atlantic/Canary')).toBeNull()
+  })
+
   it('sin aviso si ya está en Canarias o la dirección no dice nada', () => {
     expect(avisoDireccion('ES', 'Puerto del Rosario, Fuerteventura', 'Atlantic/Canary')).toBeNull()
     expect(avisoDireccion('ES', 'C/ Mayor 3, Madrid', 'Europe/Madrid')).toBeNull()

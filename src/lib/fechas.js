@@ -28,13 +28,24 @@ export function zonaHorariaDe(restaurante) {
 // la medianoche } de un instante en una zona.
 // Un formateador por zona (crearlo es caro y el panel lo usa por cada pedido).
 const formateadores = new Map()
+const OPCIONES_FORMATO = { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }
+// Si el navegador no conoce la zona (dato mal puesto o navegador muy
+// antiguo), no se rompe la página: se usa Madrid y, si tampoco, la hora del
+// dispositivo, con un aviso en la consola.
 function formateador(zona) {
   let f = formateadores.get(zona)
   if (!f) {
-    f = new Intl.DateTimeFormat('en-GB', {
-      timeZone: zona, year: 'numeric', month: '2-digit', day: '2-digit',
-      weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-    })
+    try {
+      f = new Intl.DateTimeFormat('en-GB', { ...OPCIONES_FORMATO, timeZone: zona })
+    } catch {
+      console.warn(`Zona horaria desconocida en este navegador: ${zona}. Se usa ${ZONA_ESPANA}.`)
+      try {
+        f = new Intl.DateTimeFormat('en-GB', { ...OPCIONES_FORMATO, timeZone: ZONA_ESPANA })
+      } catch {
+        console.warn('Tampoco se conoce Europe/Madrid: se usa la hora del dispositivo.')
+        f = new Intl.DateTimeFormat('en-GB', OPCIONES_FORMATO)
+      }
+    }
     formateadores.set(zona, f)
   }
   return f
@@ -80,7 +91,12 @@ export function fechaHoraCortaEnZona(instante, zona = ZONA_POR_DEFECTO) {
 
 // Texto largo ("sábado, 14 de noviembre") de un instante en la zona dada.
 export function fechaLargaEnZona(instante = new Date(), zona = ZONA_POR_DEFECTO) {
-  return new Date(instante).toLocaleDateString('es-ES', { timeZone: zona || ZONA_POR_DEFECTO, weekday: 'long', day: 'numeric', month: 'long' })
+  const opciones = { weekday: 'long', day: 'numeric', month: 'long' }
+  try {
+    return new Date(instante).toLocaleDateString('es-ES', { ...opciones, timeZone: zona || ZONA_POR_DEFECTO })
+  } catch {
+    return new Date(instante).toLocaleDateString('es-ES', { ...opciones, timeZone: ZONA_ESPANA })
+  }
 }
 
 // 'YYYY-MM-DD' → 'DD/MM/AAAA', sin pasar por ninguna zona horaria.

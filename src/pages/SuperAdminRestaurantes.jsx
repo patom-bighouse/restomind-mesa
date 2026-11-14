@@ -596,6 +596,9 @@ export default function SuperAdminRestaurantes() {
   }
 
   async function updateRestaurant() {
+    // La ventana del aviso de zona se cierra siempre: si falla una
+    // validación, el error se ve en el formulario.
+    setAvisoZona(null)
     if (!form.nombre.trim()) {
       setError('El nombre es obligatorio.')
       return
@@ -612,7 +615,6 @@ export default function SuperAdminRestaurantes() {
       setError('Elige la zona horaria del restaurante.')
       return
     }
-    setAvisoZona(null)
     setCreating(true)
     setError(null)
     try {
@@ -913,7 +915,7 @@ export default function SuperAdminRestaurantes() {
                   value={form.zonaHoraria}
                   onChange={e => setForm(prev => ({ ...prev, zonaHoraria: e.target.value, zonaTocada: true }))}
                 >
-                  {opcionesZona(form.pais, form.zonaHoraria).map(o => (
+                  {opcionesZona(form.pais, form.zonaHoraria, form.zonaHorariaGuardada).map(o => (
                     <option key={o.zona} value={o.zona}>{o.nombre} — ahora {horaActualEnZona(o.zona)}</option>
                   ))}
                 </select>

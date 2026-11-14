@@ -1,6 +1,6 @@
 // Criterio 8a de docs/specs/2026-11-14-zona-horaria-restaurante.md (fechas.js).
 // Instantes fijos: el resultado no depende de la zona del ordenador.
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   partesEnZona, hoyEnZona, horaEnZona, fechaEnZona, fechaHoraEnZona, fechaHoraCortaEnZona,
   inicioDiaEnZona, rangoDiasEnZona, fechaHoraConLocal, zonaHorariaDe, ZONA_POR_DEFECTO,
@@ -41,6 +41,15 @@ describe('partesEnZona', () => {
   it('México no cambia de hora (2027-04-04 y 2027-10-31 a las 12:00Z → 06:00)', () => {
     expect(partesEnZona('2027-04-04T12:00:00Z', MEX).hora).toBe('06:00')
     expect(partesEnZona('2027-10-31T12:00:00Z', MEX).hora).toBe('06:00')
+  })
+
+  it('zona que el navegador no conoce: no lanza, usa Madrid y avisa en la consola', () => {
+    const aviso = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(() => partesEnZona('2027-01-15T12:30:00Z', 'Zona/Inventada')).not.toThrow()
+    expect(partesEnZona('2027-01-15T12:30:00Z', 'Zona/Inventada').hora).toBe('13:30')
+    expect(horaEnZona('2027-01-15T12:30:00Z', 'Otra/Inventada')).toBe('13:30')
+    expect(aviso).toHaveBeenCalled()
+    aviso.mockRestore()
   })
 
   it('sin zona usa la de por defecto (Madrid)', () => {
