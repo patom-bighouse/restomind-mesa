@@ -23,10 +23,13 @@ Cliente por WhatsApp ──► Meta WhatsApp Cloud API ──► n8n (agente tak
 - **Pedidos**: `orders` + `order_items` (+ `order_item_modificadores` como instantánea). `fn_registrar_pedido` inserta fila a fila para guardar los modificadores. `recalc_order_total` mantiene el total.
 - **Mesa**: `table_sessions` (una visita). Los puntos de fidelización se otorgan al cerrar la sesión (`fn_otorgar_puntos_mesa`); en take away, al entregar (`fn_otorgar_puntos_fidelizacion`).
 - **Fidelización**: `clientes`, `clientes_movimientos`, niveles y premios, sellos (`promos_sellos`, `clientes_sellos`), vales regalo.
-- **Reservas**: web (`fn_crear_reserva_web`), WhatsApp (`fn_reserva_whatsapp_crear`, `fn_reserva_cliente_*`) y manual por el personal. Disponibilidad atómica con `fn_reserva_hay_mesa` en hora de Madrid.
+- **Reservas**: web (`fn_crear_reserva_web`), WhatsApp (`fn_reserva_whatsapp_crear`, `fn_reserva_cliente_*`) y manual por el personal. Disponibilidad atómica con `fn_reserva_hay_mesa` en la hora del restaurante.
 - **Webhooks salientes**: `webhooks`, `webhook_entregas`, `fn_disparar_webhooks` (firmados con HMAC).
 - **WhatsApp**: `whatsapp_sessions`, `whatsapp_mensajes_procesados` (deduplicación con `fn_whatsapp_mensaje_nuevo`).
 - **Delivery**: patrón adaptador en `src/lib/delivery/` (manual + stubs de Glovo y PedidosYa).
 
 ## Hora
-Hoy todo lo que es "hoy" o "a qué hora" se calcula en hora de España (`fn_*_madrid`, `src/lib/fechas.js`). Es correcto para restaurantes de la península y Baleares, pero no para Canarias ni otros países: pendiente la zona horaria por restaurante (ver `BACKLOG.md`).
+Cada restaurante tiene su zona horaria (`restaurants.zona_horaria`, IANA, por defecto `Europe/Madrid`; spec `docs/specs/2026-11-14-zona-horaria-restaurante.md`). Solo la cambia el superadmin, con una lista corta por país (`src/lib/zonasHorarias.js`); la BD valida que sea una zona real con región y conserva la anterior si quien guarda no es superadmin.
+- **Operativa del restaurante** (reservas, recogidas, menús por franja, vales, cierre de caja, pantallas del dueño, camarero y cocina, agente de WhatsApp): hora del restaurante. En la BD, `fn_ahora_restaurante(id)`, `fn_hoy_restaurante(id)` y `fn_zona_restaurante(id)`; en el front, las funciones "EnZona" de `src/lib/fechas.js` con `zonaHorariaDe(restaurante)`; en n8n, `ahoraEnZona(zonaRestaurante())`.
+- **Negocio de Restomind** (pruebas gratuitas, permanencia, CRM, facturación, días y estadísticas del superadmin): hora de España (`fn_*_madrid`, `hoyMadrid`…). En el panel del superadmin, cada hora sale en España y, si el restaurante está en otra zona, con su hora local al lado (`fechaHoraConLocal`).
+- Las reservas, los menús y el horario se guardan en hora "de pared" (la que dice el restaurante); los pedidos, sesiones y avisos, como instante absoluto. Nunca desfases fijos: siempre zonas IANA (`at time zone` en Postgres, `Intl` en el navegador y en n8n).
