@@ -146,6 +146,13 @@ Patricio escribe "hola" al +1 555 612 6953 desde su móvil y debe contestar el a
 
 El Phone number ID de Casa Montiel no se ha tocado y el enrutador no ha cambiado, así que todo vuelve a como estaba. La BD no hace falta tocarla: el agente antiguo funciona con las migraciones nuevas. Las variables del paso C se pueden dejar; no molestan.
 
+### Corrección del 14-11-2026 (respuestas fijas sin enviar)
+Las respuestas fijas (nota de voz, foto, sin módulo, problema técnico…) no llegaban: la URL salía `…/v25.0//messages`. La causa es que `$('Extraer mensaje y contexto').first()`, sin rama, en el nodo de envío de rechazo elegía la salida de **error** de "Extraer…", que está vacía. Esto pasa porque "Extraer…" llega a ese nodo por dos caminos: el normal y el de su salida de error a "Fallo: avisar al cliente".
+
+El JSON corregido lleva `phone_number_id` en el propio item, con `{{ $json.phone_number_id }}` en los dos envíos, y siempre `.first(0)`. Además añade el nodo "Preparar envío (rechazo)": si falta el id, no llama a Meta y registra `sin_respuesta`.
+
+Se reimporta **sobre el mismo workflow** del agente (menú "…" → "Import from File…"), con los ids reales que ya lleva: credencial `JDGs8nl1fuWzIUjs` y workflow de errores `7L3PznLy2XGfk2aV`. No hacen falta migraciones.
+
 ### Comprobar el JSON antes de cada importación
 `python3 n8n/tests/comprobar_workflow.py`. Sin argumentos revisa `n8n/workflows/`. Con `--probar-fixtures` comprueba que el propio script detecta la clave del fixture y 14 fallos metidos a propósito en una copia del agente (15 casos en total).
 

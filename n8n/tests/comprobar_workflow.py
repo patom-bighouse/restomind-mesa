@@ -47,6 +47,12 @@ Además, en el agente (el que tiene "Extraer mensaje y contexto"):
      "Preparar clasificador" llaman a contextoSinTelefono() y "Preparar
      contexto" guarda con taparTelefono(); y taparTelefono() se prueba con un
      resumen real ("📞 Teléfono: …").
+ 15. Envío por WhatsApp (fallo del 14-11-2026): los nodos de envío usan
+     {{ $json.phone_number_id }} y todo camino hacia ellos sale de nodos de
+     código que ponen phone_number_id en el json (se recorre hacia atrás
+     saltando IF/Switch hasta el primer nodo de código).
+ 16. Ninguna referencia $('Nodo').first() sin rama: con varias salidas (la de
+     error), n8n puede elegir la rama vacía. Siempre .first(0).
  13. La función partirMensaje() de "Partir mensaje", con una carta de 6.000
      caracteres: varios mensajes, en orden, de 4.096 como máximo y cortados
      por final de línea.
@@ -466,6 +472,45 @@ return malos.length ? 'MAL ' + JSON.stringify(malos) : 'OK';""")
         else:
             errores.append('[Preparar contexto] no define taparTelefono()')
 
+        # 15. phone_number_id en el json de todo lo que llega a un envío
+        def predecesores(nombre_nodo):
+            out = []
+            for src, c in w.get('connections', {}).items():
+                for salida in c.get('main', []):
+                    if any(x['node'] == nombre_nodo for x in (salida or [])):
+                        out.append(src)
+            return out
+        envios = [n for n in w['nodes'] if es_http(n) and META in url_de(n) and '/messages' in url_de(n)]
+        for env in envios:
+            if '$json.phone_number_id' not in url_de(env):
+                errores.append(f'[{env["name"]}] la URL no usa {{{{ $json.phone_number_id }}}} (el id tiene que ir en el propio item)')
+            vistos, pila = set(), predecesores(env['name'])
+            while pila:
+                x = pila.pop()
+                if x in vistos or x not in nodos:
+                    continue
+                vistos.add(x)
+                if tipo_de(nodos[x]) == 'code':
+                    if 'phone_number_id' not in sin_comentarios(nodos[x]['parameters'].get('jsCode', '')):
+                        errores.append(f'[{x}] llega a "{env["name"]}" sin poner phone_number_id en el json')
+                    # La guardia de los mensajes fijos solo rellena por si acaso: cada
+                    # rama que llega a ella también tiene que traer el id.
+                    if x.startswith('Preparar envío'):
+                        pila.extend(predecesores(x))
+                elif tipo_de(nodos[x]) in ('if', 'switch', 'merge', 'noOp'):
+                    pila.extend(predecesores(x))
+                else:
+                    errores.append(f'[{x}] llega a "{env["name"]}" desde un nodo que no es de código ni IF/Switch')
+        if envios and not any('phone_number_id' in e for e in errores):
+            info.append('envíos: phone_number_id en el json de todas las ramas')
+
+        # 16. $('Nodo').first() sin rama
+        for n in w['nodes']:
+            p = n.get('parameters', {})
+            texto_n = sin_comentarios(p.get('jsCode', '')) + json.dumps({k: v for k, v in p.items() if k != 'jsCode'}, ensure_ascii=False)
+            if re.search(r"\$\(\s*['\"][^'\"]+['\"]\s*\)\.first\(\s*\)", texto_n):
+                errores.append(f'[{n["name"]}] usa $(\'…\').first() sin rama: usar .first(0)')
+
         # 13. Partir mensajes largos
         partir = (nodos.get('Partir mensaje') or {}).get('parameters', {}).get('jsCode')
         if not partir:
@@ -501,7 +546,7 @@ def mutaciones(agente):
         ('euro escrito', m(lambda w, n: n['Formatear carta']['parameters'].update(
             jsCode=n['Formatear carta']['parameters']['jsCode'] + "\nconst x = '1,00 \u20ac';")), 'euro'),
         ('número de respaldo fijo', m(lambda w, n: n['Enviar respuesta WhatsApp']['parameters'].update(
-            url="=https://graph.facebook.com/v25.0/{{ $json.p || '1461480243709434' }}/messages")), 'respaldo fijo'),
+            url="=https://graph.facebook.com/v25.0/{{ $json.phone_number_id || '1461480243709434' }}/messages")), 'respaldo fijo'),
         ('HTTP sin reintentos', m(lambda w, n: n['Buscar sesión'].pop('retryOnFail')), 'sin retryOnFail'),
         ('sin errorWorkflow', m(lambda w, n: w['settings'].pop('errorWorkflow')), 'errorWorkflow'),
         ('guardar antes de enviar', m(lambda w, n: (conectar(w, 'Comprobar envío', []), conectar(w, 'Partir mensaje', ['Guardar sesión']),
@@ -515,6 +560,15 @@ def mutaciones(agente):
         ('teléfono guardado en el historial', m(lambda w, n: n['Preparar contexto']['parameters'].update(
             jsCode=n['Preparar contexto']['parameters']['jsCode'].replace('ultimo_mensaje_bot: taparTelefono(mensajeRespuesta, telefono)', 'ultimo_mensaje_bot: mensajeRespuesta'))),
          'Preparar contexto'),
+        ('respuesta sin phone_number_id', m(lambda w, n: n['Respuesta: solo texto']['parameters'].update(
+            jsCode=n['Respuesta: solo texto']['parameters']['jsCode'].replace('  phone_number_id: d.phone_number_id,\n', ''))),
+         'phone_number_id'),
+        ('envío con el id de otro nodo', m(lambda w, n: n['Enviar respuesta WhatsApp (rechazo)']['parameters'].update(
+            url="=https://graph.facebook.com/v25.0/{{ $('Extraer mensaje y contexto').first(0).json.phone_number_id }}/messages")),
+         '$json.phone_number_id'),
+        ('first() sin rama', m(lambda w, n: n['Partir mensaje']['parameters'].update(
+            jsCode=n['Partir mensaje']['parameters']['jsCode'] + "\nconst x = $('Extraer mensaje y contexto').first();")),
+         'sin rama'),
         ('credencial de envío antigua', m(lambda w, n: n['Enviar respuesta WhatsApp'].update(
             credentials={'httpHeaderAuth': {'id': 'DpQ4wmSyfHTEQVG4', 'name': 'WhatsApp Graph API Token'}})), 'RestomindWapp'),
     ]
