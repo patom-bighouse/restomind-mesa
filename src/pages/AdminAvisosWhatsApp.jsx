@@ -56,9 +56,14 @@ export default function AdminAvisosWhatsApp() {
     setUsuarioId(session.user.id)
     const { data: rest } = await supabase.from('restaurants').select('nombre, user_id').eq('id', restaurantId).single()
     setRestaurant(rest)
-    await loadAvisos()
     setLoading(false)
   }
+
+  // Los avisos solo se leen si el restaurante tiene el módulo whatsapp.
+  useEffect(() => {
+    if (!restaurantId || modulosLoading || !tieneModulo('whatsapp')) return
+    loadAvisos()
+  }, [restaurantId, modulosLoading])
 
   // Pendientes (todas) + atendidas de los últimos 30 días. Solo las visibles
   // para el restaurante (la RLS ya lo limita; el filtro sirve si entra el superadmin).
