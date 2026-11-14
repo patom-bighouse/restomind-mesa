@@ -96,6 +96,7 @@ export default function AdminConfig() {
   const [takeawayMinutosAntesCierre, setTakeawayMinutosAntesCierre] = useState(0)
   const [reservasMaxPersonas, setReservasMaxPersonas] = useState('')
   const [telefonoReservas, setTelefonoReservas] = useState('')
+  const [direccion, setDireccion] = useState('')
   const [sectores, setSectores] = useState([])
   const [nuevoSectorNombre, setNuevoSectorNombre] = useState('')
   const [sectorError, setSectorError] = useState(null)
@@ -115,13 +116,14 @@ export default function AdminConfig() {
   async function loadData() {
     const { data: rest } = await supabase
       .from('restaurants')
-      .select('nombre, whatsapp, config, modo_cocina, minutos_limite_agrupado, subdominio, plan, permanencia_hasta')
+      .select('nombre, whatsapp, direccion, config, modo_cocina, minutos_limite_agrupado, subdominio, plan, permanencia_hasta')
       .eq('id', restaurantId)
       .single()
     if (rest) {
       setRestaurant(rest)
       setNombre(rest.nombre || '')
       setWhatsapp(rest.whatsapp || '')
+      setDireccion(rest.direccion || '')
       setSubdominio(rest.subdominio || '')
       setModoCocina(rest.modo_cocina || 'orden_llegada')
       setMinutosLimite(rest.minutos_limite_agrupado ?? 20)
@@ -291,6 +293,7 @@ export default function AdminConfig() {
         .update({
           nombre: nombre.trim(),
           whatsapp: whatsapp.trim(),
+          direccion: direccion.trim() || null,
           subdominio: subdominioLimpio || null,
           config: { ...restaurant?.config, horario, umbral_margen_alerta: umbral, modo_pedidos: modoPedidos, sectores_cocina_activo: sectoresCocinaActivo, control_stock_activo: controlStockActivo, envases_sostenibles_takeaway: envasesSostenibles, puntos_por_euro: parseFloat(puntosPorEuro) || 1, reservas_minutos_antes_cierre: Math.max(0, parseInt(reservasMinutosAntesCierre, 10) || 0), takeaway_minutos_antes_cierre: Math.max(0, parseInt(takeawayMinutosAntesCierre, 10) || 0), reservas_max_personas: parseInt(reservasMaxPersonas, 10) > 0 ? parseInt(reservasMaxPersonas, 10) : null, telefono_reservas: telefonoReservas.trim() || null },
           modo_cocina: modoCocina,
@@ -300,7 +303,7 @@ export default function AdminConfig() {
       if (err) throw err
       setSuccess('Configuración guardada correctamente.')
       setSubdominio(subdominioLimpio)
-      setRestaurant(prev => ({ ...prev, nombre: nombre.trim(), whatsapp: whatsapp.trim(), subdominio: subdominioLimpio || null }))
+      setRestaurant(prev => ({ ...prev, nombre: nombre.trim(), whatsapp: whatsapp.trim(), direccion: direccion.trim() || null, subdominio: subdominioLimpio || null }))
     } catch (e) {
       setError(e.code === '23505' ? 'Ese subdominio ya lo está usando otro restaurante — elige otro.' : e.message)
     } finally {
@@ -337,6 +340,7 @@ export default function AdminConfig() {
           <a href={`/admin/limpieza/${restaurantId}`} style={S.navTab(false)}>Limpieza</a>
           <a href={`/admin/config/${restaurantId}`} style={S.navTab(true)}>Configuración</a>
           {tieneModulo('webhooks') && <a href={`/admin/webhooks/${restaurantId}`} style={S.navTab(false)}>Webhooks</a>}
+          {tieneModulo('whatsapp') && <a href={`/admin/avisos-whatsapp/${restaurantId}`} style={S.navTab(false)}>Avisos WhatsApp</a>}
           <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
         </div>
       </div>
@@ -381,7 +385,10 @@ export default function AdminConfig() {
           <input style={S.infoInput} value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Nombre del restaurante" />
           <label style={S.infoLabel}>WhatsApp (con prefijo, sin +)</label>
           <input style={S.infoInput} value={whatsapp} onChange={e => setWhatsapp(e.target.value)} placeholder="34600000000" />
-          <div style={{ fontSize: 11, color: '#555', marginTop: 4 }}>El agente de WhatsApp identifica el restaurante por este número.</div>
+          <div style={{ fontSize: 11, color: '#555', marginTop: 4 }}>Si no indicas un teléfono de reservas, el agente de WhatsApp da este número a los clientes.</div>
+          <label style={S.infoLabel}>Dirección</label>
+          <input style={S.infoInput} value={direccion} onChange={e => setDireccion(e.target.value)} placeholder="Calle, número, ciudad" />
+          <div style={{ fontSize: 11, color: '#555', marginTop: 4 }}>El agente de WhatsApp la da a los clientes que preguntan dónde estáis.</div>
         </div>
 
         {/* Dominio propio para la carta */}

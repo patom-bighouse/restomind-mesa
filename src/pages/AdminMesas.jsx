@@ -609,6 +609,7 @@ export default function AdminMesas() {
           <a href={`/admin/limpieza/${restaurantId}`} style={S.navTab(false)}>Limpieza</a>
           <a href={`/admin/config/${restaurantId}`} style={S.navTab(false)}>Configuración</a>
           {tieneModulo('webhooks') && <a href={`/admin/webhooks/${restaurantId}`} style={S.navTab(false)}>Webhooks</a>}
+          {tieneModulo('whatsapp') && <a href={`/admin/avisos-whatsapp/${restaurantId}`} style={S.navTab(false)}>Avisos WhatsApp</a>}
           {restaurant?.config?.modo_pedidos === 'camarero' && (
             <a href={`/camarero/${restaurantId}`} target="_blank" rel="noreferrer" style={S.navTab(false)}>Pantalla camarero ↗</a>
           )}

@@ -273,6 +273,7 @@ export default function AdminMenus() {
           <a href={`/admin/limpieza/${restaurantId}`} style={S.navTab(false)}>Limpieza</a>
           <a href={`/admin/config/${restaurantId}`} style={S.navTab(false)}>Configuración</a>
           {tieneModulo('webhooks') && <a href={`/admin/webhooks/${restaurantId}`} style={S.navTab(false)}>Webhooks</a>}
+          {tieneModulo('whatsapp') && <a href={`/admin/avisos-whatsapp/${restaurantId}`} style={S.navTab(false)}>Avisos WhatsApp</a>}
           <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
         </div>
       </div>
