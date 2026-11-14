@@ -33,6 +33,7 @@ export default function SuperAdminCRM() {
       navExtra={<>
         <a href="/superadmin/restaurantes" style={S.linkBtn}>Restaurantes</a>
         <a href="/superadmin/planes" style={S.linkBtn}>Planes</a>
+        <a href="/superadmin/agente-whatsapp" style={S.linkBtn}>Agente WhatsApp</a>
       </>}
     />
   )
