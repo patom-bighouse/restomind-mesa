@@ -3,6 +3,9 @@
 -- EXECUTE de cada función de public por grupos (A, B, C, T).
 -- Actualizado con docs/specs/2026-11-12-pin-camarero.md (criterio 6):
 -- fn_camarero_cerrar_sesion en el grupo A y fn_staff_exigir_sesion en el C.
+-- Actualizado con docs/specs/2026-11-13-agente-whatsapp-revision.md (criterios 3
+-- y 5): fn_agente_error_marcar_atendida en el B; fn_pedido_whatsapp_crear y
+-- fn_agente_registrar_error en el C.
 --
 -- SOLO CONTRA TEST (sfkwbhzelrestmrmptql). Todo dentro de begin … rollback.
 --   npx supabase db query --remote=sfkwbhzelrestmrmptql -f supabase/tests/permisos_funciones.sql
@@ -38,7 +41,8 @@ select f, 'B' from unnest(array[
   'fn_crm_importar_restaurantes', 'fn_crm_restaurantes_cuentas', 'fn_crm_generar_comisiones',
   'fn_crm_cuota_restaurante', 'fn_crm_permanencias', 'fn_crm_vendedor_cambiar_password', 'fn_crm_puede_buscar',
   'fn_crm_uso_places', 'fn_crm_duplicados', 'fn_crm_registrar_busqueda', 'fn_crm_busquedas_recientes',
-  'fn_crm_busqueda_cargar', 'fn_hoy_madrid', 'fn_normalizar_telefono'
+  'fn_crm_busqueda_cargar', 'fn_hoy_madrid', 'fn_normalizar_telefono',
+  'fn_agente_error_marcar_atendida'  -- avisos del agente (docs/specs/2026-11-13-agente-whatsapp-revision.md)
 ]) f
 union all
 select f, 'C' from unnest(array[
@@ -47,7 +51,8 @@ select f, 'C' from unnest(array[
   'fn_reserva_whatsapp_crear', 'fn_reserva_hay_mesa', 'fn_reserva_fuera_de_horario', 'fn_carta_takeaway',
   'fn_menu_activo', 'fn_procesar_sellos', 'fn_staff_tiene_permiso', 'fn_restaurante_activo',
   'order_is_valid_for_items', 'fn_ahora_madrid', 'fn_hora_madrid',
-  'fn_staff_exigir_sesion'  -- sesión de camarero con PIN (docs/specs/2026-11-12-pin-camarero.md)
+  'fn_staff_exigir_sesion',  -- sesión de camarero con PIN (docs/specs/2026-11-12-pin-camarero.md)
+  'fn_pedido_whatsapp_crear', 'fn_agente_registrar_error'  -- agente de WhatsApp (docs/specs/2026-11-13-agente-whatsapp-revision.md)
 ]) f
 union all
 select f, 'T' from unnest(array[

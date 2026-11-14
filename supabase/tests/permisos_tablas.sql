@@ -22,6 +22,10 @@ create temp table _esperado_tabla (tabla text, rol text, privilegio text) on com
 insert into _esperado_tabla (tabla, rol, privilegio)
 select v.tabla, v.rol, trim(p)
 from (values
+  -- Avisos del agente de WhatsApp (docs/specs/2026-11-13-agente-whatsapp-revision.md):
+  -- solo lectura, filtrada por RLS (dueño: visibles de su restaurante; detalle: superadmin).
+  ('agente_errores',                  'authenticated', 'SELECT'),
+  ('agente_errores_detalle',          'authenticated', 'SELECT'),
   ('camareros',                       'authenticated', 'SELECT,INSERT,UPDATE,DELETE'),
   ('categoria_traducciones',          'anon',          'SELECT'),
   ('categoria_traducciones',          'authenticated', 'SELECT,INSERT,UPDATE,DELETE'),

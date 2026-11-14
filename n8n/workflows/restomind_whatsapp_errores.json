@@ -1,0 +1,49 @@
+{
+  "name": "Restomind WhatsApp – errores",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "e8d0cd75-0105-5b48-b959-bd2e4070afd5",
+      "name": "Error Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Workflow de errores del agente de WhatsApp (settings.errorWorkflow del\n// agente). Registra como error_interno lo que no se haya controlado en el\n// propio flujo (los fallos controlados ya los registra el agente). Solo lo\n// ve el superadmin. Si no se puede registrar, termina: nunca se reintenta en\n// cadena ni dispara otro registro.\n// --- Comunes del agente (revisión 1a, docs/specs/2026-11-13-agente-whatsapp-revision.md)\n// Supabase con reintentos. Devuelve { ok, status, body }: reintenta los\n// fallos de red y los 5xx; un 4xx (datos no válidos, validación de la BD) se\n// devuelve sin reintentar. Si sigue fallando, lanza el último error.\nasync function llamarSupabase(helpers, metodo, ruta, cuerpo, intentos = 3) {\n  let ultimoError = null;\n  for (let i = 0; i < intentos; i++) {\n    try {\n      const r = await helpers.httpRequest({\n        method: metodo,\n        url: `${$env.SUPABASE_URL}${ruta}`,\n        headers: {\n          'apikey': $env.SUPABASE_SERVICE_ROLE_KEY,\n          'Authorization': 'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY,\n          'Content-Type': 'application/json'\n        },\n        body: cuerpo,\n        json: true,\n        returnFullResponse: true,\n        ignoreHttpStatusErrors: true\n      });\n      const status = Number(r?.statusCode || 0);\n      if (status >= 200 && status < 300) return { ok: true, status, body: r.body };\n      if (status >= 400 && status < 500) return { ok: false, status, body: r.body };\n      ultimoError = new Error(`Supabase respondió ${status}`);\n    } catch (e) {\n      ultimoError = e;\n    }\n    if (i < intentos - 1) {\n      try { await new Promise(res => setTimeout(res, 700 * (i + 1))); } catch (e) { /* sin espera */ }\n    }\n  }\n  throw ultimoError || new Error('Supabase no responde');\n}\n\n// Registra un aviso en agente_errores (fn_agente_registrar_error). Nunca\n// lanza: si no se puede registrar, el flujo sigue y el cliente recibe su\n// respuesta. Si falla el registro con detalle, se intenta una sola vez el\n// aviso mínimo 'registro_fallido' (sin reintentos en cadena). En el detalle\n// nunca van claves ni la conversación.\nasync function registrarFallo(helpers, base, tipo, paso, error, extra = {}) {\n  const texto = String((error && (error.message || error.description)) || error || '').slice(0, 500);\n  let ejecucion = null;\n  try { ejecucion = $execution.id; } catch (e) { /* sin id */ }\n  try {\n    const r = await llamarSupabase(helpers, 'POST', '/rest/v1/rpc/fn_agente_registrar_error', {\n      p_restaurant_id: (base && base.restaurant_id) || null,\n      p_telefono: (base && base.telefono) || null,\n      p_tipo: tipo,\n      p_paso: paso,\n      p_detalle: { error: texto, ejecucion, ...extra }\n    }, 2);\n    if (r.ok) return true;\n  } catch (e) { /* sigue */ }\n  try {\n    await llamarSupabase(helpers, 'POST', '/rest/v1/rpc/fn_agente_registrar_error', {\n      p_restaurant_id: null, p_telefono: null, p_tipo: 'registro_fallido', p_paso: paso,\n      p_detalle: { tipo_original: tipo, ejecucion }\n    }, 1);\n  } catch (e) { /* sin registro */ }\n  return false;\n}\n\nconst MENSAJE_PROBLEMA_TECNICO = 'Perdona, ahora mismo tengo un problema técnico. ¿Me lo repites en un momento?';\n// --- Fin de comunes ----------------------------------------------------------\nconst e = $json || {};\nconst ejecucion = e.execution || {};\ntry {\n  await llamarSupabase(this.helpers, 'POST', '/rest/v1/rpc/fn_agente_registrar_error', {\n    p_restaurant_id: null,\n    p_telefono: null,\n    p_tipo: 'error_interno',\n    p_paso: String(ejecucion.lastNodeExecuted || 'desconocido').slice(0, 200),\n    p_detalle: {\n      error: String(ejecucion.error?.message || '').slice(0, 500),\n      ejecucion: ejecucion.id || null,\n      workflow: e.workflow?.name || null,\n      modo: ejecucion.mode || null\n    }\n  }, 2);\n} catch (err) { /* sin registro */ }\nreturn [];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "id": "8da95481-614e-5fc4-906d-2b0d35667824",
+      "name": "Registrar error interno"
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Registrar error interno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Madrid"
+  },
+  "pinData": {},
+  "tags": []
+}

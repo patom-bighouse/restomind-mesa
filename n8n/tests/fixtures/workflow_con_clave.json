@@ -1,0 +1,26 @@
+{
+  "name": "Fixture: workflow con una clave escrita (NO importar)",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Clave FALSA, solo para comprobar que comprobar_workflow.py la detecta.\nconst clave = 'sk-ant-FALSA-solo-para-probar-el-script-000000';\nreturn [{ json: { ok: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "fixture-clave",
+      "name": "Nodo con clave"
+    }
+  ],
+  "connections": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "fixture"
+  },
+  "pinData": {},
+  "tags": []
+}
