@@ -683,6 +683,7 @@ export default function SuperAdminRestaurantes() {
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <a href="/superadmin/crm" style={S.linkBtn}>CRM</a>
           <a href="/superadmin/planes" style={S.linkBtn}>Planes</a>
+          <a href="/superadmin/agente-whatsapp" style={S.linkBtn}>Agente WhatsApp</a>
           <button style={S.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
         </div>
       </div>

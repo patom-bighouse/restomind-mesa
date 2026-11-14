@@ -24,10 +24,12 @@ import AdminVales from './pages/AdminVales'
 import AdminWebhooks from './pages/AdminWebhooks'
 import AdminDashboard from './pages/AdminDashboard'
 import AdminConfig from './pages/AdminConfig'
+import AdminAvisosWhatsApp from './pages/AdminAvisosWhatsApp'
 import SuperAdminLogin from './pages/SuperAdminLogin'
 import SuperAdminRestaurantes from './pages/SuperAdminRestaurantes'
 import SuperAdminPlanes from './pages/SuperAdminPlanes'
 import SuperAdminCRM from './pages/SuperAdminCRM'
+import SuperAdminAgenteWhatsApp from './pages/SuperAdminAgenteWhatsApp'
 import VendedorLogin from './pages/VendedorLogin'
 import VendedorCRM from './pages/VendedorCRM'
 import NotFound from './pages/NotFound'
@@ -78,10 +80,12 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/admin/webhooks/:restaurantId" element={<GuardRestaurante><AdminWebhooks /></GuardRestaurante>} />
         <Route path="/admin/dashboard/:restaurantId" element={<GuardRestaurante><AdminDashboard /></GuardRestaurante>} />
         <Route path="/admin/config/:restaurantId" element={<GuardRestaurante><AdminConfig /></GuardRestaurante>} />
+        <Route path="/admin/avisos-whatsapp/:restaurantId" element={<GuardRestaurante><AdminAvisosWhatsApp /></GuardRestaurante>} />
         <Route path="/superadmin/login" element={<SuperAdminLogin />} />
         <Route path="/superadmin/restaurantes" element={<SuperAdminRestaurantes />} />
         <Route path="/superadmin/planes" element={<SuperAdminPlanes />} />
         <Route path="/superadmin/crm" element={<SuperAdminCRM />} />
+        <Route path="/superadmin/agente-whatsapp" element={<SuperAdminAgenteWhatsApp />} />
         <Route path="/vendedor/login" element={<VendedorLogin />} />
         <Route path="/vendedor/crm" element={<VendedorCRM />} />
         <Route path="/vendedor/restablecer" element={<AdminRestablecer loginPath="/vendedor/login" />} />

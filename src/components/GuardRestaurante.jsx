@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import RestauranteSuspendido from './RestauranteSuspendido'
 import AceptarCondiciones from './AceptarCondiciones'
+import AlertasAgente from './AlertasAgente'
 import { CONDICIONES_VERSION } from '../lib/condiciones'
 
 // Cada cuánto se vuelve a comprobar, para que una pantalla que se quedó
@@ -20,9 +21,16 @@ const INTERVALO_MS = 60 * 1000
  *
  * En las rutas privadas, además, el dueño de un restaurante con
  * permanencia no pasa hasta aceptar las condiciones del servicio.
+ *
+ * En el panel del dueño (/admin/...) y en Cocina (/cocina/...) monta además
+ * la alerta al momento de los avisos del agente de WhatsApp (AlertasAgente,
+ * solo con el módulo whatsapp). En /camarero/... y en las rutas públicas no
+ * (decisión 11 de docs/specs/2026-11-13-agente-whatsapp-revision.md).
  */
 export default function GuardRestaurante({ children, publico = false }) {
   const { restaurantId } = useParams()
+  const { pathname } = useLocation()
+  const conAlertas = !publico && !!restaurantId && (pathname.startsWith('/admin/') || pathname.startsWith('/cocina/'))
   const [estado, setEstado] = useState('cargando') // cargando | ok | suspendido | condiciones
 
   useEffect(() => {
@@ -61,5 +69,6 @@ export default function GuardRestaurante({ children, publico = false }) {
   if (estado === 'cargando') return null
   if (estado === 'suspendido') return <RestauranteSuspendido publico={publico} />
   if (estado === 'condiciones') return <AceptarCondiciones restaurantId={restaurantId} onAceptado={() => setEstado('ok')} />
+  if (conAlertas) return <><AlertasAgente restaurantId={restaurantId} />{children}</>
   return children
 }
