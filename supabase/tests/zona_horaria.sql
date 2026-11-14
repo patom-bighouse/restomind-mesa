@@ -94,6 +94,12 @@ begin
     (v_can, 'ZZHOY', 50, 50, fn_hoy_restaurante(v_can)),
     (v_can, 'ZZAYER2', 50, 50, fn_hoy_restaurante(v_can) - 1),
     (v_can, 'ZZHOY2', 50, 50, fn_hoy_restaurante(v_can));
+  -- Lo mismo en México (se distingue de Madrid de 00:00 a 07:00 de Madrid).
+  insert into vales_regalo (restaurant_id, codigo, importe_inicial, saldo_actual, fecha_vencimiento) values
+    (v_mex, 'ZZMXAYER', 50, 50, fn_hoy_restaurante(v_mex) - 1),
+    (v_mex, 'ZZMXHOY', 50, 50, fn_hoy_restaurante(v_mex)),
+    (v_mex, 'ZZMXAYER2', 50, 50, fn_hoy_restaurante(v_mex) - 1),
+    (v_mex, 'ZZMXHOY2', 50, 50, fn_hoy_restaurante(v_mex));
 end
 $$;
 
@@ -433,6 +439,34 @@ begin
   reset role;
   perform pg_temp.anotar('6. fn_agente_datos_restaurante de un restaurante en Madrid sin zona → Europe/Madrid (como antes)',
     v_d ->> 'zona' = 'Europe/Madrid', v_d ->> 'zona');
+end
+$$;
+
+-- Criterio 6 (ampliado): vales en México con fn_hoy_restaurante ----------------------------
+do $$
+declare
+  r uuid := pg_temp.id('mex');
+  v_ses uuid := pg_temp.id('sesion_' || pg_temp.id('mex')::text);
+  v_err text;
+begin
+  v_err := pg_temp.intentar('anon', format('select public.fn_canjear_vale_regalo(%L, ''ZZMXAYER'', 5)', v_ses));
+  perform pg_temp.anotar('6. México: fn_canjear_vale_regalo con vale vencido ayer (México) → rechazado',
+    v_err like '%ya venció%', coalesce(nullif(v_err, ''), 'aceptado'));
+  v_err := pg_temp.intentar('anon', format('select public.fn_canjear_vale_regalo(%L, ''ZZMXHOY'', 5)', v_ses));
+  perform pg_temp.anotar('6. México: fn_canjear_vale_regalo con vale que vence hoy (México) → aceptado',
+    v_err = '' and (select saldo_actual from vales_regalo where restaurant_id = r and codigo = 'ZZMXHOY') = 45,
+    coalesce(nullif(v_err, ''), 'aceptado'));
+  v_err := pg_temp.intentar('anon', format(
+    'select public.fn_registrar_pedido(p_table_session_id => %L, p_items => ''[]''::jsonb, p_vale_codigo => ''ZZMXAYER2'', p_vale_importe => 5)', v_ses));
+  perform pg_temp.anotar('6. México: fn_registrar_pedido con vale vencido ayer (México) → rechazado',
+    v_err like '%ya venció%', coalesce(nullif(v_err, ''), 'aceptado'));
+  v_err := pg_temp.intentar('anon', format(
+    'select public.fn_registrar_pedido(p_table_session_id => %L, p_items => ''[]''::jsonb, p_vale_codigo => ''ZZMXHOY2'', p_vale_importe => 5)', v_ses));
+  perform pg_temp.anotar('6. México: fn_registrar_pedido con vale que vence hoy (México) → aceptado',
+    v_err = '' and (select saldo_actual from vales_regalo where restaurant_id = r and codigo = 'ZZMXHOY2') = 45,
+    coalesce(nullif(v_err, ''), 'aceptado'));
+  perform pg_temp.anotar('6. México: hoy del restaurante frente a hoy de Madrid (informativo)', true,
+    fn_hoy_restaurante(r)::text || ' en México / ' || fn_hoy_madrid()::text || ' en Madrid');
 end
 $$;
 
