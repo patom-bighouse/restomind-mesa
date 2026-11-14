@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/money'
 import { useRestaurantModulos } from '../lib/modulos'
+import { fechaEnZona, fechaHoraCortaEnZona, zonaHorariaDe } from '../lib/fechas'
 
 const S = {
   app: { minHeight: '100vh', background: '#111', color: '#f0e8d8', fontFamily: "'Inter', sans-serif" },
@@ -60,7 +61,7 @@ export default function AdminClientes() {
   async function checkAuth() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { navigate('/admin/login'); return }
-    const { data: rest } = await supabase.from('restaurants').select('nombre, moneda').eq('id', restaurantId).single()
+    const { data: rest } = await supabase.from('restaurants').select('nombre, moneda, zona_horaria').eq('id', restaurantId).single()
     setRestaurant(rest)
     await loadClientes()
     await loadNiveles()
@@ -303,7 +304,7 @@ export default function AdminClientes() {
                         </div>
                       )}
                     </td>
-                    <td style={S.td}>{c.ultima_visita ? new Date(c.ultima_visita).toLocaleDateString('es-ES') : '—'}</td>
+                    <td style={S.td}>{c.ultima_visita ? fechaEnZona(c.ultima_visita, zonaHorariaDe(restaurant)) : '—'}</td>
                     <td style={{ ...S.td, display: 'flex', gap: 8 }}>
                       <button style={S.redeemBtn} onClick={() => toggleHistorial(c.id)}>
                         {historialAbierto === c.id ? 'Ocultar' : 'Historial'}
@@ -324,7 +325,7 @@ export default function AdminClientes() {
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                             {movimientos[c.id].map(m => (
                               <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#8a7560' }}>
-                                <span>{new Date(m.created_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} — {m.motivo}</span>
+                                <span>{fechaHoraCortaEnZona(m.created_at, zonaHorariaDe(restaurant))} — {m.motivo}</span>
                                 <span style={{ color: m.tipo === 'suma' ? '#7ae8a0' : '#e87a7a', fontWeight: 500 }}>
                                   {m.tipo === 'suma' ? '+' : '−'}{m.puntos}
                                 </span>

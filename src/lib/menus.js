@@ -1,9 +1,10 @@
 // Resuelve qué menú (de los configurados por el dueño) aplica ahora
-// mismo para una mesa, según su zona y la hora actual — y aplica sus
+// mismo para una mesa, según la zona del salón y la hora actual del
+// restaurante (su zona horaria) — y aplica sus
 // excepciones de precio/exclusión sobre la carta base. Sin ningún
 // menú configurado (o si ninguno encaja), se usa la carta normal.
 
-import { partesMadrid } from './fechas'
+import { partesEnZona, ZONA_POR_DEFECTO } from './fechas'
 
 function horaAMinutos(horaStr) {
   const [h, m] = horaStr.split(':').map(Number)
@@ -30,13 +31,15 @@ function especificidad(menu) {
   return (menu.zona ? 1 : 0) + (menu.hora_inicio ? 1 : 0) + (menu.dias_semana?.length ? 1 : 0)
 }
 
-// Hora y día de la semana de España (no los del móvil del cliente), igual
-// que comprueba fn_registrar_pedido al guardar el pedido.
-export function resolverMenuActivo(menus, zona, ahora = new Date()) {
-  const { minutos: minutosActuales, dia } = partesMadrid(ahora)
+// zonaSalon: la zona de la mesa (interior, terraza…), no la horaria.
+// Hora y día de la semana en la zona horaria del restaurante (no los del
+// móvil del cliente), igual que comprueba fn_registrar_pedido con
+// fn_menu_activo al guardar el pedido.
+export function resolverMenuActivo(menus, zonaSalon, ahora = new Date(), zonaHoraria = ZONA_POR_DEFECTO) {
+  const { minutos: minutosActuales, dia } = partesEnZona(ahora, zonaHoraria)
   const candidatos = (menus || [])
     .filter(m => m.activo)
-    .filter(m => (!m.zona || m.zona === zona) && enFranjaHoraria(m, minutosActuales) && enDiaSemana(m, dia))
+    .filter(m => (!m.zona || m.zona === zonaSalon) && enFranjaHoraria(m, minutosActuales) && enDiaSemana(m, dia))
   if (!candidatos.length) return null
   candidatos.sort((a, b) => especificidad(b) - especificidad(a) || (a.orden - b.orden))
   return candidatos[0]

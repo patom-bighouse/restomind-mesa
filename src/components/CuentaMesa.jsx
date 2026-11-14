@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/money'
+import { fechaHoraEnZona, horaEnZona, ZONA_POR_DEFECTO } from '../lib/fechas'
 
 const S = {
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 },
@@ -74,6 +75,8 @@ const METODOS = [
  * - restaurantName: string
  * - restaurantId: string (necesario para registrar cobros)
  * - moneda: string (código ISO 4217, ej. "EUR"; por defecto "EUR" si no llega)
+ * - zonaHoraria: zona horaria del restaurante (restaurants.zona_horaria); las
+ *   horas del ticket y de los pedidos salen en ella, no en la del navegador
  * - onClose: () => void   (cerrar el modal sin hacer nada más)
  * - onConfirmCerrar: () => void | null   (si se pasa, muestra el
  *   botón "Confirmar cierre de mesa"; si no, es solo lectura)
@@ -82,7 +85,7 @@ const METODOS = [
  *   cobro completo, dejando un motivo registrado)
  * - closing: boolean (estado de carga mientras se confirma el cierre)
  */
-export default function CuentaMesa({ session, table, restaurantName, restaurantId, moneda = 'EUR', onClose, onConfirmCerrar, onConfirmExencion, closing }) {
+export default function CuentaMesa({ session, table, restaurantName, restaurantId, moneda = 'EUR', zonaHoraria = ZONA_POR_DEFECTO, onClose, onConfirmCerrar, onConfirmExencion, closing }) {
   const [loading, setLoading] = useState(true)
   const [pedidos, setPedidos] = useState([]) // [{ id, created_at, items: [...] }]
   const [pagos, setPagos] = useState([])
@@ -284,13 +287,13 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
         <div style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 4 }}>{restaurantName}</div>
         <div style={{ marginBottom: 10 }}>
           Mesa {table?.numero} · {table?.zona}<br />
-          {session?.abierta_at && new Date(session.abierta_at).toLocaleString('es-ES')}
+          {session?.abierta_at && fechaHoraEnZona(session.abierta_at, zonaHoraria)}
         </div>
         <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }} />
         {pedidos.map(pedido => (
           <div key={pedido.id} style={{ marginBottom: 10 }}>
             <div style={{ fontSize: 11, marginBottom: 4 }}>
-              — Pedido {new Date(pedido.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })} —
+              — Pedido {horaEnZona(pedido.created_at, zonaHoraria)} —
             </div>
             {pedido.items.map(item => (
               <div key={item.id}>
@@ -354,7 +357,7 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
             <div style={S.mesaInfo}>
               Mesa {table?.numero} · {table?.zona}
               {session?.abierta_at && (
-                <> · desde {new Date(session.abierta_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</>
+                <> · desde {horaEnZona(session.abierta_at, zonaHoraria)}</>
               )}
             </div>
           </div>
@@ -368,7 +371,7 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
             {!loading && !error && pedidos.map(pedido => (
               <div key={pedido.id} style={S.pedidoBlock}>
                 <div style={S.pedidoHora}>
-                  Pedido de las {new Date(pedido.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                  Pedido de las {horaEnZona(pedido.created_at, zonaHoraria)}
                 </div>
                 {pedido.items.map(item => (
                   <div key={item.id} style={S.itemRow}>
@@ -452,7 +455,7 @@ export default function CuentaMesa({ session, table, restaurantName, restaurantI
                   <span>{formatMoney(p.monto, moneda)}</span>
                   {' · '}
                   <span>{METODOS.find(m => m.value === p.metodo_pago)?.label || p.metodo_pago}</span>
-                  <div style={S.pagoMeta}>{new Date(p.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</div>
+                  <div style={S.pagoMeta}>{horaEnZona(p.created_at, zonaHoraria)}</div>
                 </div>
                 <button style={S.pagoAnularBtn} onClick={() => voidPago(p.id)}>Anular</button>
               </div>

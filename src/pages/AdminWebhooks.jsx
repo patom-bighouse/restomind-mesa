@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useRestaurantModulos } from '../lib/modulos'
+import { fechaHoraEnZona, zonaHorariaDe } from '../lib/fechas'
 
 const EVENTOS = [
   { key: 'order.placed', label: 'Pedido nuevo' },
@@ -68,7 +69,7 @@ export default function AdminWebhooks() {
   async function checkAuth() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { navigate('/admin/login'); return }
-    const { data: rest } = await supabase.from('restaurants').select('nombre').eq('id', restaurantId).single()
+    const { data: rest } = await supabase.from('restaurants').select('nombre, zona_horaria').eq('id', restaurantId).single()
     setRestaurant(rest)
     await loadWebhooks()
     setLoading(false)
@@ -256,7 +257,7 @@ export default function AdminWebhooks() {
               <tbody>
                 {entregas.map(e => (
                   <tr key={e.id}>
-                    <td style={S.td}>{new Date(e.created_at).toLocaleString('es-ES')}</td>
+                    <td style={S.td}>{fechaHoraEnZona(e.created_at, zonaHorariaDe(restaurant))}</td>
                     <td style={S.td}>{EVENTOS.find(ev => ev.key === e.evento)?.label || e.evento}</td>
                     <td style={S.td}>{webhooks.find(w => w.id === e.webhook_id)?.url || '—'}</td>
                   </tr>

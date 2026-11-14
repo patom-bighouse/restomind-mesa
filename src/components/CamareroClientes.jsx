@@ -1,6 +1,7 @@
 import { useState, useEffect, Fragment } from 'react'
 import { rpcCamarero, esSesionCamareroCaducada } from '../lib/sesionCamarero'
 import { formatMoney } from '../lib/money'
+import { fechaHoraCortaEnZona, zonaHorariaDe } from '../lib/fechas'
 
 const S = {
   app: { minHeight: '100vh', background: '#111', color: '#f0e8d8', fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column' },
@@ -178,7 +179,7 @@ export default function CamareroClientes({ camarero, restaurantId, restaurant, o
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                             {movimientos[c.id].map(m => (
                               <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#8a7560' }}>
-                                <span>{new Date(m.created_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} — {m.motivo}</span>
+                                <span>{fechaHoraCortaEnZona(m.created_at, zonaHorariaDe(restaurant))} — {m.motivo}</span>
                                 <span style={{ color: m.tipo === 'suma' ? '#7ae8a0' : '#e87a7a', fontWeight: 500 }}>
                                   {m.tipo === 'suma' ? '+' : '−'}{m.puntos}
                                 </span>

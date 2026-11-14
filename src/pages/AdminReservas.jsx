@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useRestaurantModulos } from '../lib/modulos'
-import { hoyMadrid } from '../lib/fechas'
+import { hoyEnZona, fechaISOaTexto, zonaHorariaDe } from '../lib/fechas'
 
 const ZONAS = ['sin preferencia', 'interior', 'terraza', 'privado', 'barra']
 
@@ -74,7 +74,7 @@ export default function AdminReservas() {
   async function checkAuth() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { navigate('/admin/login'); return }
-    const { data: rest } = await supabase.from('restaurants').select('nombre').eq('id', restaurantId).single()
+    const { data: rest } = await supabase.from('restaurants').select('nombre, zona_horaria').eq('id', restaurantId).single()
     setRestaurant(rest)
     await loadReservas()
     setLoading(false)
@@ -106,7 +106,8 @@ export default function AdminReservas() {
     return () => { supabase.removeChannel(channel) }
   }, [restaurantId])
 
-  const hoy = hoyMadrid()
+  // "Hoy" del restaurante (su zona horaria).
+  const hoy = hoyEnZona(zonaHorariaDe(restaurant))
   const reservasFiltradas = reservas.filter(r => {
     if (filtro === 'proximas') return r.fecha >= hoy && r.estado !== 'cancelada'
     if (filtro === 'todas') return true
@@ -289,7 +290,7 @@ export default function AdminReservas() {
               <tbody>
                 {reservasFiltradas.map(r => (
                   <tr key={r.id} style={S.row}>
-                    <td style={S.td}>{new Date(r.fecha + 'T00:00:00').toLocaleDateString('es-ES')}</td>
+                    <td style={S.td}>{fechaISOaTexto(r.fecha)}</td>
                     <td style={S.td}>{r.hora?.slice(0, 5)}</td>
                     <td style={S.td}>
                       {r.nombre}

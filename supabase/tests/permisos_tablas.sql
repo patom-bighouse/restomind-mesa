@@ -108,7 +108,8 @@ lateral unnest(string_to_array(v.privs, ',')) as p;
 create temp table _esperado_columna (tabla text, columna text, rol text, privilegio text) on commit drop;
 insert into _esperado_columna (tabla, columna, rol, privilegio)
 select 'restaurants', c, 'anon', 'SELECT'
-from unnest(array['id','nombre','logo_url','activo','config','direccion','moneda','slug','subdominio','whatsapp']) c
+from unnest(array['id','nombre','logo_url','activo','config','direccion','moneda','slug','subdominio','whatsapp',
+             'zona_horaria']) c  -- docs/specs/2026-11-14-zona-horaria-restaurante.md
 union all
 select 'tables', c, 'anon', 'SELECT'
 from unnest(array['id','restaurant_id','numero','zona','capacidad','activa','necesita_limpieza','limpieza_progreso']) c;

@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useRestaurantModulos } from '../lib/modulos'
 import ConfigInformacion from '../components/ConfigInformacion'
-import { hoyMadrid } from '../lib/fechas'
+import { hoyMadrid, horaEnZona, zonaHorariaDe } from '../lib/fechas'
+import { nombreZona } from '../lib/zonasHorarias'
 
 const DIAS = [
   { key: 'lunes',     label: 'Lunes' },
@@ -116,7 +117,7 @@ export default function AdminConfig() {
   async function loadData() {
     const { data: rest } = await supabase
       .from('restaurants')
-      .select('nombre, whatsapp, direccion, config, modo_cocina, minutos_limite_agrupado, subdominio, plan, permanencia_hasta')
+      .select('nombre, whatsapp, direccion, config, modo_cocina, minutos_limite_agrupado, subdominio, plan, permanencia_hasta, zona_horaria')
       .eq('id', restaurantId)
       .single()
     if (rest) {
@@ -381,6 +382,13 @@ export default function AdminConfig() {
         {/* Datos básicos */}
         <div style={S.infoCard}>
           <div style={{ fontSize: 14, fontWeight: 500, color: '#c4a85a', marginBottom: 4 }}>Datos del restaurante</div>
+          {/* Zona horaria: solo la cambia Restomind (decisión 1 de
+              docs/specs/2026-11-14-zona-horaria-restaurante.md); aquí solo
+              se muestra y no se envía al guardar. */}
+          <div style={{ fontSize: 13, color: '#8a7560', margin: '6px 0 10px', lineHeight: 1.5 }}>
+            Zona horaria: <strong style={{ color: '#f0e8d8' }}>{nombreZona(zonaHorariaDe(restaurant))}</strong>{' '}
+            (ahora son las {horaEnZona(new Date(), zonaHorariaDe(restaurant))} en el restaurante). Si no es correcta, escríbenos.
+          </div>
           <label style={S.infoLabel}>Nombre</label>
           <input style={S.infoInput} value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Nombre del restaurante" />
           <label style={S.infoLabel}>WhatsApp (con prefijo, sin +)</label>

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { hoyMadrid } from '../lib/fechas'
+import { hoyEnZona, partesEnZona, zonaHorariaDe } from '../lib/fechas'
 import { horasReserva } from '../lib/horarioReservas'
 
 const ZONAS = ['sin preferencia', 'interior', 'terraza', 'privado', 'barra']
@@ -49,7 +49,7 @@ export default function Reservar() {
 
   useEffect(() => {
     async function load() {
-      const { data, error: err } = await supabase.from('restaurants').select('nombre, config').eq('id', restaurantId).single()
+      const { data, error: err } = await supabase.from('restaurants').select('nombre, config, zona_horaria').eq('id', restaurantId).single()
       if (err || !data) { setError('No encontramos este restaurante.'); setLoading(false); return }
       setRestaurant(data)
       // Solo devuelve algo si el restaurante tiene el módulo de información
@@ -61,17 +61,20 @@ export default function Reservar() {
     load()
   }, [restaurantId])
 
-  const hoy = hoyMadrid()
+  // "Hoy" y "ahora" en la zona horaria del restaurante, no en la del móvil
+  // del cliente (fn_crear_reserva_web usa fn_ahora_restaurante).
+  const zonaHoraria = zonaHorariaDe(restaurant)
+  const hoy = hoyEnZona(zonaHoraria)
   // Horas válidas del día elegido según el horario del restaurante (null si
   // no tiene horario: entonces la hora es libre). La base de datos lo vuelve
   // a comprobar al guardar.
-  const disponibles = horasReserva(restaurant?.config, fecha)
+  const disponibles = horasReserva(restaurant?.config, fecha, partesEnZona(new Date(), zonaHoraria))
   const horaValida = !disponibles || disponibles.horas.includes(hora)
   const puedeEnviar = nombre.trim() && telefono.trim() && fecha && hora && horaValida && parseInt(personas, 10) > 0
 
   function cambiarFecha(nuevaFecha) {
     setFecha(nuevaFecha)
-    const d = horasReserva(restaurant?.config, nuevaFecha)
+    const d = horasReserva(restaurant?.config, nuevaFecha, partesEnZona(new Date(), zonaHoraria))
     if (d && !d.horas.includes(hora)) setHora('')
   }
 

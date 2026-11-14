@@ -8,7 +8,7 @@ import CamareroClientes from '../components/CamareroClientes'
 import CamareroReservas from '../components/CamareroReservas'
 import CamareroLimpieza from '../components/CamareroLimpieza'
 import CamareroCocina from '../components/CamareroCocina'
-import { hoyMadrid } from '../lib/fechas'
+import { hoyEnZona, horaEnZona, fechaISOaTexto, zonaHorariaDe, ZONA_POR_DEFECTO } from '../lib/fechas'
 import { rpcCamarero, esSesionCamareroCaducada, AVISO_SESION_CADUCADA } from '../lib/sesionCamarero'
 
 const PERMISOS_IMPLEMENTADOS = ['pedidos', 'clientes', 'reservas', 'limpieza', 'cocina']
@@ -244,7 +244,8 @@ export default function Camarero() {
   }
 
   async function loadRestaurant() {
-    const { data } = await supabase.from('restaurants').select('nombre, moneda, config').eq('id', restaurantId).single()
+    const { data } = await supabase.from('restaurants').select('nombre, moneda, config, zona_horaria').eq('id', restaurantId).single()
+    zonaHorariaRef.current = zonaHorariaDe(data)
     setRestaurant(data)
     setModoHabilitado((data?.config?.modo_pedidos || 'cliente') === 'camarero')
   }
@@ -689,13 +690,15 @@ export default function Camarero() {
   // Igual que en Mesa.jsx: cada minuto se vuelve a resolver el menú activo
   // y, si ha cambiado por horario, se recarga la carta de la mesa abierta.
   const menusCargadosRef = useRef({ menus: null, zona: null, menuId: null })
+  // Zona horaria del restaurante (la fija loadRestaurant): menú por franja.
+  const zonaHorariaRef = useRef(ZONA_POR_DEFECTO)
 
   useEffect(() => {
     if (!selectedTable) return
     const interval = setInterval(() => {
       const { menus, zona, menuId } = menusCargadosRef.current
       if (!menus) return
-      const ahora = resolverMenuActivo(menus, zona)
+      const ahora = resolverMenuActivo(menus, zona, new Date(), zonaHorariaRef.current)
       if ((ahora?.id || null) !== menuId) loadMenu(zona)
     }, 60000)
     return () => clearInterval(interval)
@@ -721,7 +724,7 @@ export default function Camarero() {
       .from('menus')
       .select('id, nombre, zona, hora_inicio, hora_fin, dias_semana, activo, orden')
       .eq('restaurant_id', restaurantId)
-    const menuActivo = resolverMenuActivo(menusData, zona)
+    const menuActivo = resolverMenuActivo(menusData, zona, new Date(), zonaHorariaRef.current)
     menusCargadosRef.current = { menus: menusData, zona, menuId: menuActivo?.id || null }
     let itemsFinal = menuItems || []
     if (menuActivo) {
@@ -905,7 +908,7 @@ export default function Camarero() {
       return
     }
     const vale = data[0]
-    const hoy = hoyMadrid()
+    const hoy = hoyEnZona(zonaHorariaDe(restaurant))
     if (!vale.activo) { setValeError('Ese vale ya no está activo.'); return }
     if (vale.fecha_vencimiento < hoy) { setValeError('Ese vale ya venció.'); return }
     if (vale.saldo_actual <= 0) { setValeError('Ese vale ya no tiene saldo.'); return }
@@ -1089,7 +1092,7 @@ export default function Camarero() {
     return <CamareroClientes camarero={camarero} restaurantId={restaurantId} restaurant={restaurant} onVolver={volverDeSeccion} onSesionCaducada={sesionCaducada} />
   }
   if (seccionActiva === 'reservas') {
-    return <CamareroReservas camarero={camarero} restaurantId={restaurantId} onVolver={volverDeSeccion} onSesionCaducada={sesionCaducada} />
+    return <CamareroReservas camarero={camarero} restaurantId={restaurantId} zonaHoraria={zonaHorariaDe(restaurant)} onVolver={volverDeSeccion} onSesionCaducada={sesionCaducada} />
   }
   if (seccionActiva === 'limpieza') {
     return <CamareroLimpieza camarero={camarero} restaurantId={restaurantId} onVolver={volverDeSeccion} onSesionCaducada={sesionCaducada} />
@@ -1601,7 +1604,7 @@ export default function Camarero() {
                   Saldo disponible: <strong style={{ color: '#7ae8a0' }}>{formatMoney(valeConsultado.saldo_actual, restaurant?.moneda)}</strong>
                 </div>
                 <div style={{ fontSize: 11, color: '#7a6a50', marginBottom: 14 }}>
-                  Vence el {new Date(valeConsultado.fecha_vencimiento + 'T00:00:00').toLocaleDateString('es-ES')}
+                  Vence el {fechaISOaTexto(valeConsultado.fecha_vencimiento)}
                 </div>
                 <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 6 }}>¿Cuánto se aplica a la cuenta?</div>
                 <input
@@ -1638,7 +1641,7 @@ export default function Camarero() {
               <div key={pedido.id} style={{ marginBottom: 16, paddingBottom: 12, borderBottom: '0.5px solid #2a2018' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                   <span style={{ fontSize: 11, color: '#7a6a50' }}>
-                    {new Date(pedido.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                    {horaEnZona(pedido.created_at, zonaHorariaDe(restaurant))}
                   </span>
                   <span style={{ fontSize: 11, color: '#c4a85a', fontWeight: 500 }}>
                     {ESTADO_PEDIDO_LABEL[pedido.estado] || pedido.estado}

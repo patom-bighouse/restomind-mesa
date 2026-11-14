@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { rpcCamarero, esSesionCamareroCaducada } from '../lib/sesionCamarero'
-import { hoyMadrid } from '../lib/fechas'
+import { hoyEnZona, fechaISOaTexto, ZONA_POR_DEFECTO } from '../lib/fechas'
 
 const ZONAS = ['sin preferencia', 'interior', 'terraza', 'privado', 'barra']
 
@@ -36,7 +36,7 @@ const S = {
 
 // Igual que CamareroClientes: nunca lee `reservations` directo, todo
 // pasa por las funciones fn_staff_* que revisan el permiso 'reservas'.
-export default function CamareroReservas({ camarero, restaurantId, onVolver, onSesionCaducada }) {
+export default function CamareroReservas({ camarero, restaurantId, zonaHoraria = ZONA_POR_DEFECTO, onVolver, onSesionCaducada }) {
   const [reservas, setReservas] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -64,7 +64,8 @@ export default function CamareroReservas({ camarero, restaurantId, onVolver, onS
     setReservas(data || [])
   }
 
-  const hoy = hoyMadrid()
+  // "Hoy" del restaurante (su zona horaria), no el del móvil.
+  const hoy = hoyEnZona(zonaHoraria)
   const reservasFiltradas = reservas.filter(r => {
     if (filtro === 'proximas') return r.fecha >= hoy && r.estado !== 'cancelada'
     return true
@@ -159,7 +160,7 @@ export default function CamareroReservas({ camarero, restaurantId, onVolver, onS
               <div style={S.cardTop}>
                 <div>
                   <div style={S.cardTitle}>{r.nombre} · {r.personas}p</div>
-                  <div style={S.cardMeta}>{new Date(r.fecha + 'T00:00:00').toLocaleDateString('es-ES')} {r.hora?.slice(0, 5)} · {r.zona} · {r.telefono}</div>
+                  <div style={S.cardMeta}>{fechaISOaTexto(r.fecha)} {r.hora?.slice(0, 5)} · {r.zona} · {r.telefono}</div>
                 </div>
                 <select
                   style={{ ...S.select, background: ESTADO_CFG[r.estado]?.bg, color: ESTADO_CFG[r.estado]?.color, borderColor: ESTADO_CFG[r.estado]?.color }}

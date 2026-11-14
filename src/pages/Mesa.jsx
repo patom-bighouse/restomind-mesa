@@ -6,7 +6,7 @@ import { resolverMenuActivo, aplicarPreciosMenu } from '../lib/menus'
 import { IDIOMAS_CARTA } from '../lib/idiomas'
 import { traducirAlergenos } from '../lib/alergenosI18n'
 import RestauranteSuspendido from '../components/RestauranteSuspendido'
-import { hoyMadrid } from '../lib/fechas'
+import { hoyEnZona, horaEnZona, fechaISOaTexto, zonaHorariaDe, ZONA_POR_DEFECTO } from '../lib/fechas'
 
 // Mismo catálogo fijo que AdminCarta.jsx (Reglamento UE 1169/2011).
 const ALERGENOS = [
@@ -199,6 +199,9 @@ export default function Mesa() {
   // las 20:00 con la mesa ya abierta), se recarga la carta. Así lo que ve
   // el cliente coincide con lo que cobra fn_registrar_pedido.
   const menusCargadosRef = useRef({ menus: null, zona: null, menuId: null })
+  // Zona horaria del restaurante (no la del móvil del cliente): menú por
+  // franja, vale caducado y horas de los pedidos.
+  const zonaHorariaRef = useRef(ZONA_POR_DEFECTO)
 
   async function loadMenu(restaurantId, zona, idiomasCarta) {
     const { data: cats } = await supabase
@@ -224,7 +227,7 @@ export default function Mesa() {
       .from('menus')
       .select('id, nombre, zona, hora_inicio, hora_fin, dias_semana, activo, orden')
       .eq('restaurant_id', restaurantId)
-    const menuActivo = resolverMenuActivo(menusData, zona)
+    const menuActivo = resolverMenuActivo(menusData, zona, new Date(), zonaHorariaRef.current)
     menusCargadosRef.current = { menus: menusData, zona, menuId: menuActivo?.id || null }
     let itemsFinal = menuItems || []
     if (menuActivo) {
@@ -408,9 +411,10 @@ export default function Mesa() {
 
         const { data: rest } = await supabase
           .from('restaurants')
-          .select('nombre, moneda, config, activo')
+          .select('nombre, moneda, config, activo, zona_horaria')
           .eq('id', tableData.restaurant_id)
           .single()
+        zonaHorariaRef.current = zonaHorariaDe(rest)
         setRestaurant(rest)
 
         // La sesión abierta de esta mesa se resuelve validando el
@@ -461,7 +465,7 @@ export default function Mesa() {
     const interval = setInterval(() => {
       const { menus, zona, menuId } = menusCargadosRef.current
       if (!menus) return
-      const ahora = resolverMenuActivo(menus, zona)
+      const ahora = resolverMenuActivo(menus, zona, new Date(), zonaHorariaRef.current)
       if ((ahora?.id || null) !== menuId) {
         loadMenu(table.restaurant_id, table.zona, restaurant?.config?.idiomas_carta)
       }
@@ -631,7 +635,7 @@ export default function Mesa() {
       return
     }
     const vale = data[0]
-    const hoy = hoyMadrid()
+    const hoy = hoyEnZona(zonaHorariaRef.current)
     if (!vale.activo) { setValeError('Ese vale ya no está activo.'); return }
     if (vale.fecha_vencimiento < hoy) { setValeError('Ese vale ya venció.'); return }
     if (vale.saldo_actual <= 0) { setValeError('Ese vale ya no tiene saldo.'); return }
@@ -1262,7 +1266,7 @@ export default function Mesa() {
                 Saldo disponible: <strong style={{ color: '#7ae8a0' }}>{formatMoney(valeConsultado.saldo_actual, restaurant?.moneda)}</strong>
               </div>
               <div style={{ fontSize: 11, color: '#7a6a50', marginBottom: 14 }}>
-                Vence el {new Date(valeConsultado.fecha_vencimiento + 'T00:00:00').toLocaleDateString('es-ES')}
+                Vence el {fechaISOaTexto(valeConsultado.fecha_vencimiento)}
               </div>
               <div style={{ fontSize: 12, color: '#8a7560', marginBottom: 6 }}>¿Cuánto quieres aplicar a tu cuenta?</div>
               <input
@@ -1455,7 +1459,7 @@ export default function Mesa() {
                 <div key={pedido.id} style={{ marginBottom: 16, paddingBottom: 12, borderBottom: '0.5px solid #2a2018' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                     <span style={{ fontSize: 11, color: '#7a6a50' }}>
-                      {new Date(pedido.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                      {horaEnZona(pedido.created_at, zonaHorariaDe(restaurant))}
                     </span>
                     <span style={{ fontSize: 11, color: '#c4a85a', fontWeight: 500 }}>
                       {ESTADO_LABEL[pedido.estado] || pedido.estado}

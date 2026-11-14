@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useRestaurantModulos } from '../lib/modulos'
 import { playWaiterBell, unlockAudio } from '../lib/sound'
-import { ZONA_POR_DEFECTO } from '../lib/fechas'
+import { zonaHorariaDe } from '../lib/fechas'
 import { COLUMNAS_AVISO, esVisibleParaRestaurante, textoAviso, telefonoAviso } from '../lib/avisosAgente'
 
 const ALTO = 56
@@ -29,10 +29,23 @@ const S = {
  * deja llegar los avisos visibles para el restaurante; además se comprueba
  * aquí (visible_restaurante y restaurant_id) por si quien mira es superadmin.
  * Solo con el módulo whatsapp (regla 8).
+ *
+ * La hora del texto del aviso sale en la zona horaria del restaurante: la lee
+ * este componente (GuardRestaurante no la necesita), o llega en zonaHoraria.
  */
-export default function AlertasAgente({ restaurantId, zona = ZONA_POR_DEFECTO }) {
+export default function AlertasAgente({ restaurantId, zonaHoraria: zonaDada = null }) {
   const { tieneModulo, loading } = useRestaurantModulos(restaurantId)
   const activo = !loading && tieneModulo('whatsapp')
+  const [zonaLeida, setZonaLeida] = useState(null)
+  const zonaHoraria = zonaDada || zonaHorariaDe({ zona_horaria: zonaLeida })
+
+  useEffect(() => {
+    if (!activo || !restaurantId || zonaDada) return
+    let cancelado = false
+    supabase.from('restaurants').select('zona_horaria').eq('id', restaurantId).single()
+      .then(({ data }) => { if (!cancelado) setZonaLeida(data?.zona_horaria || null) })
+    return () => { cancelado = true }
+  }, [activo, restaurantId, zonaDada])
   const [pendientes, setPendientes] = useState([])
   const [marcando, setMarcando] = useState(null)
   const [error, setError] = useState(null)
@@ -113,7 +126,7 @@ export default function AlertasAgente({ restaurantId, zona = ZONA_POR_DEFECTO })
       <div style={S.banda} role="alert">
         <span style={S.icono}>⚠️</span>
         <div style={S.texto}>
-          <strong>WhatsApp:</strong> {textoAviso(aviso, zona)}
+          <strong>WhatsApp:</strong> {textoAviso(aviso, zonaHoraria)}
           {aviso.veces > 1 && <span style={S.extra}>(×{aviso.veces})</span>}
           {pendientes.length > 1 && <span style={S.extra}>y {pendientes.length - 1} aviso{pendientes.length - 1 === 1 ? '' : 's'} más</span>}
           {tel && <> · <a href={tel.href} style={S.tel}>Llamar</a></>}

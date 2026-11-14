@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { formatMoney, getCurrencySymbol } from '../lib/money'
 import { useRestaurantModulos } from '../lib/modulos'
 import { IDIOMAS_CARTA } from '../lib/idiomas'
-import { hoyMadrid } from '../lib/fechas'
+import { hoyEnZona, zonaHorariaDe } from '../lib/fechas'
 
 // Los 14 alérgenos del Anexo II del Reglamento UE 1169/2011. Es un
 // catálogo fijo por ley, no configurable por restaurante — por eso vive
@@ -137,7 +137,7 @@ export default function AdminCarta() {
   }
 
   async function loadData() {
-    const { data: rest } = await supabase.from('restaurants').select('nombre, moneda, config').eq('id', restaurantId).single()
+    const { data: rest } = await supabase.from('restaurants').select('nombre, moneda, config, zona_horaria').eq('id', restaurantId).single()
     setRestaurant(rest)
 
     const { data: cats, error: catErr } = await supabase
@@ -311,7 +311,7 @@ export default function AdminCarta() {
     }
     const resumen = Object.entries(data.traducidos || {}).map(([k, n]) => `${IDIOMAS_CARTA.find(i => i.key === k)?.label || k}: ${n} elementos`).join(' · ')
     setTraduccionMsg(resumen || 'Carta traducida.')
-    const { data: rest } = await supabase.from('restaurants').select('nombre, moneda, config').eq('id', restaurantId).single()
+    const { data: rest } = await supabase.from('restaurants').select('nombre, moneda, config, zona_horaria').eq('id', restaurantId).single()
     setRestaurant(rest)
   }
 
@@ -344,7 +344,7 @@ export default function AdminCarta() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `carta-${(restaurant?.nombre || 'restomind').toLowerCase().replace(/\s+/g, '-')}-${hoyMadrid()}.json`
+    a.download = `carta-${(restaurant?.nombre || 'restomind').toLowerCase().replace(/\s+/g, '-')}-${hoyEnZona(zonaHorariaDe(restaurant))}.json`
     a.click()
     URL.revokeObjectURL(url)
   }

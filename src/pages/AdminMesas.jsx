@@ -6,7 +6,7 @@ import { useRestaurantModulos } from '../lib/modulos'
 import { playWaiterBell, unlockAudio } from '../lib/sound'
 import CuentaMesa from '../components/CuentaMesa'
 import QRCode from 'qrcode'
-import { hoyMadrid } from '../lib/fechas'
+import { hoyEnZona, horaEnZona, zonaHorariaDe } from '../lib/fechas'
 
 // Dominios reales de producción — si el panel se ve desde cualquier
 // otro host (preview de staging, localhost) seguimos usando ese mismo
@@ -226,7 +226,7 @@ export default function AdminMesas() {
   }
 
   async function loadData() {
-    const { data: rest } = await supabase.from('restaurants').select('nombre, moneda, config, subdominio').eq('id', restaurantId).single()
+    const { data: rest } = await supabase.from('restaurants').select('nombre, moneda, config, subdominio, zona_horaria').eq('id', restaurantId).single()
     setRestaurant(rest)
     const { data: tabs, error: err } = await supabase
       .from('tables').select('id, numero, zona, capacidad, qr_token, activa, pos_x, pos_y, forma, necesita_limpieza, limpieza_progreso')
@@ -236,7 +236,7 @@ export default function AdminMesas() {
     generateQRs(tabs || [], rest)
     await loadSessions()
     await loadWaiterCalls()
-    await loadReservasHoy()
+    await loadReservasHoy(rest)
     await loadLimpiezaPasos()
     setLoading(false)
   }
@@ -254,8 +254,8 @@ export default function AdminMesas() {
   // Reservas confirmadas o pendientes de hoy, para avisar en el plano
   // "hay N reservas hoy en esta zona" — no se puede mostrar por mesa
   // puntual porque una reserva no queda atada a una mesa específica.
-  async function loadReservasHoy() {
-    const hoy = hoyMadrid()
+  async function loadReservasHoy(rest = restaurant) {
+    const hoy = hoyEnZona(zonaHorariaDe(rest))
     const { data } = await supabase
       .from('reservations')
       .select('zona, personas, hora')
@@ -736,7 +736,7 @@ export default function AdminMesas() {
                     <div style={S.tokenText}>{`/mesa/${table.qr_token.slice(0, 16)}...`}</div>
                     <div style={S.sessionBadge(!!sessions[table.id])}>
                       {sessions[table.id]
-                        ? `🟢 Abierta desde ${new Date(sessions[table.id].abierta_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`
+                        ? `🟢 Abierta desde ${horaEnZona(sessions[table.id].abierta_at, zonaHorariaDe(restaurant))}`
                         : (table.necesita_limpieza ? '🧹 Necesita limpieza' : '⚪ Sin sesión activa')}
                     </div>
                     <button
@@ -856,6 +856,7 @@ export default function AdminMesas() {
           restaurantName={restaurant?.nombre}
           restaurantId={restaurantId}
           moneda={restaurant?.moneda}
+          zonaHoraria={zonaHorariaDe(restaurant)}
           onClose={() => setCuentaModal(null)}
           onConfirmCerrar={cuentaModal.mode === 'cerrar' ? confirmCloseTable : null}
           onConfirmExencion={cuentaModal.mode === 'cerrar' ? confirmCerrarExencion : null}
