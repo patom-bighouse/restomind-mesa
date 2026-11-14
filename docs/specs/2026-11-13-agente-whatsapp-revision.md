@@ -1,6 +1,6 @@
 # Agente de WhatsApp: estabilidad, seguridad, contexto y avisos de fallos
 - Fecha: 2026-11-13
-- Estado: aprobada por Patricio el 13-11-2026, incluida la decisión 10.
+- Estado: aprobada por Patricio el 13-11-2026, incluida la decisión 10. Entrega 1a desplegada en Producción y validada el 14-11-2026; pendiente la 1b.
   - Ese mismo día Patricio cambió la decisión 6: Restomind sale del enrutador central y Meta llama directamente al agente desde la app RestomindWapp.
   - Se ha alineado con los datos de Meta del 13-11-2026: no hay número nuevo y el número de prueba queda solo para Restomind.
   - Los pasos de despliegue en n8n y Meta están en `docs/MIGRACIONES.md`, sección "Agente de WhatsApp en n8n y Meta". En los detalles de despliegue, esa sección manda sobre esta especificación.
