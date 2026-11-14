@@ -313,7 +313,7 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "PENDIENTE-CREDENCIAL-RESTOMINDWAPP",
+          "id": "JDGs8nl1fuWzIUjs",
           "name": "WhatsApp Graph API Token (RestomindWapp)"
         }
       },
@@ -1147,7 +1147,7 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "PENDIENTE-CREDENCIAL-RESTOMINDWAPP",
+          "id": "JDGs8nl1fuWzIUjs",
           "name": "WhatsApp Graph API Token (RestomindWapp)"
         }
       },
@@ -2891,7 +2891,7 @@
     "executionOrder": "v1",
     "availableInMCP": false,
     "timezone": "Europe/Madrid",
-    "errorWorkflow": "PENDIENTE-ID-WORKFLOW-ERRORES"
+    "errorWorkflow": "7L3PznLy2XGfk2aV"
   },
   "versionId": "d8dc4901-5a63-46b8-a982-c456fbe25753",
   "meta": {
