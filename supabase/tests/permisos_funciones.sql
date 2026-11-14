@@ -6,7 +6,9 @@
 -- Actualizado con docs/specs/2026-11-13-agente-whatsapp-revision.md (criterios 3
 -- y 5): fn_agente_error_marcar_atendida en el B; fn_pedido_whatsapp_crear y
 -- fn_agente_registrar_error en el C. Entrega 1b: fn_superadmin_estadisticas_agente
--- en el B y fn_agente_datos_restaurante en el C.
+-- en el B y fn_agente_datos_restaurante en el C. Zona horaria por restaurante
+-- (docs/specs/2026-11-14-zona-horaria-restaurante.md): fn_zona_restaurante,
+-- fn_ahora_restaurante y fn_hoy_restaurante en el C; fn_restaurants_validar_zona_horaria en el T.
 --
 -- SOLO CONTRA TEST (sfkwbhzelrestmrmptql). Todo dentro de begin … rollback.
 --   npx supabase db query --remote=sfkwbhzelrestmrmptql -f supabase/tests/permisos_funciones.sql
@@ -55,7 +57,8 @@ select f, 'C' from unnest(array[
   'order_is_valid_for_items', 'fn_ahora_madrid', 'fn_hora_madrid',
   'fn_staff_exigir_sesion',  -- sesión de camarero con PIN (docs/specs/2026-11-12-pin-camarero.md)
   'fn_pedido_whatsapp_crear', 'fn_agente_registrar_error',  -- agente de WhatsApp (docs/specs/2026-11-13-agente-whatsapp-revision.md)
-  'fn_agente_datos_restaurante'  -- contexto del agente, entrega 1b
+  'fn_agente_datos_restaurante',  -- contexto del agente, entrega 1b
+  'fn_zona_restaurante', 'fn_ahora_restaurante', 'fn_hoy_restaurante'  -- zona horaria por restaurante
 ]) f
 union all
 select f, 'T' from unnest(array[
@@ -66,7 +69,8 @@ select f, 'T' from unnest(array[
   'fn_trigger_webhook_order_placed', 'fn_trigger_webhook_payment_received',
   'fn_trigger_webhook_reservation_created', 'fn_trigger_webhook_waiter_call', 'fn_activar_modulo_nucleo',
   'fn_restaurants_permanencia_alta', 'fn_restaurants_proteger_comercial',
-  'fn_restaurants_proteger_comercial_alta', 'fn_trg_normalizar_telefono_cliente'
+  'fn_restaurants_proteger_comercial_alta', 'fn_trg_normalizar_telefono_cliente',
+  'fn_restaurants_validar_zona_horaria'  -- zona horaria por restaurante
 ]) f;
 
 create temp table _esperado (funcion text, rol text) on commit drop;
